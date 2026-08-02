@@ -1,22 +1,28 @@
-import { Crown, Target, Trophy, X } from "lucide-react";
-import type { Participant, RoundResult } from "../../core/types";
+import { Binary, Crown, Target, Trophy, X } from "lucide-react";
+import type { RoundResult } from "../../core/types";
 
 export function ResultReveal({
   result,
-  champion,
-  prize,
   onClose,
 }: {
   result: RoundResult;
-  champion: Participant | null;
-  prize: string;
   onClose: () => void;
 }) {
   const isWinner = result.kind === "winner";
+  const isQualifiedRound = result.kind === "qualified";
+  const isParitySelection = result.kind === "parity-selected";
+  const parityLabel = result.parity === "even" ? "PAR" : "IMPAR";
+
   return (
     <div className="reveal-backdrop" onMouseDown={onClose} role="presentation">
       <div
-        className={`result-reveal ${isWinner || champion ? "result-reveal--winner" : "result-reveal--eliminated"}`}
+        className={`result-reveal ${
+          isWinner
+            ? "result-reveal--winner"
+            : isQualifiedRound || isParitySelection
+              ? `result-reveal--parity result-reveal--${result.parity}`
+              : "result-reveal--eliminated"
+        }`}
         role="dialog"
         aria-modal="true"
         aria-label="Resultado de la ruleta"
@@ -29,21 +35,57 @@ export function ResultReveal({
           {Array.from({ length: 22 }, (_, index) => <i key={index} />)}
         </div>
         <div className="reveal-icon">
-          {champion ? <Crown size={51} /> : isWinner ? <Trophy size={48} /> : <Target size={48} />}
+          {isWinner ? <Crown size={51} /> : isQualifiedRound || isParitySelection ? <Binary size={50} /> : <Target size={48} />}
         </div>
-        <span className="reveal-kicker">
-          {champion ? "TENEMOS CAMPEÓN" : isWinner ? "LA FORTUNA ELIGIÓ A" : "SALE DE LA RONDA"}
-        </span>
-        <h2>{champion?.name ?? result.participantName}</h2>
-        <p>
-          {champion
-            ? `Se lleva ${prize.trim() || "el premio"}`
-            : isWinner
-              ? `Ganador de ${prize.trim() || "esta ronda"}`
-              : "La ruleta ha decidido. Continúa hasta dejar un campeón."}
-        </p>
+
+        {isParitySelection ? (
+          <>
+            <span className="reveal-kicker">CASILLA ESPECIAL {parityLabel}</span>
+            <h2 className="parity-result-title">Solo juegan los {parityLabel === "PAR" ? "pares" : "impares"}</h2>
+            <div className={`large-parity-badge large-parity-badge--${result.parity}`}>
+              {parityLabel}
+            </div>
+            <p>
+              La próxima tirada eliminará <strong>un solo participante</strong> entre los {parityLabel === "PAR" ? "pares" : "impares"}. Después, todos los demás volverán a estar disponibles.
+            </p>
+          </>
+        ) : isQualifiedRound ? (
+          <>
+            <span className="reveal-kicker">LA PELOTA CAYÓ EN EL NÚMERO {result.landedNumber}</span>
+            <h2 className="parity-result-title">Pasan los {parityLabel === "PAR" ? "pares" : "impares"}</h2>
+            <div className={`large-parity-badge large-parity-badge--${result.parity}`}>
+              {parityLabel}
+            </div>
+            <p>
+              La casilla de <strong>{result.participantName}</strong> marcó {parityLabel}. Quedan {result.remainingCount} participantes para la ronda {result.round + 1}.
+            </p>
+          </>
+        ) : (
+          <>
+            <span className="reveal-kicker">
+              {isWinner
+                ? result.selectedParticipantName
+                  ? `GANADOR TRAS SALIR ${result.selectedParticipantName.toUpperCase()}`
+                  : "TENEMOS GANADOR"
+                : `NÚMERO ${result.landedNumber} · SALE DE LA RULETA`}
+            </span>
+            <h2>{result.participantName}</h2>
+            <p>
+              {isWinner
+                ? <>Se lleva <strong>{result.prize || "Premio del sorteo"}</strong>. Quedará fuera hasta que decidas habilitarlo nuevamente.</>
+                : "Su casilla desaparece de la ruleta y el nombre queda marcado como eliminado."}
+            </p>
+          </>
+        )}
+
         <button className="reveal-action" type="button" onClick={onClose}>
-          {champion ? "Finalizar sorteo" : "Continuar"}
+          {isWinner ? (
+            <><Trophy size={17} /> {result.mode === "direct" ? "Continuar con otro ganador" : "Finalizar sorteo"}</>
+          ) : isParitySelection ? (
+            `Eliminar 1 entre ${result.eligibleCount}`
+          ) : (
+            "Continuar a la siguiente ronda"
+          )}
         </button>
       </div>
     </div>

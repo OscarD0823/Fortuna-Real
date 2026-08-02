@@ -1,13 +1,22 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
+import {
+  ArrowLeft,
   CheckCircle2,
-  CircleDollarSign,
+  CircleDot,
   Crown,
   Dices,
   Expand,
   Gift,
+  Hash,
   History,
-  Medal,
+  Play,
   RotateCcw,
   Settings2,
   ShieldCheck,
@@ -16,17 +25,25 @@ import {
   Trophy,
   Users,
   Volume2,
-  WandSparkles,
-  Zap,
+  VolumeX,
 } from "lucide-react";
 import "./App.css";
-import type { Participant, RoundResult } from "./core/types";
+import type {
+  DrawMode,
+  Participant,
+  Parity,
+  RouletteEntry,
+  RoundResult,
+} from "./core/types";
 import { RouletteWheel } from "./games/roulette/RouletteWheel";
 import { DrawSetup } from "./modules/draw/DrawSetup";
 import { ParticipantPanel } from "./modules/participants/ParticipantPanel";
 import { useDrawStore } from "./modules/participants/drawStore";
 import { ResultReveal } from "./modules/results/ResultReveal";
+import { WinnerHistory } from "./modules/winners/WinnerHistory";
+import { fortunaAudio } from "./shared/audio/audioEngine";
 import { SplashScreen } from "./shared/components/SplashScreen";
+import { AppUpdater } from "./shared/components/AppUpdater";
 
 const securePick = <T,>(items: T[]): T => {
   const values = new Uint32Array(1);
@@ -34,82 +51,211 @@ const securePick = <T,>(items: T[]): T => {
   return items[Math.floor((values[0] / 2 ** 32) * items.length)];
 };
 
+const secureRandomDegrees = () => {
+  const values = new Uint32Array(1);
+  crypto.getRandomValues(values);
+  return (values[0] / 2 ** 32) * 360;
+};
+
+const modeLabels: Record<DrawMode, string> = {
+  casino: "Casino par/impar",
+  direct: "Ganador directo",
+  elimination: "Eliminación",
+};
+
+const numberParity = (number: number): Parity =>
+  number % 2 === 0 ? "even" : "odd";
+
 function App() {
   const [showSplash, setShowSplash] = useState(true);
+  const [screen, setScreen] = useState<"setup" | "roulette">("setup");
   const [isSpinning, setIsSpinning] = useState(false);
+  const [soundEnabled, setSoundEnabled] = useState(
+    () => localStorage.getItem("fortuna-real-sound") !== "off",
+  );
   const [spinRequest, setSpinRequest] = useState<{
-    participantId: string;
+    entryId: string;
     nonce: number;
+    ballLandingAngle: number;
   } | null>(null);
   const [currentResult, setCurrentResult] = useState<RoundResult | null>(null);
-  const pendingParticipant = useRef<Participant | null>(null);
+  const pendingSelection = useRef<RouletteEntry | null>(null);
+  const stopSpinSound = useRef<(() => void) | null>(null);
 
   const participants = useDrawStore((state) => state.participants);
   const eliminatedIds = useDrawStore((state) => state.eliminatedIds);
-  const pickedIds = useDrawStore((state) => state.pickedIds);
+  const blockedWinnerIds = useDrawStore((state) => state.blockedWinnerIds);
+  const eliminationParity = useDrawStore((state) => state.eliminationParity);
   const history = useDrawStore((state) => state.history);
   const mode = useDrawStore((state) => state.mode);
   const prize = useDrawStore((state) => state.prize);
+  const roundNumber = useDrawStore((state) => state.roundNumber);
+  const startDraw = useDrawStore((state) => state.startDraw);
   const recordSelection = useDrawStore((state) => state.recordSelection);
-  const resetDraw = useDrawStore((state) => state.resetDraw);
+  const recordParitySelection = useDrawStore((state) => state.recordParitySelection);
 
   const activeParticipants = useMemo(
-    () => participants.filter((person) => !eliminatedIds.includes(person.id)),
-    [eliminatedIds, participants],
+    () =>
+      participants.filter(
+        (person) =>
+          !eliminatedIds.includes(person.id) &&
+          !blockedWinnerIds.includes(person.id),
+      ),
+    [blockedWinnerIds, eliminatedIds, participants],
   );
 
+  const wheelEntries = useMemo<RouletteEntry[]>(() => {
+    const participantEntries = activeParticipants.map((person, index) => {
+      const number = index + 1;
+      const parity = numberParity(number);
+      return {
+        id: `participant-${person.id}`,
+        kind: "participant" as const,
+        label: person.name,
+        color: person.color,
+        number,
+        participantId: person.id,
+        parity,
+        disabled:
+          mode === "elimination" &&
+          eliminationParity !== null &&
+          parity !== eliminationParity,
+      };
+    });
+
+    if (mode !== "elimination") return participantEntries;
+    const specialStart = participantEntries.length + 1;
+    return [
+      ...participantEntries,
+      {
+        id: "special-even",
+        kind: "parity" as const,
+        label: "PAR",
+        color: "#09dfdf",
+        number: specialStart,
+        participantId: null,
+        parity: "even" as const,
+        disabled: eliminationParity !== null,
+      },
+      {
+        id: "special-odd",
+        kind: "parity" as const,
+        label: "IMPAR",
+        color: "#f3b52c",
+        number: specialStart + 1,
+        participantId: null,
+        parity: "odd" as const,
+        disabled: eliminationParity !== null,
+      },
+    ];
+  }, [activeParticipants, eliminationParity, mode]);
+
+  const selectableEntries = useMemo(
+    () => wheelEntries.filter((entry) => !entry.disabled),
+    [wheelEntries],
+  );
   const latestResult = currentResult ?? history[0] ?? null;
-  const champion =
-    mode === "elimination" && activeParticipants.length === 1
-      ? activeParticipants[0]
-      : null;
+  const sessionWinner =
+    mode === "direct" ? null : history.find((result) => result.kind === "winner") ?? null;
 
   useEffect(() => {
-    if (participants.length === 0) {
-      setCurrentResult(null);
-    }
-  }, [participants.length]);
+    fortunaAudio.setEnabled(soundEnabled);
+    localStorage.setItem("fortuna-real-sound", soundEnabled ? "on" : "off");
+  }, [soundEnabled]);
+
+  useEffect(
+    () => () => {
+      stopSpinSound.current?.();
+    },
+    [],
+  );
+
+  const enterRoulette = () => {
+    if (activeParticipants.length < 2) return;
+    startDraw();
+    setCurrentResult(null);
+    setSpinRequest(null);
+    setScreen("roulette");
+    fortunaAudio.playEnterGame();
+  };
+
+  const returnToSetup = () => {
+    if (isSpinning) return;
+    fortunaAudio.playClick();
+    setCurrentResult(null);
+    setSpinRequest(null);
+    startDraw();
+    setScreen("setup");
+  };
 
   const startSpin = () => {
-    if (isSpinning || activeParticipants.length < 2 || champion) return;
+    if (
+      isSpinning ||
+      selectableEntries.length === 0 ||
+      !!sessionWinner ||
+      ((mode === "casino" || mode === "elimination") && activeParticipants.length < 2)
+    ) return;
 
-    let eligible = activeParticipants.filter(
-      (person) => !pickedIds.includes(person.id),
-    );
-    if (eligible.length === 0) eligible = activeParticipants;
-
-    const selected = securePick(eligible);
-    pendingParticipant.current = selected;
+    const selected = securePick(selectableEntries);
+    pendingSelection.current = selected;
     setCurrentResult(null);
     setIsSpinning(true);
-    setSpinRequest({ participantId: selected.id, nonce: Date.now() });
+    setSpinRequest({
+      entryId: selected.id,
+      nonce: Date.now(),
+      ballLandingAngle: secureRandomDegrees(),
+    });
+    stopSpinSound.current?.();
+    stopSpinSound.current = fortunaAudio.startRoulette();
   };
 
-  const finishSpin = () => {
-    const selected = pendingParticipant.current;
-    if (!selected) return;
+  const finishSpin = useCallback(() => {
+    const selection = pendingSelection.current;
+    if (!selection) return;
 
-    const result = recordSelection(selected.id);
+    stopSpinSound.current?.();
+    stopSpinSound.current = null;
+    fortunaAudio.playBallDrop();
+    const result = selection.kind === "parity"
+      ? recordParitySelection(selection.parity, selection.number)
+      : recordSelection(selection.participantId as string, selection.number);
     setIsSpinning(false);
     setCurrentResult(result);
-    pendingParticipant.current = null;
-  };
+    pendingSelection.current = null;
 
-  const beginNewDraw = () => {
-    resetDraw();
+    window.setTimeout(
+      () => fortunaAudio.playResult(result.kind === "winner", result.parity),
+      170,
+    );
+  }, [recordParitySelection, recordSelection]);
+
+  const restartSession = () => {
+    if (isSpinning) return;
+    fortunaAudio.playClick();
+    startDraw();
     setCurrentResult(null);
     setSpinRequest(null);
   };
 
+  const toggleSound = () => {
+    setSoundEnabled((enabled) => {
+      const nextValue = !enabled;
+      fortunaAudio.setEnabled(nextValue);
+      if (nextValue) fortunaAudio.playClick();
+      return nextValue;
+    });
+  };
+
   const toggleFullscreen = async () => {
     try {
+      fortunaAudio.playClick();
       if (document.fullscreenElement) {
         await document.exitFullscreen();
       } else {
         await document.documentElement.requestFullscreen();
       }
     } catch {
-      // El WebView nativo puede gestionar esta función de forma diferente.
+      // Algunos WebView administran pantalla completa desde la ventana nativa.
     }
   };
 
@@ -118,219 +264,409 @@ function App() {
       {showSplash && <SplashScreen onDone={() => setShowSplash(false)} />}
 
       <main className={`app-shell ${showSplash ? "app-shell--waiting" : ""}`}>
-        <header className="topbar">
-          <div className="brand-lockup" aria-label="Fortuna Real">
-            <div className="brand-mark" aria-hidden="true">
-              <span className="brand-mark__ring" />
-              <Crown size={23} strokeWidth={1.7} />
-            </div>
-            <div>
-              <div className="brand-name">
-                FORTUNA <span>REAL</span>
-              </div>
-              <div className="brand-tagline">Sorteos con emoción real</div>
-            </div>
-          </div>
+        <Topbar
+          screen={screen}
+          soundEnabled={soundEnabled}
+          onToggleSound={toggleSound}
+          onToggleFullscreen={toggleFullscreen}
+          onBack={returnToSetup}
+          roundNumber={roundNumber}
+          activeCount={activeParticipants.length}
+        />
 
-          <div className="fairness-pill">
-            <ShieldCheck size={20} />
-            <div>
-              <strong>Selección justa activa</strong>
-              <span>Sin repetir nombres hasta completar el ciclo</span>
-            </div>
-          </div>
-
-          <div className="topbar-actions">
-            <button className="icon-button" aria-label="Sonido próximamente" title="Sonidos próximamente" disabled>
-              <Volume2 size={19} />
-            </button>
-            <button className="icon-button" aria-label="Configuración próximamente" title="Configuración próximamente" disabled>
-              <Settings2 size={19} />
-            </button>
-            <button className="icon-button" aria-label="Pantalla completa" onClick={toggleFullscreen}>
-              <Expand size={19} />
-            </button>
-          </div>
-        </header>
-
-        <section className="workspace">
-          <aside className="left-column">
-            <ParticipantPanel />
-            <DrawSetup />
-
-            <section className="panel launch-panel">
-              <div className="section-heading">
-                <span className="step-number">4</span>
-                <div>
-                  <h2>Iniciar</h2>
-                  <p>La fortuna decidirá</p>
-                </div>
-              </div>
-              <button
-                className={`start-button ${isSpinning ? "is-spinning" : ""}`}
-                type="button"
-                onClick={startSpin}
-                disabled={isSpinning || activeParticipants.length < 2 || !!champion}
-              >
-                {isSpinning ? (
-                  <>
-                    <span className="spinner-dot" /> Girando la ruleta…
-                  </>
-                ) : champion ? (
-                  <>
-                    <Trophy size={22} /> Sorteo finalizado
-                  </>
-                ) : (
-                  <>
-                    <span className="play-symbol">▶</span> Girar ruleta
-                  </>
-                )}
-              </button>
-              <button className="text-button" type="button" onClick={beginNewDraw}>
-                <RotateCcw size={15} /> Nuevo sorteo
-              </button>
-            </section>
-          </aside>
-
-          <section className="stage-column">
-            <div className="stage-heading">
-              <div>
-                <span className="eyebrow">JUEGO ACTIVO</span>
-                <h1>Ruleta de la fortuna</h1>
-              </div>
-              <div className="live-badge">
-                <span /> {isSpinning ? "EN MOVIMIENTO" : "LISTA PARA GIRAR"}
-              </div>
-            </div>
-
-            <div className="roulette-stage">
-              <div className="stage-glow stage-glow--one" />
-              <div className="stage-glow stage-glow--two" />
-              <RouletteWheel
-                participants={activeParticipants}
-                spinRequest={spinRequest}
-                isSpinning={isSpinning}
-                onSpinEnd={finishSpin}
-              />
-              <div className="wheel-caption">
-                <Sparkles size={16} />
-                {activeParticipants.length >= 2
-                  ? `${activeParticipants.length} nombres compiten en esta ronda`
-                  : "Agrega al menos 2 participantes para comenzar"}
-              </div>
-            </div>
-
-            <div className="stats-grid">
-              <StatCard
-                icon={<Target />}
-                tone="red"
-                label="Eliminados"
-                value={eliminatedIds.length}
-              />
-              <StatCard
-                icon={<Trophy />}
-                tone="gold"
-                label="Ganadores"
-                value={history.filter((item) => item.kind === "winner").length}
-              />
-              <StatCard
-                icon={<Users />}
-                tone="cyan"
-                label="Participantes"
-                value={participants.length}
-              />
-              <StatCard
-                icon={<CheckCircle2 />}
-                tone="green"
-                label="En juego"
-                value={activeParticipants.length}
-              />
-            </div>
-          </section>
-
-          <aside className="right-column">
-            <section className="panel prize-panel">
-              <div className="panel-title">
-                <Gift size={18} /> Premio
-              </div>
-              <div className="prize-content">
-                <div className="prize-icon"><Trophy size={35} /></div>
-                <div>
-                  <strong>{prize.trim() || "Premio sorpresa"}</strong>
-                  <span><CircleDollarSign size={14} /> 1 ganador</span>
-                </div>
-              </div>
-            </section>
-
-            <section className="panel rules-panel">
-              <div className="panel-title">
-                <WandSparkles size={18} /> Reglas del sorteo
-              </div>
-              <ul>
-                <li><CheckCircle2 /> Selección aleatoria y verificable.</li>
-                <li><CheckCircle2 /> Sin nombres repetidos durante el ciclo.</li>
-                <li><CheckCircle2 /> El modo eliminación deja un campeón.</li>
-                <li><CheckCircle2 /> Los resultados se guardan en este equipo.</li>
-              </ul>
-            </section>
-
-            <section className="panel result-panel">
-              <div className="panel-title">
-                <Dices size={18} /> Resultado actual
-              </div>
-              {champion ? (
-                <div className="mini-result mini-result--winner">
-                  <Medal size={26} />
-                  <span>Campeón final</span>
-                  <strong>{champion.name}</strong>
-                </div>
-              ) : latestResult ? (
-                <div className={`mini-result mini-result--${latestResult.kind}`}>
-                  {latestResult.kind === "winner" ? <Trophy size={24} /> : <Target size={24} />}
-                  <span>{latestResult.kind === "winner" ? "Ganador" : "Eliminado"}</span>
-                  <strong>{latestResult.participantName}</strong>
-                </div>
-              ) : (
-                <div className="empty-result">
-                  <Zap size={25} />
-                  <strong>Aún no hay resultados</strong>
-                  <span>Gira la ruleta para comenzar.</span>
-                </div>
-              )}
-            </section>
-
-            <section className="panel history-panel">
-              <div className="panel-title panel-title--spread">
-                <span><History size={18} /> Historial de rondas</span>
-                <small>{history.length}</small>
-              </div>
-              <div className="history-list">
-                {history.length === 0 ? (
-                  <div className="history-empty">Las jugadas aparecerán aquí.</div>
-                ) : (
-                  history.slice(0, 5).map((item, index) => (
-                    <div className="history-row" key={item.id}>
-                      <span>Ronda {history.length - index}</span>
-                      <strong>{item.participantName}</strong>
-                      <em className={item.kind}>{item.kind === "winner" ? "Ganó" : "Salió"}</em>
-                    </div>
-                  ))
-                )}
-              </div>
-            </section>
-          </aside>
-        </section>
+        {screen === "setup" ? (
+          <SetupScreen
+            onStart={enterRoulette}
+            participantCount={participants.length}
+            eligibleCount={activeParticipants.length}
+          />
+        ) : (
+          <RouletteScreen
+            participants={participants}
+            activeParticipants={activeParticipants}
+            blockedWinnerIds={blockedWinnerIds}
+            eliminatedIds={eliminatedIds}
+            eliminationParity={eliminationParity}
+            entries={wheelEntries}
+            selectableCount={selectableEntries.length}
+            history={history}
+            latestResult={latestResult}
+            mode={mode}
+            prize={prize}
+            roundNumber={roundNumber}
+            sessionWinner={sessionWinner}
+            isSpinning={isSpinning}
+            spinRequest={spinRequest}
+            onSpin={startSpin}
+            onSpinEnd={finishSpin}
+            onRestart={restartSession}
+          />
+        )}
       </main>
 
       {currentResult && (
-        <ResultReveal
-          result={currentResult}
-          champion={champion}
-          prize={prize}
-          onClose={() => setCurrentResult(null)}
-        />
+        <ResultReveal result={currentResult} onClose={() => setCurrentResult(null)} />
       )}
+      <AppUpdater />
     </div>
+  );
+}
+
+function Topbar({
+  screen,
+  soundEnabled,
+  onToggleSound,
+  onToggleFullscreen,
+  onBack,
+  roundNumber,
+  activeCount,
+}: {
+  screen: "setup" | "roulette";
+  soundEnabled: boolean;
+  onToggleSound: () => void;
+  onToggleFullscreen: () => void;
+  onBack: () => void;
+  roundNumber: number;
+  activeCount: number;
+}) {
+  return (
+    <header className="topbar">
+      <div className="brand-lockup" aria-label="Fortuna Real">
+        <div className="brand-mark" aria-hidden="true">
+          <span className="brand-mark__ring" />
+          <Crown size={23} strokeWidth={1.7} />
+        </div>
+        <div>
+          <div className="brand-name">FORTUNA <span>REAL</span></div>
+          <div className="brand-tagline">Sorteos con emoción real</div>
+        </div>
+      </div>
+
+      {screen === "roulette" ? (
+        <div className="round-pill">
+          <CircleDot size={19} />
+          <div>
+            <strong>Ronda {roundNumber}</strong>
+            <span>{activeCount} participantes disponibles</span>
+          </div>
+        </div>
+      ) : (
+        <div className="fairness-pill">
+          <ShieldCheck size={20} />
+          <div>
+            <strong>Configuración del sorteo</strong>
+            <span>La ruleta se adapta a la cantidad de nombres</span>
+          </div>
+        </div>
+      )}
+
+      <div className="topbar-actions">
+        {screen === "roulette" && (
+          <button className="back-button" type="button" onClick={onBack}>
+            <ArrowLeft size={17} /> Inicio
+          </button>
+        )}
+        <button
+          className={`icon-button ${soundEnabled ? "is-active" : ""}`}
+          aria-label={soundEnabled ? "Desactivar sonidos" : "Activar sonidos"}
+          title={soundEnabled ? "Desactivar sonidos" : "Activar sonidos"}
+          onClick={onToggleSound}
+        >
+          {soundEnabled ? <Volume2 size={19} /> : <VolumeX size={19} />}
+        </button>
+        <button className="icon-button" aria-label="Configuración próximamente" disabled>
+          <Settings2 size={19} />
+        </button>
+        <button className="icon-button" aria-label="Pantalla completa" onClick={onToggleFullscreen}>
+          <Expand size={19} />
+        </button>
+      </div>
+    </header>
+  );
+}
+
+function SetupScreen({
+  onStart,
+  participantCount,
+  eligibleCount,
+}: {
+  onStart: () => void;
+  participantCount: number;
+  eligibleCount: number;
+}) {
+  return (
+    <section className="setup-page">
+      <div className="setup-hero">
+        <div>
+          <span className="eyebrow">CREAR NUEVO SORTEO</span>
+          <h1>Prepara la fortuna</h1>
+          <p>Carga todos los nombres que necesites: solo aparecerán las casillas ocupadas.</p>
+        </div>
+        <div className="setup-summary">
+          <Users size={19} />
+          <span><strong>{participantCount}</strong> cargados · {eligibleCount} habilitados</span>
+        </div>
+      </div>
+
+      <div className="setup-grid">
+        <ParticipantPanel />
+        <div className="setup-right-column">
+          <DrawSetup />
+          <WinnerHistory />
+          <section className="panel setup-launch-card">
+            <div className="launch-copy">
+              <span className="step-number">4</span>
+              <div>
+                <h2>Entrar a la ruleta</h2>
+                <p>Necesitas al menos dos participantes habilitados.</p>
+              </div>
+            </div>
+            <button
+              type="button"
+              className="start-button setup-start-button"
+              onClick={onStart}
+              disabled={eligibleCount < 2}
+            >
+              <Play size={21} fill="currentColor" /> Iniciar sorteo
+            </button>
+          </section>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function RouletteScreen({
+  participants,
+  activeParticipants,
+  blockedWinnerIds,
+  eliminatedIds,
+  eliminationParity,
+  entries,
+  selectableCount,
+  history,
+  latestResult,
+  mode,
+  prize,
+  roundNumber,
+  sessionWinner,
+  isSpinning,
+  spinRequest,
+  onSpin,
+  onSpinEnd,
+  onRestart,
+}: {
+  participants: Participant[];
+  activeParticipants: Participant[];
+  blockedWinnerIds: string[];
+  eliminatedIds: string[];
+  eliminationParity: Parity | null;
+  entries: RouletteEntry[];
+  selectableCount: number;
+  history: RoundResult[];
+  latestResult: RoundResult | null;
+  mode: DrawMode;
+  prize: string;
+  roundNumber: number;
+  sessionWinner: RoundResult | null;
+  isSpinning: boolean;
+  spinRequest: { entryId: string; nonce: number; ballLandingAngle: number } | null;
+  onSpin: () => void;
+  onSpinEnd: () => void;
+  onRestart: () => void;
+}) {
+  const cannotSpin =
+    isSpinning ||
+    selectableCount === 0 ||
+    !!sessionWinner ||
+    ((mode === "casino" || mode === "elimination") && activeParticipants.length < 2);
+
+  return (
+    <section className="casino-workspace">
+      <aside className="panel casino-roster-panel">
+        <div className="panel-title panel-title--spread">
+          <span><Users size={18} /> Participantes</span>
+          <small>{activeParticipants.length}/{participants.length}</small>
+        </div>
+        <p className="roster-help">El número enlaza cada nombre con su casilla actual.</p>
+        <div className="roster-list" aria-label="Todos los participantes del sorteo">
+          {participants.map((person) => {
+            const activeIndex = activeParticipants.findIndex((active) => active.id === person.id);
+            const isEliminated = eliminatedIds.includes(person.id);
+            const isWinner = blockedWinnerIds.includes(person.id);
+            const parity = activeIndex >= 0 ? numberParity(activeIndex + 1) : null;
+            const isPaused =
+              mode === "elimination" &&
+              eliminationParity !== null &&
+              parity !== null &&
+              parity !== eliminationParity;
+            const rowClasses = [
+              "roster-row",
+              isEliminated ? "is-eliminated" : "",
+              isWinner ? "is-winner" : "",
+              isPaused ? "is-paused" : "",
+            ].filter(Boolean).join(" ");
+            const status = isWinner
+              ? "Ganador"
+              : isEliminated
+                ? "Eliminado"
+                : isPaused
+                  ? "No juega"
+                  : parity === "even"
+                    ? "Par"
+                    : "Impar";
+            return (
+              <div className={rowClasses} key={person.id}>
+                <span className="roster-number">{activeIndex >= 0 ? activeIndex + 1 : "—"}</span>
+                <i style={{ background: person.color }} />
+                <strong title={person.name}>{person.name}</strong>
+                <em>{status}</em>
+              </div>
+            );
+          })}
+        </div>
+        <div className="roster-legend">
+          <span><i className="even-dot" /> Pares</span>
+          <span><i className="odd-dot" /> Impares</span>
+        </div>
+      </aside>
+
+      <section className="casino-stage-column">
+        <div className="stage-heading casino-stage-heading">
+          <div>
+            <span className="eyebrow">{modeLabels[mode]} · RONDA {roundNumber}</span>
+            <h1>Ruleta de casino</h1>
+          </div>
+          <div className="live-badge"><span /> {isSpinning ? "PELOTA EN JUEGO" : entries.length >= 33 ? "GIRO DE ESPERA" : "MESA ABIERTA"}</div>
+        </div>
+
+        <div className="roulette-stage casino-stage">
+          <div className="stage-glow stage-glow--one" />
+          <div className="stage-glow stage-glow--two" />
+          <div className="wheel-entry-count"><strong>{entries.length}</strong> casillas visibles</div>
+          <RouletteWheel
+            entries={entries}
+            spinRequest={spinRequest}
+            isSpinning={isSpinning}
+            onSpinEnd={onSpinEnd}
+          />
+          <div className="wheel-caption">
+            <Sparkles size={16} />
+            {entries.length > 32
+              ? "Cada número corresponde al nombre visible en la lista lateral"
+              : "Cada casilla muestra su número y el nombre correspondiente"}
+          </div>
+        </div>
+
+        <div className="casino-controls">
+          <button
+            className={`start-button casino-spin-button ${isSpinning ? "is-spinning" : ""}`}
+            type="button"
+            onClick={onSpin}
+            disabled={cannotSpin}
+          >
+            {isSpinning ? (
+              <><span className="spinner-dot" /> La pelota está girando…</>
+            ) : sessionWinner ? (
+              <><Trophy size={21} /> Sorteo finalizado</>
+            ) : selectableCount === 0 ? (
+              <>No hay casillas habilitadas</>
+            ) : (
+              <><Play size={20} fill="currentColor" /> Lanzar pelota</>
+            )}
+          </button>
+          <button className="text-button" type="button" onClick={onRestart} disabled={isSpinning}>
+            <RotateCcw size={15} /> Reiniciar ronda con los habilitados
+          </button>
+        </div>
+      </section>
+
+      <aside className="casino-info-column">
+        <section className="panel casino-mode-card">
+          <div className="panel-title"><Dices size={18} /> {modeLabels[mode]}</div>
+          {mode === "casino" ? (
+            <div className="compact-rule">
+              <div><span className="parity-token parity-token--even">PAR</span><p>Pasan 2, 4, 6, 8…</p></div>
+              <div><span className="parity-token parity-token--odd">IMPAR</span><p>Pasan 1, 3, 5, 7…</p></div>
+            </div>
+          ) : mode === "elimination" ? (
+            <div className="compact-rule">
+              <div><span className="parity-token parity-token--even">PAR</span><p>La próxima eliminación será entre los pares</p></div>
+              <div><span className="parity-token parity-token--odd">IMPAR</span><p>La próxima eliminación será entre los impares</p></div>
+              {eliminationParity && (
+                <div className="active-filter-note">
+                  Una eliminación entre <strong>{eliminationParity === "even" ? "PARES" : "IMPARES"}</strong>; después vuelven todos.
+                </div>
+              )}
+            </div>
+          ) : (
+            <p className="mode-description">Cada ganador queda fuera hasta que lo habilites de nuevo.</p>
+          )}
+        </section>
+
+        <section className="panel casino-prize-card">
+          <div className="panel-title"><Gift size={18} /> Premio actual</div>
+          <div className="compact-prize"><Trophy size={28} /><strong>{prize || "Premio sorpresa"}</strong></div>
+        </section>
+
+        <section className="panel casino-current-result">
+          <div className="panel-title"><Target size={18} /> Resultado actual</div>
+          {sessionWinner ? (
+            <div className="mini-result mini-result--winner"><Trophy size={25} /><span>Ganador final</span><strong>{sessionWinner.participantName}</strong></div>
+          ) : latestResult ? (
+            <div className={`round-result-summary round-result-summary--${latestResult.kind}`}>
+              <span className="landed-number"><Hash size={15} /> {latestResult.landedNumber}</span>
+              <strong>{latestResult.participantName}</strong>
+              <em>
+                {latestResult.kind === "qualified"
+                  ? latestResult.parity === "even" ? "Pasan pares" : "Pasan impares"
+                  : latestResult.kind === "parity-selected"
+                    ? `Filtro ${latestResult.participantName}`
+                    : latestResult.kind === "winner"
+                      ? "Ganador"
+                      : "Eliminado"}
+              </em>
+            </div>
+          ) : (
+            <div className="empty-result"><CircleDot size={25} /><strong>Esperando la pelota</strong><span>Lánzala para iniciar la ronda.</span></div>
+          )}
+        </section>
+
+        <WinnerHistory compact />
+
+        <section className="panel history-panel casino-history-panel">
+          <div className="panel-title panel-title--spread">
+            <span><History size={18} /> Historial</span><small>{history.length}</small>
+          </div>
+          <div className="history-list">
+            {history.length === 0 ? (
+              <div className="history-empty">Las rondas aparecerán aquí.</div>
+            ) : (
+              history.map((result) => (
+                <div className="history-row casino-history-row" key={result.id}>
+                  <span>R{result.round} · #{result.landedNumber}</span>
+                  <strong>{result.participantName}</strong>
+                  <em className={result.kind}>
+                    {result.kind === "qualified"
+                      ? result.parity === "even" ? "PAR" : "IMPAR"
+                      : result.kind === "parity-selected"
+                        ? "FILTRO"
+                        : result.kind === "winner"
+                          ? "GANÓ"
+                          : "FUERA"}
+                  </em>
+                </div>
+              ))
+            )}
+          </div>
+        </section>
+
+        <div className="casino-stats-row">
+          <StatCard icon={<Users />} tone="cyan" label="Activos" value={activeParticipants.length} />
+          <StatCard icon={<CheckCircle2 />} tone="green" label="Casillas" value={entries.length} />
+        </div>
+      </aside>
+    </section>
   );
 }
 

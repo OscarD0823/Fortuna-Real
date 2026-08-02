@@ -1,5 +1,13 @@
 import { useState } from "react";
-import { ClipboardPaste, Plus, Trash2, UserPlus, Users, X } from "lucide-react";
+import {
+  ClipboardPaste,
+  ListChecks,
+  Plus,
+  Trash2,
+  UserPlus,
+  Users,
+  X,
+} from "lucide-react";
 import { useDrawStore } from "./drawStore";
 
 export function ParticipantPanel() {
@@ -8,7 +16,6 @@ export function ParticipantPanel() {
   const [showBulk, setShowBulk] = useState(false);
   const [notice, setNotice] = useState("");
   const participants = useDrawStore((state) => state.participants);
-  const eliminatedIds = useDrawStore((state) => state.eliminatedIds);
   const addNames = useDrawStore((state) => state.addNames);
   const removeParticipant = useDrawStore((state) => state.removeParticipant);
   const clearParticipants = useDrawStore((state) => state.clearParticipants);
@@ -27,7 +34,9 @@ export function ParticipantPanel() {
     const outcome = addNames(bulkText.split(/[\n,;]+/));
     setNotice(
       `${outcome.added} agregado${outcome.added === 1 ? "" : "s"}` +
-        (outcome.skipped ? ` · ${outcome.skipped} repetido${outcome.skipped === 1 ? "" : "s"}` : ""),
+        (outcome.skipped
+          ? ` · ${outcome.skipped} repetido${outcome.skipped === 1 ? "" : "s"}`
+          : ""),
     );
     if (outcome.added) {
       setBulkText("");
@@ -36,18 +45,18 @@ export function ParticipantPanel() {
   };
 
   return (
-    <section className="panel participant-panel">
+    <section className="panel participant-panel setup-participants">
       <div className="section-heading">
         <span className="step-number">1</span>
         <div>
-          <h2>Participantes</h2>
-          <p>Agrega o pega los nombres</p>
+          <h2>Cargar participantes</h2>
+          <p>Sin casillas vacías: la rueda se adapta a cada lista</p>
         </div>
         <span className="count-pill"><Users size={14} /> {participants.length}</span>
       </div>
 
       <form
-        className="name-entry"
+        className="name-entry setup-name-entry"
         onSubmit={(event) => {
           event.preventDefault();
           addSingle();
@@ -61,14 +70,18 @@ export function ParticipantPanel() {
           maxLength={42}
           aria-label="Nombre del participante"
         />
-        <button type="submit" aria-label="Agregar participante" disabled={!name.trim()}>
+        <button
+          type="submit"
+          aria-label="Agregar participante"
+          disabled={!name.trim()}
+        >
           <Plus size={18} />
         </button>
       </form>
 
-      <div className="participant-actions">
+      <div className="participant-actions setup-participant-actions">
         <button type="button" onClick={() => setShowBulk((visible) => !visible)}>
-          <ClipboardPaste size={16} /> Pegar lista
+          <ClipboardPaste size={16} /> Pegar varios nombres
         </button>
         <button
           type="button"
@@ -79,12 +92,12 @@ export function ParticipantPanel() {
           }}
           disabled={participants.length === 0}
         >
-          <Trash2 size={15} /> Limpiar
+          <Trash2 size={15} /> Limpiar lista
         </button>
       </div>
 
       {showBulk && (
-        <div className="bulk-entry">
+        <div className="bulk-entry setup-bulk-entry">
           <textarea
             value={bulkText}
             onChange={(event) => setBulkText(event.target.value)}
@@ -93,7 +106,12 @@ export function ParticipantPanel() {
           />
           <div>
             <button type="button" onClick={() => setShowBulk(false)}>Cancelar</button>
-            <button type="button" className="primary-small" onClick={addBulk} disabled={!bulkText.trim()}>
+            <button
+              type="button"
+              className="primary-small"
+              onClick={addBulk}
+              disabled={!bulkText.trim()}
+            >
               Agregar nombres
             </button>
           </div>
@@ -102,18 +120,23 @@ export function ParticipantPanel() {
 
       {notice && <div className="inline-notice" role="status">{notice}</div>}
 
-      <div className="participant-list" aria-label="Lista de participantes">
+      <div className="full-roster-heading">
+        <span><ListChecks size={15} /> Lista completa</span>
+        <small>{participants.length} en total</small>
+      </div>
+      <div className="participant-list participant-list--full" aria-label="Lista completa de participantes">
         {participants.length === 0 ? (
-          <div className="participant-empty">Tu lista está vacía.</div>
+          <div className="participant-empty">
+            <Users size={30} />
+            <strong>Aún no hay participantes</strong>
+            <span>Escribe un nombre o pega una lista completa.</span>
+          </div>
         ) : (
-          participants.slice(0, 6).map((person) => (
-            <div
-              className={`participant-chip ${eliminatedIds.includes(person.id) ? "is-eliminated" : ""}`}
-              key={person.id}
-            >
-              <span style={{ background: person.color }} />
-              <strong>{person.name}</strong>
-              {eliminatedIds.includes(person.id) && <em>fuera</em>}
+          participants.map((person, index) => (
+            <div className="participant-chip participant-chip--setup" key={person.id}>
+              <span className="participant-order">{index + 1}</span>
+              <i style={{ background: person.color }} />
+              <strong title={person.name}>{person.name}</strong>
               <button
                 type="button"
                 aria-label={`Eliminar a ${person.name}`}
@@ -123,9 +146,6 @@ export function ParticipantPanel() {
               </button>
             </div>
           ))
-        )}
-        {participants.length > 6 && (
-          <div className="more-participants">+ {participants.length - 6} nombres más</div>
         )}
       </div>
     </section>

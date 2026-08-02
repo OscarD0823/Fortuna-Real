@@ -1,35 +1,22 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import type { DrawMode, Participant, RoundResult } from "../../core/types";
+import type {
+  DrawMode,
+  Participant,
+  Parity,
+  RoundResult,
+  WinnerRecord,
+} from "../../core/types";
 
 const PALETTE = [
-  "#00d8d8",
-  "#e6a10d",
-  "#ef442c",
-  "#12b981",
-  "#008d91",
-  "#f3c34d",
-  "#da3124",
-  "#43d17d",
-  "#06777d",
-  "#ffb315",
-  "#f05a3c",
-  "#06bcae",
-];
-
-const DEMO_NAMES = [
-  "Valentina",
-  "Andrés",
-  "Camila",
-  "Martín",
-  "Fernanda",
-  "Javier",
-  "Lucas",
-  "Bruno",
-  "Tomás",
-  "Alejandra",
-  "Victoria",
-  "Emilio",
+  "#14d9d5",
+  "#e7a61a",
+  "#e34834",
+  "#28bf77",
+  "#138c98",
+  "#f0bf45",
+  "#d8342a",
+  "#50cf87",
 ];
 
 const makeId = () =>
@@ -43,126 +30,314 @@ const makeParticipant = (name: string, index: number): Participant => ({
   color: PALETTE[index % PALETTE.length],
 });
 
+interface AddNamesResult {
+  added: number;
+  skipped: number;
+}
+
 interface DrawState {
   participants: Participant[];
   eliminatedIds: string[];
-  pickedIds: string[];
   history: RoundResult[];
+  winnerRecords: WinnerRecord[];
+  blockedWinnerIds: string[];
+  eliminationParity: Parity | null;
   mode: DrawMode;
   prize: string;
-  addNames: (names: string[]) => { added: number; skipped: number };
+  roundNumber: number;
+  addNames: (names: string[]) => AddNamesResult;
   removeParticipant: (id: string) => void;
   clearParticipants: () => void;
   setMode: (mode: DrawMode) => void;
   setPrize: (prize: string) => void;
-  recordSelection: (participantId: string) => RoundResult;
+  startDraw: () => void;
+  recordSelection: (participantId: string, landedNumber: number) => RoundResult;
+  recordParitySelection: (parity: Parity, landedNumber: number) => RoundResult;
+  reenableWinner: (participantId: string) => void;
+  reenableAllWinners: () => void;
+  clearWinnerHistory: () => void;
   resetDraw: () => void;
 }
+
+const createWinnerRecord = (
+  participant: Participant,
+  prize: string,
+  mode: DrawMode,
+): WinnerRecord => ({
+  id: makeId(),
+  participantId: participant.id,
+  participantName: participant.name,
+  prize: prize.trim() || "Premio del sorteo",
+  mode,
+  createdAt: new Date().toISOString(),
+});
 
 export const useDrawStore = create<DrawState>()(
   persist(
     (set, get) => ({
-      participants: DEMO_NAMES.map(makeParticipant),
+      participants: [],
       eliminatedIds: [],
-      pickedIds: [],
       history: [],
-      mode: "direct",
+      winnerRecords: [],
+      blockedWinnerIds: [],
+      eliminationParity: null,
+      mode: "casino",
       prize: "Premio del sorteo",
+      roundNumber: 1,
 
       addNames: (rawNames) => {
         const state = get();
         const existing = new Set(
           state.participants.map((person) => person.name.trim().toLocaleLowerCase()),
         );
-        const uniqueNewNames: string[] = [];
+        const uniqueNames: string[] = [];
         let skipped = 0;
 
         rawNames.forEach((rawName) => {
           const name = rawName.trim().replace(/\s+/g, " ");
           const key = name.toLocaleLowerCase();
-          if (!name || existing.has(key)) {
-            if (name) skipped += 1;
+          if (!name) return;
+          if (existing.has(key)) {
+            skipped += 1;
             return;
           }
           existing.add(key);
-          uniqueNewNames.push(name.slice(0, 42));
+          uniqueNames.push(name.slice(0, 42));
         });
 
-        if (uniqueNewNames.length > 0) {
+        if (uniqueNames.length > 0) {
           set((current) => ({
             participants: [
               ...current.participants,
-              ...uniqueNewNames.map((name, index) =>
-                makeParticipant(name, current.participants.length + index),
+              ...uniqueNames.map((participantName, index) =>
+                makeParticipant(participantName, current.participants.length + index),
               ),
             ],
           }));
         }
-        return { added: uniqueNewNames.length, skipped };
+
+        return { added: uniqueNames.length, skipped };
       },
 
       removeParticipant: (id) =>
         set((state) => ({
           participants: state.participants.filter((person) => person.id !== id),
           eliminatedIds: state.eliminatedIds.filter((value) => value !== id),
-          pickedIds: state.pickedIds.filter((value) => value !== id),
           history: state.history.filter((result) => result.participantId !== id),
+          winnerRecords: state.winnerRecords.filter((winner) => winner.participantId !== id),
+          blockedWinnerIds: state.blockedWinnerIds.filter((value) => value !== id),
         })),
 
       clearParticipants: () =>
-        set({ participants: [], eliminatedIds: [], pickedIds: [], history: [] }),
+        set({
+          participants: [],
+          eliminatedIds: [],
+          history: [],
+          winnerRecords: [],
+          blockedWinnerIds: [],
+          eliminationParity: null,
+          roundNumber: 1,
+        }),
 
       setMode: (mode) =>
-        set({ mode, eliminatedIds: [], pickedIds: [], history: [] }),
+        set({
+          mode,
+          eliminatedIds: [],
+          history: [],
+          eliminationParity: null,
+          roundNumber: 1,
+        }),
 
       setPrize: (prize) => set({ prize }),
 
-      recordSelection: (participantId) => {
+      startDraw: () =>
+        set({
+          eliminatedIds: [],
+          history: [],
+          eliminationParity: null,
+          roundNumber: 1,
+        }),
+
+      recordSelection: (participantId, landedNumber) => {
         const state = get();
-        const participant = state.participants.find(
-          (person) => person.id === participantId,
-        );
+        const participant = state.participants.find((person) => person.id === participantId);
         if (!participant) throw new Error("El participante ya no existe.");
+
+        const activeParticipants = state.participants.filter(
+          (person) =>
+            !state.eliminatedIds.includes(person.id) &&
+            !state.blockedWinnerIds.includes(person.id),
+        );
+        const parity: Parity = landedNumber % 2 === 0 ? "even" : "odd";
+        let resultParticipant = participant;
+        let selectedParticipantName: string | undefined;
+        let kind: RoundResult["kind"] = "winner";
+        let remainingCount = activeParticipants.length;
+        let eligibleCount = activeParticipants.length;
+        let nextEliminatedIds = state.eliminatedIds;
+        let nextBlockedWinnerIds = state.blockedWinnerIds;
+        let nextWinnerRecords = state.winnerRecords;
+        let nextRound = state.roundNumber;
+        let nextEliminationParity = state.eliminationParity;
+
+        if (state.mode === "casino") {
+          const survivors = activeParticipants.filter(
+            (_, index) => (index + 1) % 2 === landedNumber % 2,
+          );
+          const survivorIds = new Set(survivors.map((person) => person.id));
+          const newlyEliminated = activeParticipants
+            .filter((person) => !survivorIds.has(person.id))
+            .map((person) => person.id);
+
+          nextEliminatedIds = [...state.eliminatedIds, ...newlyEliminated];
+          remainingCount = survivors.length;
+          eligibleCount = survivors.length;
+          kind = survivors.length === 1 ? "winner" : "qualified";
+
+          if (kind === "winner") {
+            resultParticipant = survivors[0];
+            selectedParticipantName = participant.name;
+            nextBlockedWinnerIds = Array.from(
+              new Set([...state.blockedWinnerIds, resultParticipant.id]),
+            );
+            nextWinnerRecords = [
+              createWinnerRecord(resultParticipant, state.prize, state.mode),
+              ...state.winnerRecords,
+            ];
+          } else {
+            nextRound += 1;
+          }
+        } else if (state.mode === "elimination") {
+          nextEliminatedIds = Array.from(
+            new Set([...state.eliminatedIds, participantId]),
+          );
+          const remaining = activeParticipants.filter((person) => person.id !== participantId);
+          remainingCount = remaining.length;
+          eligibleCount = remaining.length;
+          nextEliminationParity = null;
+
+          if (remaining.length === 1) {
+            kind = "winner";
+            resultParticipant = remaining[0];
+            selectedParticipantName = participant.name;
+            eligibleCount = 1;
+            nextBlockedWinnerIds = Array.from(
+              new Set([...state.blockedWinnerIds, resultParticipant.id]),
+            );
+            nextWinnerRecords = [
+              createWinnerRecord(resultParticipant, state.prize, state.mode),
+              ...state.winnerRecords,
+            ];
+          } else {
+            kind = "eliminated";
+            nextRound += 1;
+          }
+        } else {
+          remainingCount = Math.max(0, activeParticipants.length - 1);
+          eligibleCount = remainingCount;
+          nextBlockedWinnerIds = Array.from(
+            new Set([...state.blockedWinnerIds, participantId]),
+          );
+          nextWinnerRecords = [
+            createWinnerRecord(participant, state.prize, state.mode),
+            ...state.winnerRecords,
+          ];
+        }
 
         const result: RoundResult = {
           id: makeId(),
-          participantId,
-          participantName: participant.name,
-          kind: state.mode === "direct" ? "winner" : "eliminated",
+          participantId: resultParticipant.id,
+          participantName: resultParticipant.name,
+          selectedParticipantName,
+          kind,
+          landedNumber,
+          parity,
+          mode: state.mode,
+          prize: kind === "winner" ? state.prize.trim() || "Premio del sorteo" : undefined,
+          round: state.roundNumber,
+          remainingCount,
+          eligibleCount,
           createdAt: new Date().toISOString(),
         };
 
-        const activeIds = state.participants
-          .filter((person) => !state.eliminatedIds.includes(person.id))
-          .map((person) => person.id);
-        const pickedWithinActive = state.pickedIds.filter((id) =>
-          activeIds.includes(id),
-        );
-        const completesCycle = pickedWithinActive.length + 1 >= activeIds.length;
-
         set({
           history: [result, ...state.history],
-          pickedIds: completesCycle ? [] : [...pickedWithinActive, participantId],
-          eliminatedIds:
-            state.mode === "elimination"
-              ? [...state.eliminatedIds, participantId]
-              : state.eliminatedIds,
+          eliminatedIds: nextEliminatedIds,
+          blockedWinnerIds: nextBlockedWinnerIds,
+          winnerRecords: nextWinnerRecords,
+          roundNumber: nextRound,
+          eliminationParity: nextEliminationParity,
         });
 
         return result;
       },
 
-      resetDraw: () => set({ eliminatedIds: [], pickedIds: [], history: [] }),
+      recordParitySelection: (parity, landedNumber) => {
+        const state = get();
+        const activeParticipants = state.participants.filter(
+          (person) =>
+            !state.eliminatedIds.includes(person.id) &&
+            !state.blockedWinnerIds.includes(person.id),
+        );
+        const eligibleCount = activeParticipants.filter(
+          (_, index) => ((index + 1) % 2 === 0 ? "even" : "odd") === parity,
+        ).length;
+        const parityName = parity === "even" ? "PAR" : "IMPAR";
+        const result: RoundResult = {
+          id: makeId(),
+          participantId: null,
+          participantName: parityName,
+          kind: "parity-selected",
+          landedNumber,
+          parity,
+          mode: state.mode,
+          round: state.roundNumber,
+          remainingCount: activeParticipants.length,
+          eligibleCount,
+          createdAt: new Date().toISOString(),
+        };
+
+        set({
+          eliminationParity: parity,
+          history: [result, ...state.history],
+          roundNumber: state.roundNumber + 1,
+        });
+        return result;
+      },
+
+      reenableWinner: (participantId) =>
+        set((state) => ({
+          blockedWinnerIds: state.blockedWinnerIds.filter((id) => id !== participantId),
+          eliminatedIds: state.eliminatedIds.filter((id) => id !== participantId),
+        })),
+
+      reenableAllWinners: () =>
+        set((state) => ({
+          blockedWinnerIds: [],
+          eliminatedIds: state.eliminatedIds.filter(
+            (id) => !state.blockedWinnerIds.includes(id),
+          ),
+        })),
+
+      clearWinnerHistory: () =>
+        set({ winnerRecords: [], blockedWinnerIds: [] }),
+
+      resetDraw: () =>
+        set({
+          eliminatedIds: [],
+          history: [],
+          eliminationParity: null,
+          roundNumber: 1,
+        }),
     }),
     {
-      name: "fortuna-real-draw-v1",
+      name: "fortuna-real-draw-v2",
       partialize: (state) => ({
         participants: state.participants,
-        eliminatedIds: state.eliminatedIds,
-        pickedIds: state.pickedIds,
-        history: state.history,
         mode: state.mode,
         prize: state.prize,
+        winnerRecords: state.winnerRecords,
+        blockedWinnerIds: state.blockedWinnerIds,
       }),
     },
   ),

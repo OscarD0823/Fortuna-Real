@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Fortuna Real",
-  "version": "0.1.0",
-  "identifier": "com.fortunareal.app",
+  "version": "0.2.0",
+  "identifier": "com.fortunareal.desktop",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
@@ -27,13 +27,44 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": "nsis",
+    "createUpdaterArtifacts": true,
+    "publisher": "Fortuna Real",
+    "category": "CasinoGame",
+    "shortDescription": "Sorteos con emoción real",
+    "longDescription": "Fortuna Real es una aplicación de escritorio para realizar sorteos mediante una ruleta animada, con modos de ganador directo y eliminación.",
+    "copyright": "Copyright © 2026 Fortuna Real",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "windows": {
+      "webviewInstallMode": {
+        "type": "offlineInstaller",
+        "silent": true
+      },
+      "nsis": {
+        "installMode": "currentUser",
+        "languages": ["Spanish"],
+        "displayLanguageSelector": false,
+        "compression": "lzma",
+        "startMenuFolder": "Fortuna Real",
+        "installerIcon": "icons/icon.ico"
+      }
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDgyREIyM0IzNEQwNDU1RjgKUldUNFZRUk5zeVBiZ2t6bE9YQ3pIUDJWN2lLeUE3RTMwYXNxcUFiaFRmS1JOUVd2Nm9JeHUwZ0MK",
+      "endpoints": [
+        "https://github.com/OscarD0823/Fortuna-Real/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
   }
 }
