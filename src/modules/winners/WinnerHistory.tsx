@@ -53,16 +53,20 @@ export function WinnerHistory({ compact = false }: { compact?: boolean }) {
                 <div className="winner-group__header">
                   <span className="winner-medal">{group.awards.length}</span>
                   <strong>{group.participantName}</strong>
-                  {!compact && (
-                    <button
-                      type="button"
-                      className={isBlocked ? "winner-enable" : "winner-enabled"}
-                      onClick={() => isBlocked && reenableWinner(group.participantId)}
-                      disabled={!isBlocked}
-                    >
-                      <RotateCcw size={13} /> {isBlocked ? "Habilitar" : "Habilitado"}
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    className={isBlocked ? "winner-enable" : "winner-enabled"}
+                    onClick={() => isBlocked && reenableWinner(group.participantId)}
+                    disabled={!isBlocked}
+                    aria-label={
+                      isBlocked
+                        ? `Permitir que ${group.participantName} participe otra vez`
+                        : `${group.participantName} ya puede participar`
+                    }
+                  >
+                    <RotateCcw size={13} />
+                    {isBlocked ? (compact ? "Incluir" : "Volver a incluir") : "Participando"}
+                  </button>
                 </div>
                 <div className="winner-awards">
                   {group.awards.map((award) => (
@@ -81,6 +85,11 @@ export function WinnerHistory({ compact = false }: { compact?: boolean }) {
         <button type="button" className="enable-all-winners" onClick={reenableAllWinners}>
           <RotateCcw size={15} /> Habilitar nuevamente a todos los ganadores
         </button>
+      )}
+      {!compact && groups.length > 0 && (
+        <p className="winner-participation-help">
+          Volver a incluir no borra ningún premio: solo permite que esa persona aparezca de nuevo en la ruleta.
+        </p>
       )}
     </section>
   );

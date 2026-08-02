@@ -87,7 +87,7 @@ export function DrawSetup() {
         {mode === "direct" && (
           <div className="direct-rule-preview">
             <Trophy size={17} />
-            <p>Cada ganador queda fuera de las siguientes tiradas hasta que pulses “Habilitar”. Sus premios se guardan aunque cambies de modo.</p>
+            <p>Cada ganador queda fuera de las siguientes tiradas hasta que pulses “Volver a incluir”. Sus premios se guardan aunque cambies de modo.</p>
           </div>
         )}
 

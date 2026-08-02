@@ -1,14 +1,18 @@
+import type { RoundResult } from "../../core/types";
+
 type StopSound = () => void;
 
 class FortunaAudioEngine {
   private context: AudioContext | null = null;
   private enabled = true;
+  private announcementTimer: number | null = null;
 
   setEnabled(enabled: boolean) {
     this.enabled = enabled;
     if (!enabled && this.context?.state === "running") {
       void this.context.suspend();
     }
+    if (!enabled) this.cancelAnnouncement();
   }
 
   private getContext() {
@@ -91,7 +95,47 @@ class FortunaAudioEngine {
     });
   }
 
+  private cancelAnnouncement() {
+    if (this.announcementTimer !== null) {
+      globalThis.clearTimeout(this.announcementTimer);
+      this.announcementTimer = null;
+    }
+    if (typeof window !== "undefined" && "speechSynthesis" in window) {
+      window.speechSynthesis.cancel();
+    }
+  }
+
+  announceResult(result: RoundResult) {
+    if (!this.enabled || (result.kind !== "winner" && result.kind !== "eliminated")) return;
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+    if (typeof SpeechSynthesisUtterance === "undefined") return;
+
+    this.cancelAnnouncement();
+    const message = result.kind === "winner"
+      ? `Atención. ${result.participantName} es el ganador. Premio: ${result.prize || "premio del sorteo"}.`
+      : `Participante número ${result.landedNumber}. ${result.participantName}. Eliminado.`;
+
+    this.announcementTimer = window.setTimeout(() => {
+      const announcement = new SpeechSynthesisUtterance(message);
+      const spanishVoices = window.speechSynthesis.getVoices().filter(
+        (voice) => voice.lang.toLocaleLowerCase().startsWith("es"),
+      );
+      announcement.voice = spanishVoices.find(
+        (voice) => /colombia|mexico|mexican|sabina|helena|pablo|jorge/i.test(
+          `${voice.name} ${voice.lang}`,
+        ),
+      ) ?? spanishVoices[0] ?? null;
+      announcement.lang = announcement.voice?.lang || "es-CO";
+      announcement.rate = result.kind === "winner" ? 0.86 : 0.78;
+      announcement.pitch = result.kind === "winner" ? 0.86 : 0.68;
+      announcement.volume = 1;
+      this.announcementTimer = null;
+      window.speechSynthesis.speak(announcement);
+    }, result.kind === "winner" ? 950 : 720);
+  }
+
   startRoulette(): StopSound {
+    this.cancelAnnouncement();
     const context = this.getContext();
     if (!context) return () => undefined;
 

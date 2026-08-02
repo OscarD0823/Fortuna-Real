@@ -1,12 +1,16 @@
-import { Binary, Crown, Target, Trophy, X } from "lucide-react";
+import { Binary, Crown, RotateCcw, Target, Trophy, Volume2, VolumeX, X } from "lucide-react";
 import type { RoundResult } from "../../core/types";
 
 export function ResultReveal({
   result,
   onClose,
+  onReenableWinner,
+  soundEnabled,
 }: {
   result: RoundResult;
   onClose: () => void;
+  onReenableWinner?: () => void;
+  soundEnabled: boolean;
 }) {
   const isWinner = result.kind === "winner";
   const isQualifiedRound = result.kind === "qualified";
@@ -37,6 +41,17 @@ export function ResultReveal({
         <div className="reveal-icon">
           {isWinner ? <Crown size={51} /> : isQualifiedRound || isParitySelection ? <Binary size={50} /> : <Target size={48} />}
         </div>
+
+        {(isWinner || (!isQualifiedRound && !isParitySelection)) && (
+          <div className="reveal-announcement" aria-live="assertive">
+            {soundEnabled ? <Volume2 size={14} /> : <VolumeX size={14} />}
+            <span>
+              {soundEnabled
+                ? isWinner ? "Anuncio por voz: ganador" : "Anuncio por voz: eliminado"
+                : "Anuncio por voz silenciado"}
+            </span>
+          </div>
+        )}
 
         {isParitySelection ? (
           <>
@@ -78,15 +93,25 @@ export function ResultReveal({
           </>
         )}
 
-        <button className="reveal-action" type="button" onClick={onClose}>
-          {isWinner ? (
-            <><Trophy size={17} /> {result.mode === "direct" ? "Continuar con otro ganador" : "Finalizar sorteo"}</>
-          ) : isParitySelection ? (
-            `Eliminar 1 entre ${result.eligibleCount}`
-          ) : (
-            "Continuar a la siguiente ronda"
+        <div className="reveal-actions">
+          <button className="reveal-action" type="button" onClick={onClose}>
+            {isWinner ? (
+              <><Trophy size={17} /> {result.mode === "direct" ? "Continuar sin repetir" : "Cerrar resultado"}</>
+            ) : isParitySelection ? (
+              `Eliminar 1 entre ${result.eligibleCount}`
+            ) : (
+              "Continuar a la siguiente ronda"
+            )}
+          </button>
+          {isWinner && onReenableWinner && (
+            <button className="reveal-reenable" type="button" onClick={onReenableWinner}>
+              <RotateCcw size={16} />
+              {result.mode === "direct"
+                ? `Permitir que ${result.participantName} participe otra vez`
+                : "Habilitar ganador e iniciar un nuevo sorteo"}
+            </button>
           )}
-        </button>
+        </div>
       </div>
     </div>
   );

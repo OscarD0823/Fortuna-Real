@@ -93,6 +93,7 @@ function App() {
   const startDraw = useDrawStore((state) => state.startDraw);
   const recordSelection = useDrawStore((state) => state.recordSelection);
   const recordParitySelection = useDrawStore((state) => state.recordParitySelection);
+  const reenableWinner = useDrawStore((state) => state.reenableWinner);
 
   const activeParticipants = useMemo(
     () =>
@@ -204,11 +205,19 @@ function App() {
     setCurrentResult(result);
     pendingSelection.current = null;
 
-    window.setTimeout(
-      () => fortunaAudio.playResult(result.kind === "winner", result.parity),
-      170,
-    );
+    window.setTimeout(() => {
+      fortunaAudio.playResult(result.kind === "winner", result.parity);
+      fortunaAudio.announceResult(result);
+    }, 170);
   }, [recordParitySelection, recordSelection]);
+
+  const allowCurrentWinnerToReturn = () => {
+    if (currentResult?.kind !== "winner" || !currentResult.participantId) return;
+    reenableWinner(currentResult.participantId);
+    if (currentResult.mode === "elimination") startDraw();
+    fortunaAudio.playClick();
+    setCurrentResult(null);
+  };
 
   const restartSession = () => {
     if (isSpinning) return;
@@ -286,7 +295,12 @@ function App() {
       </main>
 
       {currentResult && (
-        <ResultReveal result={currentResult} onClose={() => setCurrentResult(null)} />
+        <ResultReveal
+          result={currentResult}
+          onClose={() => setCurrentResult(null)}
+          onReenableWinner={allowCurrentWinnerToReturn}
+          soundEnabled={soundEnabled}
+        />
       )}
       <AppUpdater />
     </div>
