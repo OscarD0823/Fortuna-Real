@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { Crown } from "lucide-react";
 import type { RouletteEntry } from "../../core/types";
+import { calculateSpinRotations } from "./rouletteMath";
+
+export { calculateSpinRotations } from "./rouletteMath";
 
 interface RouletteWheelProps {
   entries: RouletteEntry[];
@@ -10,37 +13,6 @@ interface RouletteWheelProps {
 }
 
 const TAU = Math.PI * 2;
-const normalizeDegrees = (value: number) => ((value % 360) + 360) % 360;
-
-export const calculateSpinRotations = ({
-  entryCount,
-  targetIndex,
-  ballLandingAngle,
-  currentWheelRotation,
-  currentBallRotation,
-}: {
-  entryCount: number;
-  targetIndex: number;
-  ballLandingAngle: number;
-  currentWheelRotation: number;
-  currentBallRotation: number;
-}) => {
-  const sliceDegrees = 360 / entryCount;
-  const ballLandingPosition = normalizeDegrees(ballLandingAngle);
-  const desiredWheelPosition = normalizeDegrees(
-    ballLandingPosition - (targetIndex + 0.5) * sliceDegrees,
-  );
-  const currentWheelPosition = normalizeDegrees(currentWheelRotation);
-  const wheelAdjustment = normalizeDegrees(desiredWheelPosition - currentWheelPosition);
-  const currentBallPosition = normalizeDegrees(currentBallRotation);
-  const ballAdjustment = normalizeDegrees(currentBallPosition - ballLandingPosition);
-
-  return {
-    wheelRotation: currentWheelRotation + 7 * 360 + wheelAdjustment,
-    ballRotation: currentBallRotation - 9 * 360 - ballAdjustment,
-  };
-};
-
 export function RouletteWheel({
   entries,
   spinRequest,
@@ -53,6 +25,7 @@ export function RouletteWheel({
   const finishTimer = useRef<number | null>(null);
   const [wheelRotation, setWheelRotation] = useState(0);
   const [ballRotation, setBallRotation] = useState(0);
+  const [ballPhase, setBallPhase] = useState<"ready" | "launching" | "landed">("ready");
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -91,7 +64,7 @@ export function RouletteWheel({
 
     const slice = TAU / entries.length;
     entries.forEach((entry, index) => {
-      const start = -Math.PI / 2 + index * slice;
+      const start = -Math.PI / 2 - slice / 2 + index * slice;
       const end = start + slice;
       const isRed = index % 2 === 0;
       const isSpecial = entry.kind === "parity";
@@ -183,24 +156,30 @@ export function RouletteWheel({
         currentBallRotation: ballRotationRef.current,
       });
 
-    wheelRotationRef.current = nextWheelRotation;
-    ballRotationRef.current = nextBallRotation;
-    window.requestAnimationFrame(() => {
+    setBallPhase("ready");
+    const launchFrame = window.requestAnimationFrame(() => {
+      wheelRotationRef.current = nextWheelRotation;
+      ballRotationRef.current = nextBallRotation;
       setWheelRotation(nextWheelRotation);
       setBallRotation(nextBallRotation);
+      setBallPhase("launching");
     });
 
     if (finishTimer.current) window.clearTimeout(finishTimer.current);
     const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    finishTimer.current = window.setTimeout(onSpinEnd, reduceMotion ? 700 : 5900);
+    finishTimer.current = window.setTimeout(() => {
+      setBallPhase("landed");
+      onSpinEnd();
+    }, reduceMotion ? 700 : 5900);
 
     return () => {
+      window.cancelAnimationFrame(launchFrame);
       if (finishTimer.current) window.clearTimeout(finishTimer.current);
     };
   }, [entries, isSpinning, onSpinEnd, spinRequest]);
 
   useEffect(() => {
-    if (isSpinning || entries.length < 33) return;
+    if (isSpinning || entries.length === 0) return;
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
 
     const idleTimer = window.setInterval(() => {
@@ -212,6 +191,12 @@ export function RouletteWheel({
     return () => window.clearInterval(idleTimer);
   }, [entries.length, isSpinning]);
 
+  useEffect(() => {
+    if (isSpinning || ballPhase !== "landed") return;
+    const returnTimer = window.setTimeout(() => setBallPhase("ready"), 850);
+    return () => window.clearTimeout(returnTimer);
+  }, [ballPhase, isSpinning]);
+
   const studCount = Math.min(60, Math.max(18, entries.length));
   const showEntryNames = entries.length <= 32;
   const isLargeWheel = entries.length >= 33;
@@ -219,7 +204,7 @@ export function RouletteWheel({
   const numberFontSize = Math.max(5.5, Math.min(13, 800 / Math.max(entries.length, 1)));
 
   return (
-    <div className={`roulette casino-roulette ${isLargeWheel ? "roulette--large" : ""} ${isLargeWheel && !isSpinning ? "roulette--idle" : ""} ${isSpinning ? "roulette--spinning" : ""}`}>
+    <div className={`roulette casino-roulette ${isLargeWheel ? "roulette--large" : ""} ${entries.length > 0 && !isSpinning ? "roulette--idle" : ""} ${isSpinning ? "roulette--spinning" : ""}`}>
       <div className="roulette-pointer" aria-hidden="true"><span /></div>
       <div className="wheel-outer-frame casino-wheel-frame">
         <div
@@ -238,11 +223,10 @@ export function RouletteWheel({
           />
           <div className="wheel-labels" aria-hidden="true">
             {entries.map((entry, index) => {
-              const angle = ((index + 0.5) * 360) / entries.length;
+              const angle = (index * 360) / entries.length;
               const radians = (angle * Math.PI) / 180;
               const left = 50 + Math.sin(radians) * labelRadius;
               const top = 50 - Math.cos(radians) * labelRadius;
-              const isDenseSpecial = entry.kind === "parity" && entries.length > 70;
               const maxLength = entries.length > 24 ? 8 : entries.length > 14 ? 11 : 15;
               const shortName = entry.label.length > maxLength
                 ? `${entry.label.slice(0, maxLength - 1)}…`
@@ -250,11 +234,13 @@ export function RouletteWheel({
 
               return (
                 <span
-                  className={`wheel-label ${entry.kind === "parity" ? "wheel-label--special" : ""} ${isDenseSpecial ? "wheel-label--vertical" : ""} ${entry.disabled ? "is-disabled" : ""}`}
+                  className={`wheel-label ${entry.kind === "parity" ? "wheel-label--special" : ""} ${entry.disabled ? "is-disabled" : ""}`}
+                  data-entry-kind={entry.kind}
+                  data-entry-parity={entry.kind === "parity" ? entry.parity : undefined}
                   key={entry.id}
                   style={{ left: `${left}%`, top: `${top}%`, fontSize: `${numberFontSize}px` }}
                 >
-                  <strong>{entry.kind === "parity" ? entry.label : entry.number}</strong>
+                  {entry.kind === "participant" && <strong>{entry.number}</strong>}
                   {showEntryNames && entry.kind === "participant" && <small>{shortName}</small>}
                 </span>
               );
@@ -268,7 +254,11 @@ export function RouletteWheel({
         </div>
 
         <div className="casino-ball-track" aria-hidden="true">
-          <div className="casino-ball-orbit" style={{ transform: `rotate(${ballRotation}deg)` }}>
+          <div
+            className={`casino-ball-orbit casino-ball-orbit--${ballPhase}`}
+            data-ball-phase={ballPhase}
+            style={{ transform: `rotate(${ballRotation}deg)` }}
+          >
             <span className="casino-ball" />
           </div>
         </div>

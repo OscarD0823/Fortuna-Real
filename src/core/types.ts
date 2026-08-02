@@ -1,4 +1,4 @@
-export type DrawMode = "casino" | "direct" | "elimination";
+export type DrawMode = "direct" | "elimination";
 export type Parity = "even" | "odd";
 
 export interface Participant {

@@ -30,6 +30,9 @@ const makeParticipant = (name: string, index: number): Participant => ({
   color: PALETTE[index % PALETTE.length],
 });
 
+const normalizeDrawMode = (mode: unknown): DrawMode =>
+  mode === "direct" ? "direct" : "elimination";
+
 interface AddNamesResult {
   added: number;
   skipped: number;
@@ -59,6 +62,21 @@ interface DrawState {
   resetDraw: () => void;
 }
 
+export const mergePersistedDrawState = (
+  persistedState: unknown,
+  currentState: DrawState,
+): DrawState => {
+  const stored = (persistedState ?? {}) as Partial<DrawState>;
+  return {
+    ...currentState,
+    ...stored,
+    mode: normalizeDrawMode(stored.mode),
+    winnerRecords: (stored.winnerRecords ?? currentState.winnerRecords).map(
+      (record) => ({ ...record, mode: normalizeDrawMode(record.mode) }),
+    ),
+  };
+};
+
 const createWinnerRecord = (
   participant: Participant,
   prize: string,
@@ -81,7 +99,7 @@ export const useDrawStore = create<DrawState>()(
       winnerRecords: [],
       blockedWinnerIds: [],
       eliminationParity: null,
-      mode: "casino",
+      mode: "elimination",
       prize: "Premio del sorteo",
       roundNumber: 1,
 
@@ -180,34 +198,7 @@ export const useDrawStore = create<DrawState>()(
         let nextRound = state.roundNumber;
         let nextEliminationParity = state.eliminationParity;
 
-        if (state.mode === "casino") {
-          const survivors = activeParticipants.filter(
-            (_, index) => (index + 1) % 2 === landedNumber % 2,
-          );
-          const survivorIds = new Set(survivors.map((person) => person.id));
-          const newlyEliminated = activeParticipants
-            .filter((person) => !survivorIds.has(person.id))
-            .map((person) => person.id);
-
-          nextEliminatedIds = [...state.eliminatedIds, ...newlyEliminated];
-          remainingCount = survivors.length;
-          eligibleCount = survivors.length;
-          kind = survivors.length === 1 ? "winner" : "qualified";
-
-          if (kind === "winner") {
-            resultParticipant = survivors[0];
-            selectedParticipantName = participant.name;
-            nextBlockedWinnerIds = Array.from(
-              new Set([...state.blockedWinnerIds, resultParticipant.id]),
-            );
-            nextWinnerRecords = [
-              createWinnerRecord(resultParticipant, state.prize, state.mode),
-              ...state.winnerRecords,
-            ];
-          } else {
-            nextRound += 1;
-          }
-        } else if (state.mode === "elimination") {
+        if (state.mode === "elimination") {
           nextEliminatedIds = Array.from(
             new Set([...state.eliminatedIds, participantId]),
           );
@@ -339,6 +330,7 @@ export const useDrawStore = create<DrawState>()(
         winnerRecords: state.winnerRecords,
         blockedWinnerIds: state.blockedWinnerIds,
       }),
+      merge: mergePersistedDrawState,
     },
   ),
 );

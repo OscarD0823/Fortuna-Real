@@ -36,6 +36,7 @@ import type {
   RoundResult,
 } from "./core/types";
 import { RouletteWheel } from "./games/roulette/RouletteWheel";
+import { arrangeEliminationEntries } from "./games/roulette/rouletteEntries";
 import { DrawSetup } from "./modules/draw/DrawSetup";
 import { ParticipantPanel } from "./modules/participants/ParticipantPanel";
 import { useDrawStore } from "./modules/participants/drawStore";
@@ -58,7 +59,6 @@ const secureRandomDegrees = () => {
 };
 
 const modeLabels: Record<DrawMode, string> = {
-  casino: "Casino par/impar",
   direct: "Ganador directo",
   elimination: "Eliminación",
 };
@@ -124,30 +124,11 @@ function App() {
     });
 
     if (mode !== "elimination") return participantEntries;
-    const specialStart = participantEntries.length + 1;
-    return [
-      ...participantEntries,
-      {
-        id: "special-even",
-        kind: "parity" as const,
-        label: "PAR",
-        color: "#09dfdf",
-        number: specialStart,
-        participantId: null,
-        parity: "even" as const,
-        disabled: eliminationParity !== null,
-      },
-      {
-        id: "special-odd",
-        kind: "parity" as const,
-        label: "IMPAR",
-        color: "#f3b52c",
-        number: specialStart + 1,
-        participantId: null,
-        parity: "odd" as const,
-        disabled: eliminationParity !== null,
-      },
-    ];
+    return arrangeEliminationEntries(participantEntries).map((entry) =>
+      entry.kind === "parity"
+        ? { ...entry, disabled: eliminationParity !== null }
+        : entry,
+    );
   }, [activeParticipants, eliminationParity, mode]);
 
   const selectableEntries = useMemo(
@@ -193,7 +174,7 @@ function App() {
       isSpinning ||
       selectableEntries.length === 0 ||
       !!sessionWinner ||
-      ((mode === "casino" || mode === "elimination") && activeParticipants.length < 2)
+      (mode === "elimination" && activeParticipants.length < 2)
     ) return;
 
     const selected = securePick(selectableEntries);
@@ -402,9 +383,20 @@ function SetupScreen({
           <h1>Prepara la fortuna</h1>
           <p>Carga todos los nombres que necesites: solo aparecerán las casillas ocupadas.</p>
         </div>
-        <div className="setup-summary">
-          <Users size={19} />
-          <span><strong>{participantCount}</strong> cargados · {eligibleCount} habilitados</span>
+        <div className="setup-hero-actions">
+          <div className="setup-summary">
+            <Users size={19} />
+            <span><strong>{participantCount}</strong> cargados · {eligibleCount} habilitados</span>
+          </div>
+          <button
+            type="button"
+            className="start-button setup-start-button setup-hero-start"
+            onClick={onStart}
+            disabled={eligibleCount < 2}
+            title={eligibleCount < 2 ? "Agrega al menos dos participantes" : "Entrar a la ruleta"}
+          >
+            <Play size={21} fill="currentColor" /> Iniciar sorteo
+          </button>
         </div>
       </div>
 
@@ -413,23 +405,6 @@ function SetupScreen({
         <div className="setup-right-column">
           <DrawSetup />
           <WinnerHistory />
-          <section className="panel setup-launch-card">
-            <div className="launch-copy">
-              <span className="step-number">4</span>
-              <div>
-                <h2>Entrar a la ruleta</h2>
-                <p>Necesitas al menos dos participantes habilitados.</p>
-              </div>
-            </div>
-            <button
-              type="button"
-              className="start-button setup-start-button"
-              onClick={onStart}
-              disabled={eligibleCount < 2}
-            >
-              <Play size={21} fill="currentColor" /> Iniciar sorteo
-            </button>
-          </section>
         </div>
       </div>
     </section>
@@ -479,7 +454,7 @@ function RouletteScreen({
     isSpinning ||
     selectableCount === 0 ||
     !!sessionWinner ||
-    ((mode === "casino" || mode === "elimination") && activeParticipants.length < 2);
+    (mode === "elimination" && activeParticipants.length < 2);
 
   return (
     <section className="casino-workspace">
@@ -537,7 +512,7 @@ function RouletteScreen({
             <span className="eyebrow">{modeLabels[mode]} · RONDA {roundNumber}</span>
             <h1>Ruleta de casino</h1>
           </div>
-          <div className="live-badge"><span /> {isSpinning ? "PELOTA EN JUEGO" : entries.length >= 33 ? "GIRO DE ESPERA" : "MESA ABIERTA"}</div>
+          <div className="live-badge"><span /> {isSpinning ? "PELOTA EN JUEGO" : "GIRO DE ESPERA"}</div>
         </div>
 
         <div className="roulette-stage casino-stage">
@@ -584,12 +559,7 @@ function RouletteScreen({
       <aside className="casino-info-column">
         <section className="panel casino-mode-card">
           <div className="panel-title"><Dices size={18} /> {modeLabels[mode]}</div>
-          {mode === "casino" ? (
-            <div className="compact-rule">
-              <div><span className="parity-token parity-token--even">PAR</span><p>Pasan 2, 4, 6, 8…</p></div>
-              <div><span className="parity-token parity-token--odd">IMPAR</span><p>Pasan 1, 3, 5, 7…</p></div>
-            </div>
-          ) : mode === "elimination" ? (
+          {mode === "elimination" ? (
             <div className="compact-rule">
               <div><span className="parity-token parity-token--even">PAR</span><p>La próxima eliminación será entre los pares</p></div>
               <div><span className="parity-token parity-token--odd">IMPAR</span><p>La próxima eliminación será entre los impares</p></div>

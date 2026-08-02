@@ -1,6 +1,5 @@
 import {
   CircleDot,
-  Dices,
   Gem,
   Layers3,
   Trophy,
@@ -48,21 +47,10 @@ export function DrawSetup() {
           <span className="step-number">3</span>
           <div>
             <h2>Elegir modo</h2>
-            <p>Define cómo se seleccionará al ganador</p>
+            <p>Define cómo se resolverá cada tirada</p>
           </div>
         </div>
-        <div className="mode-options mode-options--three">
-          <button
-            type="button"
-            className={mode === "casino" ? "is-active" : ""}
-            onClick={() => setMode("casino")}
-          >
-            <Dices size={22} />
-            <span>
-              <strong>Casino par/impar</strong>
-              <small>Filtra por rondas hasta dejar uno</small>
-            </span>
-          </button>
+        <div className="mode-options mode-options--two">
           <button
             type="button"
             className={mode === "direct" ? "is-active" : ""}
@@ -86,15 +74,6 @@ export function DrawSetup() {
             </span>
           </button>
         </div>
-
-        {mode === "casino" && (
-          <div className="casino-rule-preview">
-            <span className="parity-token parity-token--even">PAR</span>
-            <p>Si la pelota cae en un número par, solo los números pares pasan a la siguiente ronda.</p>
-            <span className="parity-token parity-token--odd">IMPAR</span>
-            <p>Si cae en impar, continúan únicamente los números impares. La lista se vuelve a numerar.</p>
-          </div>
-        )}
 
         {mode === "elimination" && (
           <div className="casino-rule-preview elimination-rule-preview">
