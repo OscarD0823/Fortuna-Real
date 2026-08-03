@@ -1494,7 +1494,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible {
 .marble-difficulty-switch button:disabled { cursor: not-allowed; opacity: .46; }
 .marble-generation-note { display: flex; align-items: center; justify-content: center; gap: 4px; min-height: 13px; color: #547078; font-size: 6.5px; line-height: 1.35; }
 .marble-map-info-card { flex: 0 0 auto; }
-.marble-map-info-grid { display: grid; grid-template-columns: 1.4fr repeat(3,.7fr); gap: 5px; }
+.marble-map-info-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 5px; }
 .marble-map-info-grid span { min-width: 0; padding: 6px; border: 1px solid rgba(113,168,181,.13); border-radius: 7px; background: rgba(7,23,29,.56); }
 .marble-map-info-grid small, .marble-map-info-grid strong { display: block; }
 .marble-map-info-grid small { color: #607d84; font-size: 5.8px; text-transform: uppercase; }

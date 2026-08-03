@@ -1012,6 +1012,8 @@ function MarblesScreen({
           {trackInfo ? (
             <div className="marble-map-info-grid">
               <span><small>Semilla</small><strong>{trackInfo.signature.toUpperCase()}</strong></span>
+              <span><small>Longitud</small><strong>{trackInfo.lengthRating}</strong></span>
+              <span><small>Zonas</small><strong>{trackInfo.zones.length}</strong></span>
               <span><small>Secciones</small><strong>{trackInfo.sections.length}</strong></span>
               <span><small>Trampas</small><strong>{trackInfo.obstacles.length}</strong></span>
               <span><small>Poderes</small><strong>{trackInfo.powerZones.length}</strong></span>

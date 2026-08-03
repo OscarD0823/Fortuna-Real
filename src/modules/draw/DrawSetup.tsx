@@ -135,21 +135,21 @@ export function DrawSetup() {
                 className={marbleDifficulty === "easy" ? "is-active" : ""}
                 onClick={() => setMarbleDifficulty("easy")}
               >
-                <ShieldCheck size={17} /><strong>Fácil</strong><small>1–2 trampas · 1 poder</small>
+                <ShieldCheck size={17} /><strong>Fácil</strong><small>20 secciones · 1 trampa · 1 poder</small>
               </button>
               <button
                 type="button"
                 className={marbleDifficulty === "medium" ? "is-active" : ""}
                 onClick={() => setMarbleDifficulty("medium")}
               >
-                <Gauge size={17} /><strong>Media</strong><small>4–6 trampas · 4 poderes</small>
+                <Gauge size={17} /><strong>Media</strong><small>32 secciones · 5–7 trampas · 5 poderes</small>
               </button>
               <button
                 type="button"
                 className={marbleDifficulty === "hard" ? "is-active" : ""}
                 onClick={() => setMarbleDifficulty("hard")}
               >
-                <Flame size={17} /><strong>Difícil</strong><small>8–10 trampas · 7 poderes</small>
+                <Flame size={17} /><strong>Difícil</strong><small>44 secciones · 10–14 trampas · 9 poderes</small>
               </button>
             </div>
           </div>

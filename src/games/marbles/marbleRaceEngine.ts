@@ -13,6 +13,7 @@ export type TrackSectionType =
   | "speed-zone"
   | "ice-zone"
   | "finish";
+export type TrackZoneType = "launch" | "turbo" | "turbine" | "ice" | "portal" | "forge" | "gravity" | "royal";
 
 export interface TrackPoint {
   x: number;
@@ -24,22 +25,40 @@ export interface TrackObstacle {
   type: TrackObstacleType;
   progress: number;
   sectionId: string;
+  zoneId: string;
+  scale: number;
 }
 
 export interface TrackPowerZone {
   id: string;
   progress: number;
   color: string;
+  power: MarblePower;
+  zoneId: string;
+  scale: number;
 }
 
 export interface TrackSection {
   id: string;
   type: TrackSectionType;
+  zoneId: string;
   startPointIndex: number;
   endPointIndex: number;
   startProgress: number;
   endProgress: number;
   difficulty: number;
+}
+
+export interface TrackZone {
+  id: string;
+  type: TrackZoneType;
+  label: string;
+  color: string;
+  startProgress: number;
+  endProgress: number;
+  centerProgress: number;
+  sectionCount: number;
+  scale: number;
 }
 
 export interface MarbleTrack {
@@ -49,10 +68,13 @@ export interface MarbleTrack {
   difficulty: MarbleDifficulty;
   points: TrackPoint[];
   sections: TrackSection[];
+  zones: TrackZone[];
   obstacles: TrackObstacle[];
   powerZones: TrackPowerZone[];
   checkpoints: number[];
   risk: number;
+  trackWidth: number;
+  lengthRating: "Corta" | "Larga" | "Extrema";
 }
 
 export interface MarbleRacer {
@@ -80,56 +102,91 @@ export interface TrackValidationResult {
   connected: boolean;
   inBounds: boolean;
   sectionCount: number;
+  zoneCount: number;
   completionRate: number;
 }
 
 interface DifficultyConfig {
   rows: number;
-  pointsPerRow: number;
+  sectionCount: number;
+  zoneTypes: TrackZoneType[];
   obstacleMin: number;
   obstacleMax: number;
   powerZones: number;
   powerChance: number;
   durationBaseMs: number;
   risk: number;
+  trackWidth: number;
+  featureScale: number;
+  lengthRating: MarbleTrack["lengthRating"];
 }
 
 export const marbleDifficultyConfig: Record<MarbleDifficulty, DifficultyConfig> = {
   easy: {
     rows: 3,
-    pointsPerRow: 3,
+    sectionCount: 20,
+    zoneTypes: ["launch", "turbo", "turbine", "royal"],
     obstacleMin: 1,
-    obstacleMax: 2,
+    obstacleMax: 1,
     powerZones: 1,
-    powerChance: 0.16,
-    durationBaseMs: 5900,
+    powerChance: 0.2,
+    durationBaseMs: 9000,
     risk: 1,
+    trackWidth: 68,
+    featureScale: 0.82,
+    lengthRating: "Corta",
   },
   medium: {
     rows: 4,
-    pointsPerRow: 4,
-    obstacleMin: 4,
-    obstacleMax: 6,
-    powerZones: 4,
-    powerChance: 0.52,
-    durationBaseMs: 7600,
+    sectionCount: 32,
+    zoneTypes: ["launch", "turbo", "turbine", "ice", "forge", "royal"],
+    obstacleMin: 5,
+    obstacleMax: 7,
+    powerZones: 5,
+    powerChance: 0.58,
+    durationBaseMs: 12800,
     risk: 3,
+    trackWidth: 76,
+    featureScale: 1,
+    lengthRating: "Larga",
   },
   hard: {
     rows: 5,
-    pointsPerRow: 5,
-    obstacleMin: 8,
-    obstacleMax: 10,
-    powerZones: 7,
-    powerChance: 0.86,
-    durationBaseMs: 9800,
+    sectionCount: 44,
+    zoneTypes: ["launch", "turbo", "turbine", "ice", "portal", "forge", "gravity", "royal"],
+    obstacleMin: 10,
+    obstacleMax: 14,
+    powerZones: 9,
+    powerChance: 0.9,
+    durationBaseMs: 17000,
     risk: 5,
+    trackWidth: 84,
+    featureScale: 1.2,
+    lengthRating: "Extrema",
   },
 };
 
 const POWER_SEQUENCE: MarblePower[] = ["boost", "shield", "freeze", "reverse", "giant", "tiny", "restart"];
 const TRACK_NAMES = ["Fábrica Fortuna", "Circuito Imperial", "Corona Mecánica", "Fundición Real", "Taller de Neón"];
-const POWER_COLORS = ["#00dff3", "#74e46e", "#8fe9ff", "#e45e54", "#f6bd35", "#c779ff", "#9c62ff"];
+const ZONE_SEQUENCE: Record<TrackZoneType, { label: string; color: string }> = {
+  launch: { label: "Compuerta Real", color: "#f6bd35" },
+  turbo: { label: "Recta Turbo", color: "#09e0df" },
+  turbine: { label: "Núcleo Turbina", color: "#f6bd35" },
+  ice: { label: "Cámara Glacial", color: "#8fe9ff" },
+  portal: { label: "Enlace Cuántico", color: "#d679ff" },
+  forge: { label: "Forja de Martillos", color: "#ef6b45" },
+  gravity: { label: "Pozo Gravitatorio", color: "#9c62ff" },
+  royal: { label: "Meta Imperial", color: "#f6bd35" },
+};
+const POWER_COLORS: Record<MarblePower, string> = {
+  boost: "#00dff3",
+  shield: "#74e46e",
+  freeze: "#8fe9ff",
+  reverse: "#e45e54",
+  giant: "#f6bd35",
+  tiny: "#c779ff",
+  restart: "#9c62ff",
+};
 
 export const powersByDifficulty: Record<MarbleDifficulty, MarblePower[]> = {
   easy: ["boost", "shield"],
@@ -137,16 +194,15 @@ export const powersByDifficulty: Record<MarbleDifficulty, MarblePower[]> = {
   hard: POWER_SEQUENCE,
 };
 
-const obstacleLibrary: Record<MarbleDifficulty, TrackObstacleType[]> = {
-  easy: ["bumpers", "gate", "boost"],
-  medium: ["spinner", "bumpers", "gate", "boost", "ice", "funnel"],
-  hard: ["spinner", "bumpers", "gate", "boost", "ice", "portal", "hammer", "funnel"],
-};
-
-const sectionLibrary: Record<MarbleDifficulty, TrackSectionType[]> = {
-  easy: ["straight", "curve", "s-curve"],
-  medium: ["straight", "curve", "s-curve", "tunnel", "funnel", "speed-zone"],
-  hard: ["straight", "curve", "s-curve", "tunnel", "funnel", "split", "speed-zone", "ice-zone"],
+const zoneObstacleLibrary: Record<TrackZoneType, TrackObstacleType[]> = {
+  launch: ["gate", "bumpers"],
+  turbo: ["gate", "bumpers", "boost"],
+  turbine: ["spinner", "bumpers", "funnel"],
+  ice: ["ice", "gate", "bumpers"],
+  portal: ["portal", "gate", "funnel"],
+  forge: ["hammer", "spinner", "gate"],
+  gravity: ["funnel", "portal", "spinner"],
+  royal: ["gate", "bumpers"],
 };
 
 const clamp = (value: number, minimum: number, maximum: number) =>
@@ -179,42 +235,55 @@ export const createMarbleSeed = () =>
     ? crypto.randomUUID()
     : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
-const buildModularRoute = (random: () => number, config: DifficultyConfig): TrackPoint[] => {
-  const points: TrackPoint[] = [];
-  const top = 0.12;
-  const bottom = 0.88;
-  const left = 0.09;
-  const right = 0.91;
+const buildRouteAnchors = (random: () => number, rows: number): TrackPoint[] => {
+  const anchors: TrackPoint[] = [];
+  const top = 0.105;
+  const bottom = 0.895;
+  const left = 0.075;
+  const right = 0.925;
+  const anchorsPerRow = 5;
 
-  for (let row = 0; row < config.rows; row += 1) {
+  for (let row = 0; row < rows; row += 1) {
     const direction = row % 2 === 0 ? 1 : -1;
-    const baseY = top + (row / (config.rows - 1)) * (bottom - top);
-    const rowPoints = Array.from({ length: config.pointsPerRow }, (_, column) => {
-      const ratio = column / (config.pointsPerRow - 1);
+    const baseY = top + (row / (rows - 1)) * (bottom - top);
+    for (let column = 0; column < anchorsPerRow; column += 1) {
+      if (row > 0 && column === 0) continue;
+      const ratio = column / (anchorsPerRow - 1);
       const xRatio = direction === 1 ? ratio : 1 - ratio;
-      const isEdge = column === 0 || column === config.pointsPerRow - 1;
-      return {
-        x: roundPoint(left + xRatio * (right - left)),
-        y: roundPoint(clamp(baseY + (isEdge ? 0 : (random() - 0.5) * 0.07), 0.08, 0.92)),
-      };
-    });
-
-    if (row === 0) {
-      points.push(...rowPoints);
-      continue;
+      const isEdge = column === 0 || column === anchorsPerRow - 1;
+      anchors.push({
+        x: roundPoint(left + xRatio * (right - left) + (isEdge ? 0 : (random() - 0.5) * 0.035)),
+        y: roundPoint(baseY + (isEdge ? 0 : (random() - 0.5) * 0.075)),
+      });
     }
-
-    const rowStart = rowPoints[0];
-    const previous = points[points.length - 1];
-    points.push({
-      x: roundPoint(clamp(previous.x + (direction === 1 ? -1 : 1) * (0.045 + random() * 0.025), 0.045, 0.955)),
-      y: roundPoint((previous.y + rowStart.y) / 2 + (random() - 0.5) * 0.025),
-    });
-    points.push(...rowPoints.slice(1));
   }
-
-  return points;
+  return anchors;
 };
+
+const catmullRom = (p0: number, p1: number, p2: number, p3: number, t: number) =>
+  0.5 * (
+    2 * p1 +
+    (-p0 + p2) * t +
+    (2 * p0 - 5 * p1 + 4 * p2 - p3) * t * t +
+    (-p0 + 3 * p1 - 3 * p2 + p3) * t * t * t
+  );
+
+const sampleRoute = (anchors: readonly TrackPoint[], pointCount: number): TrackPoint[] =>
+  Array.from({ length: pointCount }, (_, pointIndex) => {
+    if (pointIndex === 0) return anchors[0];
+    if (pointIndex === pointCount - 1) return anchors[anchors.length - 1];
+    const position = (pointIndex / (pointCount - 1)) * (anchors.length - 1);
+    const index = Math.floor(position);
+    const local = position - index;
+    const first = anchors[Math.max(0, index - 1)];
+    const second = anchors[index];
+    const third = anchors[Math.min(anchors.length - 1, index + 1)];
+    const fourth = anchors[Math.min(anchors.length - 1, index + 2)];
+    return {
+      x: roundPoint(clamp(catmullRom(first.x, second.x, third.x, fourth.x, local), 0.05, 0.95)),
+      y: roundPoint(clamp(catmullRom(first.y, second.y, third.y, fourth.y, local), 0.055, 0.945)),
+    };
+  });
 
 const distanceCache = new WeakMap<readonly TrackPoint[], number[]>();
 
@@ -232,7 +301,7 @@ const pointDistances = (points: readonly TrackPoint[]) => {
 };
 
 const pickSpreadIndexes = (count: number, maximum: number, random: () => number) => {
-  const candidates = Array.from({ length: Math.max(0, maximum - 2) }, (_, index) => index + 1);
+  const candidates = Array.from({ length: Math.max(0, maximum - 4) }, (_, index) => index + 2);
   for (let index = candidates.length - 1; index > 0; index -= 1) {
     const selected = Math.floor(random() * (index + 1));
     [candidates[index], candidates[selected]] = [candidates[selected], candidates[index]];
@@ -240,32 +309,70 @@ const pickSpreadIndexes = (count: number, maximum: number, random: () => number)
   return candidates.slice(0, count).sort((first, second) => first - second);
 };
 
+const sectionTypeForZone = (
+  zoneType: TrackZoneType,
+  index: number,
+  random: () => number,
+): TrackSectionType => {
+  const libraries: Record<TrackZoneType, TrackSectionType[]> = {
+    launch: ["straight", "curve"],
+    turbo: ["speed-zone", "straight", "s-curve"],
+    turbine: ["curve", "funnel", "s-curve"],
+    ice: ["ice-zone", "tunnel", "curve"],
+    portal: ["split", "tunnel", "curve"],
+    forge: ["s-curve", "funnel", "straight"],
+    gravity: ["split", "curve", "funnel"],
+    royal: ["curve", "straight"],
+  };
+  const library = libraries[zoneType];
+  return library[(index + Math.floor(random() * library.length)) % library.length];
+};
+
+const zoneForProgress = (zones: readonly TrackZone[], progress: number) =>
+  zones.find((zone) => progress >= zone.startProgress && progress <= zone.endProgress) ?? zones[zones.length - 1];
+
 export const generateMarbleTrack = (
   seed: string,
   difficulty: MarbleDifficulty = "medium",
 ): MarbleTrack => {
   const config = marbleDifficultyConfig[difficulty];
   const random = seededRandom(`track-${difficulty}-${seed}`);
-  const points = buildModularRoute(random, config);
+  const anchors = buildRouteAnchors(random, config.rows);
+  const points = sampleRoute(anchors, config.sectionCount + 1);
   const distances = pointDistances(points);
   const totalDistance = distances[distances.length - 1] || 1;
-  const sections: TrackSection[] = points.slice(1).map((point, index) => {
-    const start = points[index];
-    const deltaX = point.x - start.x;
-    const deltaY = point.y - start.y;
-    const isTurn = Math.abs(deltaY) > Math.abs(deltaX) * 0.65;
-    const library = sectionLibrary[difficulty];
-    const randomType = library[Math.floor(random() * library.length)];
+
+  const zones: TrackZone[] = config.zoneTypes.map((type, zoneIndex) => {
+    const startSection = Math.floor((zoneIndex * config.sectionCount) / config.zoneTypes.length);
+    const endSection = Math.max(startSection, Math.floor(((zoneIndex + 1) * config.sectionCount) / config.zoneTypes.length) - 1);
+    const metadata = ZONE_SEQUENCE[type];
+    const startProgress = distances[startSection] / totalDistance;
+    const endProgress = distances[Math.min(points.length - 1, endSection + 1)] / totalDistance;
+    return {
+      id: `zone-${zoneIndex}-${hashSeed(`${seed}-${type}-${zoneIndex}`).toString(16)}`,
+      type,
+      label: metadata.label,
+      color: metadata.color,
+      startProgress,
+      endProgress,
+      centerProgress: (startProgress + endProgress) / 2,
+      sectionCount: endSection - startSection + 1,
+      scale: config.featureScale * (0.9 + random() * 0.18),
+    };
+  });
+
+  const sections: TrackSection[] = points.slice(1).map((_, index) => {
+    const progress = ((distances[index] + distances[index + 1]) / 2) / totalDistance;
+    const zone = zoneForProgress(zones, progress);
     const type: TrackSectionType = index === 0
       ? "start"
       : index === points.length - 2
         ? "finish"
-        : isTurn
-          ? "curve"
-          : randomType;
+        : sectionTypeForZone(zone.type, index, random);
     return {
       id: `section-${index}-${hashSeed(`${seed}-${index}`).toString(16)}`,
       type,
+      zoneId: zone.id,
       startPointIndex: index,
       endPointIndex: index + 1,
       startProgress: distances[index] / totalDistance,
@@ -278,26 +385,36 @@ export const generateMarbleTrack = (
   const obstacleIndexes = pickSpreadIndexes(obstacleCount, sections.length, random);
   const obstacles = obstacleIndexes.map((sectionIndex, index) => {
     const section = sections[sectionIndex];
-    const library = obstacleLibrary[difficulty];
+    const progress = section.startProgress + (section.endProgress - section.startProgress) * (0.35 + random() * 0.3);
+    const zone = zoneForProgress(zones, progress);
+    const library = zoneObstacleLibrary[zone.type];
     return {
       id: `obstacle-${index}-${hashSeed(`${seed}-o-${index}`).toString(16)}`,
       type: library[Math.floor(random() * library.length)],
-      progress: section.startProgress + (section.endProgress - section.startProgress) * (0.35 + random() * 0.3),
+      progress,
       sectionId: section.id,
+      zoneId: zone.id,
+      scale: config.featureScale * (0.86 + random() * 0.23),
     } satisfies TrackObstacle;
   });
 
   const zoneIndexes = pickSpreadIndexes(config.powerZones, sections.length, random);
+  const availablePowers = powersByDifficulty[difficulty];
   const powerZones = zoneIndexes.map((sectionIndex, index) => {
     const section = sections[sectionIndex];
+    const progress = section.startProgress + (section.endProgress - section.startProgress) * 0.72;
+    const zone = zoneForProgress(zones, progress);
+    const power = availablePowers[(index + Math.floor(random() * availablePowers.length)) % availablePowers.length];
     return {
       id: `power-${index}-${hashSeed(`${seed}-p-${index}`).toString(16)}`,
-      progress: section.startProgress + (section.endProgress - section.startProgress) * 0.72,
-      color: POWER_COLORS[(index + Math.floor(random() * POWER_COLORS.length)) % POWER_COLORS.length],
+      progress,
+      color: POWER_COLORS[power],
+      power,
+      zoneId: zone.id,
+      scale: config.featureScale * (0.9 + random() * 0.2),
     };
   });
-  const checkpointCount = difficulty === "easy" ? 4 : difficulty === "medium" ? 6 : 8;
-  const checkpoints = Array.from({ length: checkpointCount }, (_, index) => (index + 1) / (checkpointCount + 1));
+  const checkpoints = zones.slice(0, -1).map((zone) => zone.endProgress);
   const signature = `${difficulty}-${hashSeed(`${seed}-${points.map((point) => `${point.x},${point.y}`).join("|")}`).toString(36)}`;
 
   return {
@@ -307,21 +424,24 @@ export const generateMarbleTrack = (
     difficulty,
     points,
     sections,
+    zones,
     obstacles,
     powerZones,
     checkpoints,
     risk: config.risk,
+    trackWidth: config.trackWidth,
+    lengthRating: config.lengthRating,
   };
 };
 
 const powerDurationModifier: Record<MarblePower, number> = {
-  boost: -620,
-  shield: -180,
-  freeze: 720,
-  reverse: 560,
-  giant: 210,
-  tiny: -160,
-  restart: 980,
+  boost: -720,
+  shield: -220,
+  freeze: 820,
+  reverse: 680,
+  giant: 260,
+  tiny: -190,
+  restart: 1150,
 };
 
 export const prepareMarbleRace = (
@@ -336,20 +456,19 @@ export const prepareMarbleRace = (
   const random = seededRandom(`racers-${difficulty}-${seed}-${participants.map((person) => person.id).join("|")}`);
   const racers = participants.map((participant, index) => {
     const hasPower = random() < config.powerChance;
-    const availablePowers = powersByDifficulty[difficulty];
-    const power = hasPower ? availablePowers[Math.floor(random() * availablePowers.length)] : null;
+    const powerZone = hasPower ? track.powerZones[Math.floor(random() * track.powerZones.length)] : null;
+    const power = powerZone?.power ?? null;
     const hue = (index * 137.508 + random() * 38) % 360;
-    const zone = track.powerZones[Math.floor(random() * track.powerZones.length)];
-    const trapVariance = track.obstacles.length * (35 + random() * 35);
+    const trapVariance = track.obstacles.length * (40 + random() * 42);
     return {
       id: `marble-${participant.id}`,
       number: index + 1,
       participant,
       color: participant.color,
       accent: `hsl(${hue} 86% 67%)`,
-      durationMs: config.durationBaseMs + random() * 2300 + trapVariance + (power ? powerDurationModifier[power] : 0) + index / 1000,
+      durationMs: config.durationBaseMs + random() * 2700 + trapVariance + (power ? powerDurationModifier[power] : 0) + index / 1000,
       power,
-      powerAt: power && zone ? clamp(zone.progress + (random() - 0.5) * 0.035, 0.12, 0.88) : 2,
+      powerAt: powerZone ? clamp(powerZone.progress + (random() - 0.5) * 0.025, 0.08, 0.92) : 2,
       lane: random() * 2 - 1,
     } satisfies MarbleRacer;
   });
@@ -380,9 +499,9 @@ export const getMarbleProgress = (racer: MarbleRacer, elapsedMs: number) => {
 
   const powerActive = racer.power !== null && raw >= at && raw <= at + 0.115;
   const radiusScale = racer.power === "giant" && powerActive
-    ? 1.65
+    ? 1.72
     : racer.power === "tiny" && powerActive
-      ? 0.58
+      ? 0.54
       : 1;
 
   return {
@@ -411,16 +530,22 @@ export const getTrackPosition = (points: readonly TrackPoint[], progress: number
 
 export const validateMarbleTrack = (track: MarbleTrack): TrackValidationResult => {
   const config = marbleDifficultyConfig[track.difficulty];
-  const inBounds = track.points.every((point) => point.x >= 0.04 && point.x <= 0.96 && point.y >= 0.04 && point.y <= 0.96);
+  const inBounds = track.points.every((point) => point.x >= 0.045 && point.x <= 0.955 && point.y >= 0.05 && point.y <= 0.95);
   const connected = track.sections.every((section, index) =>
     section.startPointIndex === index && section.endPointIndex === index + 1 && section.endProgress > section.startProgress,
   );
-  const enoughSections = track.sections.length >= config.rows * 2;
+  const correctStructure =
+    track.sections.length === config.sectionCount &&
+    track.zones.length === config.zoneTypes.length &&
+    track.powerZones.length === config.powerZones &&
+    track.obstacles.length >= config.obstacleMin &&
+    track.obstacles.length <= config.obstacleMax;
   return {
-    valid: inBounds && connected && enoughSections,
+    valid: inBounds && connected && correctStructure,
     connected,
     inBounds,
     sectionCount: track.sections.length,
+    zoneCount: track.zones.length,
     completionRate: inBounds && connected ? 1 : 0,
   };
 };
@@ -440,3 +565,7 @@ export const difficultyLabels: Record<MarbleDifficulty, string> = {
   medium: "Media",
   hard: "Difícil",
 };
+
+export const zoneLabels: Record<TrackZoneType, string> = Object.fromEntries(
+  Object.entries(ZONE_SEQUENCE).map(([key, value]) => [key, value.label]),
+) as Record<TrackZoneType, string>;

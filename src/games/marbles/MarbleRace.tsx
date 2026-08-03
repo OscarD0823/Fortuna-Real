@@ -15,6 +15,7 @@ import {
   type PreparedMarbleRace,
   type TrackObstacleType,
   type TrackSectionType,
+  type TrackZoneType,
 } from "./marbleRaceEngine";
 
 type RacePhase = "ready" | "racing" | "finished";
@@ -76,6 +77,7 @@ const drawMechanicalBackground = (
 const drawTrackLayers = (
   context: CanvasRenderingContext2D,
   points: readonly ScaledTrackPoint[],
+  trackWidth: number,
 ) => {
   context.save();
   context.lineJoin = "round";
@@ -85,7 +87,7 @@ const drawTrackLayers = (
   context.translate(0, 11);
   traceTrack(context, points);
   context.strokeStyle = "rgba(0,0,0,.72)";
-  context.lineWidth = 96;
+  context.lineWidth = trackWidth + 30;
   context.shadowColor = "#000";
   context.shadowBlur = 22;
   context.stroke();
@@ -93,27 +95,27 @@ const drawTrackLayers = (
 
   traceTrack(context, points);
   context.strokeStyle = "#06090a";
-  context.lineWidth = 98;
+  context.lineWidth = trackWidth + 32;
   context.stroke();
   traceTrack(context, points);
   context.strokeStyle = "#9c6721";
-  context.lineWidth = 92;
+  context.lineWidth = trackWidth + 25;
   context.stroke();
   traceTrack(context, points);
   context.strokeStyle = "#282b2c";
-  context.lineWidth = 85;
+  context.lineWidth = trackWidth + 18;
   context.stroke();
   traceTrack(context, points);
   context.strokeStyle = "#0a0f11";
-  context.lineWidth = 76;
+  context.lineWidth = trackWidth + 9;
   context.stroke();
   traceTrack(context, points);
   context.strokeStyle = "#24292b";
-  context.lineWidth = 64;
+  context.lineWidth = trackWidth;
   context.stroke();
   traceTrack(context, points);
   context.strokeStyle = "rgba(2,18,22,.92)";
-  context.lineWidth = 52;
+  context.lineWidth = trackWidth - 12;
   context.stroke();
   traceTrack(context, points);
   context.setLineDash([9, 13]);
@@ -129,7 +131,8 @@ const drawTrackHardware = (
   track: MarbleTrack,
   scalePoint: (point: { x: number; y: number }) => ScaledTrackPoint,
 ) => {
-  for (let progress = 0.008; progress < 0.995; progress += 0.018) {
+  const halfWidth = track.trackWidth / 2;
+  for (let progress = 0.006; progress < 0.997; progress += 0.014) {
     const point = getTrackPosition(track.points, progress);
     const scaled = scalePoint(point);
     const normalX = -point.tangentY;
@@ -137,33 +140,224 @@ const drawTrackHardware = (
     context.strokeStyle = "rgba(5,7,8,.88)";
     context.lineWidth = 4;
     context.beginPath();
-    context.moveTo(scaled.x + normalX * 34, scaled.y + normalY * 34);
-    context.lineTo(scaled.x - normalX * 34, scaled.y - normalY * 34);
+    context.moveTo(scaled.x + normalX * (halfWidth - 2), scaled.y + normalY * (halfWidth - 2));
+    context.lineTo(scaled.x - normalX * (halfWidth - 2), scaled.y - normalY * (halfWidth - 2));
     context.stroke();
-    context.fillStyle = progress % 0.036 < 0.018 ? "#d39a38" : "#76501d";
+    context.fillStyle = progress % 0.028 < 0.014 ? "#d39a38" : "#76501d";
     for (const side of [-1, 1]) {
       context.beginPath();
-      context.arc(scaled.x + normalX * 42 * side, scaled.y + normalY * 42 * side, 2.7, 0, Math.PI * 2);
+      context.arc(scaled.x + normalX * (halfWidth + 10) * side, scaled.y + normalY * (halfWidth + 10) * side, 2.7, 0, Math.PI * 2);
       context.fill();
     }
   }
 
-  track.points.slice(1, -1).forEach((point, index) => {
+  track.zones.slice(1, -1).forEach((zone, index) => {
+    const point = getTrackPosition(track.points, zone.centerProgress);
     const scaled = scalePoint(point);
     context.fillStyle = "#111719";
     context.strokeStyle = index % 2 === 0 ? "#b37b29" : "#5d431f";
     context.lineWidth = 3;
     context.beginPath();
-    context.arc(scaled.x, scaled.y, 15, 0, Math.PI * 2);
+    context.arc(scaled.x, scaled.y, 13 * zone.scale, 0, Math.PI * 2);
     context.fill();
     context.stroke();
     context.fillStyle = "#d8a33c";
     [0, Math.PI / 2, Math.PI, Math.PI * 1.5].forEach((angle) => {
       context.beginPath();
-      context.arc(scaled.x + Math.cos(angle) * 10, scaled.y + Math.sin(angle) * 10, 1.7, 0, Math.PI * 2);
+      context.arc(scaled.x + Math.cos(angle) * 9 * zone.scale, scaled.y + Math.sin(angle) * 9 * zone.scale, 1.7, 0, Math.PI * 2);
       context.fill();
     });
   });
+};
+
+const traceOctagon = (context: CanvasRenderingContext2D, radius: number) => {
+  context.beginPath();
+  for (let index = 0; index < 8; index += 1) {
+    const angle = Math.PI / 8 + index * Math.PI / 4;
+    const x = Math.cos(angle) * radius;
+    const y = Math.sin(angle) * radius;
+    if (index === 0) context.moveTo(x, y);
+    else context.lineTo(x, y);
+  }
+  context.closePath();
+};
+
+const drawZoneBase = (
+  context: CanvasRenderingContext2D,
+  type: TrackZoneType,
+  color: string,
+  x: number,
+  y: number,
+  angle: number,
+  scale: number,
+) => {
+  const radius = 47 * scale;
+  context.save();
+  context.translate(x, y + 10 * scale);
+  context.rotate(angle);
+  context.fillStyle = "rgba(0,0,0,.72)";
+  context.shadowColor = "#000";
+  context.shadowBlur = 22;
+  if (type === "turbo") {
+    context.beginPath(); context.roundRect(-radius * 1.4, -radius * 0.72, radius * 2.8, radius * 1.44, 18 * scale); context.fill();
+  } else {
+    traceOctagon(context, radius * 1.18); context.fill();
+  }
+  context.restore();
+
+  context.save();
+  context.translate(x, y);
+  context.rotate(angle);
+  const plate = context.createRadialGradient(0, -radius * 0.2, 2, 0, 0, radius * 1.25);
+  plate.addColorStop(0, "#263034");
+  plate.addColorStop(0.58, "#111719");
+  plate.addColorStop(1, "#05090b");
+  context.fillStyle = plate;
+  context.strokeStyle = "#9b6b2b";
+  context.lineWidth = 5 * scale;
+  if (type === "turbo") {
+    context.beginPath(); context.roundRect(-radius * 1.35, -radius * 0.68, radius * 2.7, radius * 1.36, 17 * scale); context.fill(); context.stroke();
+  } else {
+    traceOctagon(context, radius * 1.12); context.fill(); context.stroke();
+  }
+  context.strokeStyle = `${color}55`;
+  context.lineWidth = 2;
+  context.beginPath(); context.arc(0, 0, radius * 0.86, 0, Math.PI * 2); context.stroke();
+  context.strokeStyle = "rgba(218,162,61,.42)";
+  context.beginPath(); context.arc(0, 0, radius * 1.02, 0, Math.PI * 2); context.stroke();
+  for (let index = 0; index < 8; index += 1) {
+    const spokeAngle = index * Math.PI / 4;
+    context.strokeStyle = "rgba(194,135,42,.24)";
+    context.beginPath();
+    context.moveTo(Math.cos(spokeAngle) * radius * 0.68, Math.sin(spokeAngle) * radius * 0.68);
+    context.lineTo(Math.cos(spokeAngle) * radius, Math.sin(spokeAngle) * radius);
+    context.stroke();
+    context.fillStyle = "#d3a044";
+    context.beginPath();
+    context.arc(Math.cos(spokeAngle) * radius, Math.sin(spokeAngle) * radius, 2.2 * scale, 0, Math.PI * 2);
+    context.fill();
+  }
+  context.restore();
+};
+
+const drawCrystal = (context: CanvasRenderingContext2D, x: number, y: number, height: number) => {
+  const gradient = context.createLinearGradient(x, y - height, x, y);
+  gradient.addColorStop(0, "#f3ffff");
+  gradient.addColorStop(0.25, "#8fe9ff");
+  gradient.addColorStop(1, "#227d9b");
+  context.fillStyle = gradient;
+  context.beginPath();
+  context.moveTo(x, y - height);
+  context.lineTo(x + height * 0.3, y);
+  context.lineTo(x - height * 0.3, y);
+  context.closePath();
+  context.fill();
+  context.strokeStyle = "rgba(255,255,255,.7)";
+  context.stroke();
+};
+
+const drawZoneFeature = (
+  context: CanvasRenderingContext2D,
+  type: TrackZoneType,
+  label: string,
+  color: string,
+  x: number,
+  y: number,
+  angle: number,
+  scale: number,
+  elapsedMs: number,
+) => {
+  const pulse = 1 + Math.sin(elapsedMs / 420) * 0.055;
+  context.save();
+  context.translate(x, y);
+  context.rotate(angle);
+  context.scale(scale, scale);
+  context.shadowColor = color;
+  context.shadowBlur = 13;
+
+  if (type === "launch") {
+    context.fillStyle = "#8b5d25";
+    [-33, 33].forEach((offset) => {
+      context.fillRect(-15, offset - 6, 30, 12);
+      context.fillStyle = "#c69a54";
+      context.beginPath(); context.arc(-15, offset, 7, 0, Math.PI * 2); context.arc(15, offset, 7, 0, Math.PI * 2); context.fill();
+      context.fillStyle = "#8b5d25";
+    });
+  } else if (type === "turbo") {
+    context.fillStyle = `${color}aa`;
+    [-34, -11, 12, 35].forEach((offset) => {
+      context.beginPath();
+      context.moveTo(offset - 10, 13); context.lineTo(offset + 4, 0); context.lineTo(offset - 10, -13); context.closePath();
+      context.fill();
+    });
+  } else if (type === "turbine") {
+    context.rotate(elapsedMs / 780);
+    context.fillStyle = "rgba(246,189,53,.78)";
+    for (let index = 0; index < 6; index += 1) {
+      context.rotate(Math.PI / 3);
+      context.beginPath(); context.moveTo(8, -5); context.quadraticCurveTo(39, -19, 42, 2); context.quadraticCurveTo(23, 10, 8, 5); context.closePath(); context.fill();
+    }
+    context.fillStyle = "#061116";
+    context.beginPath(); context.arc(0, 0, 12, 0, Math.PI * 2); context.fill();
+    context.strokeStyle = "#e3ad47"; context.lineWidth = 4; context.stroke();
+  } else if (type === "ice") {
+    context.fillStyle = "rgba(84,191,230,.22)";
+    context.beginPath(); context.ellipse(0, 0, 48, 29, 0, 0, Math.PI * 2); context.fill();
+    drawCrystal(context, -31, 7, 38);
+    drawCrystal(context, 2, 11, 52);
+    drawCrystal(context, 31, 8, 34);
+  } else if (type === "portal") {
+    context.scale(pulse, pulse);
+    context.strokeStyle = color; context.lineWidth = 8;
+    context.beginPath(); context.arc(0, 0, 34, 0, Math.PI * 2); context.stroke();
+    context.strokeStyle = "rgba(255,255,255,.46)"; context.lineWidth = 2;
+    context.beginPath(); context.arc(0, 0, 25, 0, Math.PI * 2); context.stroke();
+    context.fillStyle = "rgba(133,52,205,.26)";
+    context.beginPath(); context.arc(0, 0, 21, 0, Math.PI * 2); context.fill();
+  } else if (type === "forge") {
+    context.save();
+    context.rotate(Math.sin(elapsedMs / 510) * 0.48);
+    context.fillStyle = "#9b6329"; context.fillRect(-5, -47, 10, 58);
+    const steel = context.createLinearGradient(-27, -52, 27, -32);
+    steel.addColorStop(0, "#444d50"); steel.addColorStop(0.5, "#d5dedf"); steel.addColorStop(1, "#535d60");
+    context.fillStyle = steel; context.fillRect(-29, -54, 58, 22);
+    context.restore();
+    context.fillStyle = "rgba(239,107,69,.56)";
+    [-27, 27].forEach((offset) => {
+      context.beginPath(); context.moveTo(offset - 9, 24); context.lineTo(offset, -4); context.lineTo(offset + 9, 24); context.closePath(); context.fill();
+    });
+  } else if (type === "gravity") {
+    for (let ring = 0; ring < 4; ring += 1) {
+      context.rotate(elapsedMs / (1600 + ring * 420));
+      context.strokeStyle = `${color}${["cc", "99", "66", "44"][ring]}`;
+      context.lineWidth = 4 - ring * 0.6;
+      context.beginPath();
+      context.ellipse(0, 0, 16 + ring * 9, 9 + ring * 5, ring * 0.62, 0, Math.PI * 1.65);
+      context.stroke();
+    }
+    context.fillStyle = "#010207";
+    context.beginPath(); context.arc(0, 0, 10, 0, Math.PI * 2); context.fill();
+  } else {
+    context.strokeStyle = "#f6bd35"; context.lineWidth = 4;
+    context.beginPath();
+    context.moveTo(-24, 12); context.lineTo(-30, -18); context.lineTo(-11, -5); context.lineTo(0, -29); context.lineTo(11, -5); context.lineTo(30, -18); context.lineTo(24, 12); context.closePath();
+    context.stroke();
+  }
+  context.restore();
+
+  context.save();
+  context.translate(x, y);
+  context.fillStyle = "rgba(2,9,13,.91)";
+  context.strokeStyle = `${color}99`;
+  context.lineWidth = 1;
+  const labelWidth = Math.max(62, label.length * 5.3);
+  context.beginPath(); context.roundRect(-labelWidth / 2, -62 * scale, labelWidth, 18, 7); context.fill(); context.stroke();
+  context.fillStyle = color;
+  context.font = "900 7px Montserrat, Arial";
+  context.textAlign = "center";
+  context.textBaseline = "middle";
+  context.fillText(label.toUpperCase(), 0, -53 * scale);
+  context.restore();
 };
 
 const drawSectionDecoration = (
@@ -173,11 +367,13 @@ const drawSectionDecoration = (
   y: number,
   angle: number,
   elapsedMs: number,
+  scale: number,
 ) => {
   if (["start", "finish", "straight", "curve", "s-curve"].includes(type)) return;
   context.save();
   context.translate(x, y);
   context.rotate(angle);
+  context.scale(scale, scale);
   if (type === "tunnel") {
     context.strokeStyle = "#a77731";
     context.lineWidth = 6;
@@ -220,9 +416,11 @@ const drawObstacle = (
   x: number,
   y: number,
   elapsedMs: number,
+  scale: number,
 ) => {
   context.save();
   context.translate(x, y);
+  context.scale(scale, scale);
   context.lineWidth = 3;
   context.shadowColor = "rgba(0,0,0,.85)";
   context.shadowBlur = 9;
@@ -302,6 +500,7 @@ const drawPowerZones = (
     context.save();
     context.translate(scaled.x, scaled.y);
     context.rotate(angle);
+    context.scale(zone.scale, zone.scale);
     context.shadowColor = zone.color;
     context.shadowBlur = 12 + Math.sin(elapsedMs / 260 + index) * 4;
     context.fillStyle = `${zone.color}88`;
@@ -338,6 +537,52 @@ const drawStartAndFinish = (
   context.restore();
 };
 
+interface StaticTrackLayer {
+  key: string;
+  canvas: HTMLCanvasElement;
+}
+
+const staticTrackLayers = new WeakMap<HTMLCanvasElement, StaticTrackLayer>();
+
+const getStaticTrackLayer = (
+  target: HTMLCanvasElement,
+  race: PreparedMarbleRace,
+  width: number,
+  height: number,
+  ratio: number,
+  scalePoint: (point: { x: number; y: number }) => ScaledTrackPoint,
+  scaledPoints: readonly ScaledTrackPoint[],
+) => {
+  const key = `${race.track.signature}-${Math.round(width)}x${Math.round(height)}@${ratio}`;
+  const cached = staticTrackLayers.get(target);
+  if (cached?.key === key) return cached.canvas;
+
+  const layer = document.createElement("canvas");
+  layer.width = Math.round(width * ratio);
+  layer.height = Math.round(height * ratio);
+  const context = layer.getContext("2d");
+  if (!context) return layer;
+  context.setTransform(ratio, 0, 0, ratio, 0, 0);
+  drawMechanicalBackground(context, width, height);
+  race.track.zones.forEach((zone) => {
+    const point = getTrackPosition(race.track.points, zone.centerProgress);
+    const scaled = scalePoint(point);
+    drawZoneBase(context, zone.type, zone.color, scaled.x, scaled.y, Math.atan2(point.tangentY, point.tangentX), zone.scale);
+  });
+  drawTrackLayers(context, scaledPoints, race.track.trackWidth);
+  drawTrackHardware(context, race.track, scalePoint);
+  race.track.sections.forEach((section) => {
+    const progress = (section.startProgress + section.endProgress) / 2;
+    const point = getTrackPosition(race.track.points, progress);
+    const scaled = scalePoint(point);
+    const zone = race.track.zones.find((candidate) => candidate.id === section.zoneId);
+    drawSectionDecoration(context, section.type, scaled.x, scaled.y, Math.atan2(point.tangentY, point.tangentX), 0, Math.min(1.08, zone?.scale ?? 1));
+  });
+  drawStartAndFinish(context, scaledPoints[0], scaledPoints[scaledPoints.length - 1]);
+  staticTrackLayers.set(target, { key, canvas: layer });
+  return layer;
+};
+
 const drawRace = (
   canvas: HTMLCanvasElement,
   race: PreparedMarbleRace,
@@ -354,9 +599,9 @@ const drawRace = (
   }
   const context = canvas.getContext("2d");
   if (!context) return;
+  context.setTransform(1, 0, 0, 1, 0, 0);
+  context.clearRect(0, 0, canvas.width, canvas.height);
   context.setTransform(ratio, 0, 0, ratio, 0, 0);
-  context.clearRect(0, 0, width, height);
-  drawMechanicalBackground(context, width, height);
 
   const paddingX = Math.max(54, width * 0.045);
   const paddingY = Math.max(38, height * 0.04);
@@ -365,26 +610,23 @@ const drawRace = (
     y: paddingY + point.y * (height - paddingY * 2),
   });
   const scaledPoints = race.track.points.map(scalePoint);
-  drawTrackLayers(context, scaledPoints);
-  drawTrackHardware(context, race.track, scalePoint);
+  const staticLayer = getStaticTrackLayer(canvas, race, width, height, ratio, scalePoint, scaledPoints);
+  context.drawImage(staticLayer, 0, 0, width, height);
 
-  race.track.sections.forEach((section) => {
-    const progress = (section.startProgress + section.endProgress) / 2;
-    const point = getTrackPosition(race.track.points, progress);
+  race.track.zones.forEach((zone) => {
+    const point = getTrackPosition(race.track.points, zone.centerProgress);
     const scaled = scalePoint(point);
-    drawSectionDecoration(context, section.type, scaled.x, scaled.y, Math.atan2(point.tangentY, point.tangentX), elapsedMs);
+    drawZoneFeature(context, zone.type, zone.label, zone.color, scaled.x, scaled.y, Math.atan2(point.tangentY, point.tangentX), zone.scale, elapsedMs);
   });
   drawPowerZones(context, race.track, scalePoint, elapsedMs);
 
   race.track.obstacles.forEach((obstacle) => {
     const point = getTrackPosition(race.track.points, obstacle.progress);
     const scaled = scalePoint(point);
-    drawObstacle(context, obstacle.type, scaled.x, scaled.y, elapsedMs);
+    drawObstacle(context, obstacle.type, scaled.x, scaled.y, elapsedMs, obstacle.scale);
   });
 
   const start = scaledPoints[0];
-  const finish = scaledPoints[scaledPoints.length - 1];
-  drawStartAndFinish(context, start, finish);
 
   const count = race.racers.length;
   const baseRadius = count > 150 ? 3.2 : count > 90 ? 4 : count > 48 ? 5 : count > 22 ? 6.2 : 8.5;
@@ -413,7 +655,11 @@ const drawRace = (
     const state = getMarbleProgress(racer, phase === "ready" ? 0 : elapsedMs);
     const point = getTrackPosition(race.track.points, state.progress);
     const scaled = scalePoint(point);
-    const offset = racer.lane * Math.min(28, 12 + count * 0.08);
+    const nearbyObstacle = race.track.obstacles.find((obstacle) => Math.abs(obstacle.progress - state.progress) < 0.018);
+    const collisionWobble = nearbyObstacle
+      ? Math.sin(elapsedMs / 43 + racer.number * 1.71) * 10 * nearbyObstacle.scale * (1 - Math.abs(nearbyObstacle.progress - state.progress) / 0.018)
+      : 0;
+    const offset = racer.lane * Math.min(race.track.trackWidth * 0.34, 12 + count * 0.08) + collisionWobble;
     const trackX = scaled.x - point.tangentY * offset;
     const trackY = scaled.y + point.tangentX * offset;
     const stagingIndex = racer.number - 1;
@@ -617,6 +863,8 @@ export function MarbleRace({
       data-difficulty={difficulty}
       data-track-signature={race.track.signature}
       data-track-sections={race.track.sections.length}
+      data-track-zones={race.track.zones.length}
+      data-track-width={race.track.trackWidth}
       data-obstacles={race.track.obstacles.length}
       data-power-zones={race.track.powerZones.length}
     >
@@ -625,6 +873,7 @@ export function MarbleRace({
         <div><strong>{status}</strong><small>{race.track.name} · semilla {race.track.signature.toUpperCase()}</small></div>
         <div className="marble-race-status__metrics">
           <span>{race.track.sections.length} secciones</span>
+          <span>{race.track.zones.length} zonas</span>
           <span>{race.track.obstacles.length} trampas</span>
           <span>{race.track.powerZones.length} {race.track.powerZones.length === 1 ? "poder" : "poderes"}</span>
           <span>{phase === "racing" ? `${fps} FPS` : `${participants.length} canicas`}</span>
@@ -660,7 +909,7 @@ export function MarbleRace({
         <div className="marble-map-stamp">
           <span>MAPA ALEATORIO</span>
           <strong>{difficultyLabels[difficulty]}</strong>
-          <small>Riesgo {race.track.risk}/5 · 100% conectado</small>
+          <small>{race.track.lengthRating} · riesgo {race.track.risk}/5 · 100% conectado</small>
         </div>
       </div>
 
@@ -685,7 +934,7 @@ export function MarbleRace({
           <RefreshCw size={15} /> Generar otro mapa
         </button>
       </div>
-      <small className="marble-generation-note"><Sparkles size={11} /> Cada semilla ensambla secciones compatibles y se valida antes de abrir la compuerta.</small>
+      <small className="marble-generation-note"><Sparkles size={11} /> Cada semilla ensambla zonas y secciones compatibles; la ruta se valida antes de abrir la compuerta.</small>
     </div>
   );
 }

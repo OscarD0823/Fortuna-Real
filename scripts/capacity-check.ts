@@ -15,10 +15,10 @@ const startedAt = performance.now();
 let maxCardLogicMs = 0;
 let maxMarbleLogicMs = 0;
 const proceduralLayouts = new Set<string>();
-const difficultyRanges: Record<MarbleDifficulty, { sections: number; obstacleMin: number; obstacleMax: number; powers: number }> = {
-  easy: { sections: 8, obstacleMin: 1, obstacleMax: 2, powers: 1 },
-  medium: { sections: 15, obstacleMin: 4, obstacleMax: 6, powers: 4 },
-  hard: { sections: 24, obstacleMin: 8, obstacleMax: 10, powers: 7 },
+const difficultyRanges: Record<MarbleDifficulty, { sections: number; zones: number; obstacleMin: number; obstacleMax: number; powers: number; width: number; minimumFeatureScale: number }> = {
+  easy: { sections: 20, zones: 4, obstacleMin: 1, obstacleMax: 1, powers: 1, width: 68, minimumFeatureScale: 0.7 },
+  medium: { sections: 32, zones: 6, obstacleMin: 5, obstacleMax: 7, powers: 5, width: 76, minimumFeatureScale: 0.86 },
+  hard: { sections: 44, zones: 8, obstacleMin: 10, obstacleMax: 14, powers: 9, width: 84, minimumFeatureScale: 1.03 },
 };
 
 for (let count = 2; count <= 200; count += 1) {
@@ -84,9 +84,14 @@ for (let count = 2; count <= 200; count += 1) {
     if (
       !validation.valid ||
       track.sections.length !== expected.sections ||
+      track.zones.length !== expected.zones ||
       track.obstacles.length < expected.obstacleMin ||
       track.obstacles.length > expected.obstacleMax ||
       track.powerZones.length !== expected.powers ||
+      track.trackWidth !== expected.width ||
+      track.obstacles.some((obstacle) => obstacle.scale < expected.minimumFeatureScale) ||
+      track.powerZones.some((zone) => zone.scale < expected.minimumFeatureScale) ||
+      track.sections.some((section) => !track.zones.some((zone) => zone.id === section.zoneId)) ||
       JSON.stringify(track) !== JSON.stringify(repeatedTrack)
     ) {
       throw new Error(`Generación procedural inválida para ${count} participantes en dificultad ${difficulty}.`);
@@ -131,6 +136,7 @@ console.log(JSON.stringify({
   rouletteLayoutsAndSpins: 398,
   marbleRaces: 1194,
   proceduralTracksValidated: proceduralLayouts.size,
+  proceduralZonesValidated: proceduralLayouts.size * 6,
   difficulties: ["easy", "medium", "hard"],
   maxCardLogicMs: Number(maxCardLogicMs.toFixed(3)),
   maxMarbleLogicMs: Number(maxMarbleLogicMs.toFixed(3)),
