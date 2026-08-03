@@ -3,6 +3,7 @@ import { persist } from "zustand/middleware";
 import type {
   DrawMode,
   GameId,
+  MarbleDifficulty,
   Participant,
   Parity,
   RoundResult,
@@ -37,6 +38,9 @@ const normalizeDrawMode = (mode: unknown): DrawMode =>
 const normalizeGame = (game: unknown): GameId =>
   game === "cards" || game === "marbles" ? game : "roulette";
 
+const normalizeMarbleDifficulty = (difficulty: unknown): MarbleDifficulty =>
+  difficulty === "easy" || difficulty === "hard" ? difficulty : "medium";
+
 interface AddNamesResult {
   added: number;
   skipped: number;
@@ -51,6 +55,7 @@ interface DrawState {
   eliminationParity: Parity | null;
   mode: DrawMode;
   game: GameId;
+  marbleDifficulty: MarbleDifficulty;
   prize: string;
   roundNumber: number;
   addNames: (names: string[]) => AddNamesResult;
@@ -58,6 +63,7 @@ interface DrawState {
   clearParticipants: () => void;
   setMode: (mode: DrawMode) => void;
   setGame: (game: GameId) => void;
+  setMarbleDifficulty: (difficulty: MarbleDifficulty) => void;
   setPrize: (prize: string) => void;
   startDraw: () => void;
   recordSelection: (
@@ -82,6 +88,7 @@ export const mergePersistedDrawState = (
     ...stored,
     mode: normalizeDrawMode(stored.mode),
     game: normalizeGame(stored.game),
+    marbleDifficulty: normalizeMarbleDifficulty(stored.marbleDifficulty),
     winnerRecords: (stored.winnerRecords ?? currentState.winnerRecords).map(
       (record) => ({
         ...record,
@@ -118,6 +125,7 @@ export const useDrawStore = create<DrawState>()(
       eliminationParity: null,
       mode: "elimination",
       game: "roulette",
+      marbleDifficulty: "medium",
       prize: "Premio del sorteo",
       roundNumber: 1,
 
@@ -192,6 +200,8 @@ export const useDrawStore = create<DrawState>()(
           eliminationParity: null,
           roundNumber: 1,
         }),
+
+      setMarbleDifficulty: (marbleDifficulty) => set({ marbleDifficulty }),
 
       setPrize: (prize) => set({ prize }),
 
@@ -358,6 +368,7 @@ export const useDrawStore = create<DrawState>()(
         participants: state.participants,
         mode: state.mode,
         game: state.game,
+        marbleDifficulty: state.marbleDifficulty,
         prize: state.prize,
         winnerRecords: state.winnerRecords,
         blockedWinnerIds: state.blockedWinnerIds,

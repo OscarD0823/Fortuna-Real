@@ -1,7 +1,10 @@
 import {
   CircleDot,
+  Flame,
   Gem,
+  Gauge,
   Layers3,
+  ShieldCheck,
   Trophy,
   UsersRound,
 } from "lucide-react";
@@ -11,9 +14,11 @@ export function DrawSetup() {
   const game = useDrawStore((state) => state.game);
   const mode = useDrawStore((state) => state.mode);
   const prize = useDrawStore((state) => state.prize);
+  const marbleDifficulty = useDrawStore((state) => state.marbleDifficulty);
   const setGame = useDrawStore((state) => state.setGame);
   const setMode = useDrawStore((state) => state.setMode);
   const setPrize = useDrawStore((state) => state.setPrize);
+  const setMarbleDifficulty = useDrawStore((state) => state.setMarbleDifficulty);
 
   return (
     <div className="setup-options-stack">
@@ -115,6 +120,38 @@ export function DrawSetup() {
           <div className="direct-rule-preview marbles-rule-preview">
             <Gem size={17} />
             <p>La última canica en cruzar queda eliminada. Cada ronda genera otra pista con obstáculos y poderes automáticos.</p>
+          </div>
+        )}
+
+        {game === "marbles" && (
+          <div className="marble-setup-difficulty">
+            <div className="marble-setup-difficulty__heading">
+              <Gauge size={17} />
+              <span><strong>Dificultad de la pista</strong><small>Controla secciones, trampas y poderes automáticos</small></span>
+            </div>
+            <div className="marble-setup-difficulty__options">
+              <button
+                type="button"
+                className={marbleDifficulty === "easy" ? "is-active" : ""}
+                onClick={() => setMarbleDifficulty("easy")}
+              >
+                <ShieldCheck size={17} /><strong>Fácil</strong><small>1–2 trampas · 1 poder</small>
+              </button>
+              <button
+                type="button"
+                className={marbleDifficulty === "medium" ? "is-active" : ""}
+                onClick={() => setMarbleDifficulty("medium")}
+              >
+                <Gauge size={17} /><strong>Media</strong><small>4–6 trampas · 4 poderes</small>
+              </button>
+              <button
+                type="button"
+                className={marbleDifficulty === "hard" ? "is-active" : ""}
+                onClick={() => setMarbleDifficulty("hard")}
+              >
+                <Flame size={17} /><strong>Difícil</strong><small>8–10 trampas · 7 poderes</small>
+              </button>
+            </div>
           </div>
         )}
 

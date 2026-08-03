@@ -1428,16 +1428,16 @@ button:focus-visible, input:focus-visible, textarea:focus-visible {
   min-height: 590px;
   margin: 0 auto;
   display: grid;
-  grid-template-columns: minmax(215px, 255px) minmax(650px, 1fr) minmax(250px, 295px);
+  grid-template-columns: minmax(220px, 255px) minmax(700px, 1fr) minmax(255px, 285px);
   gap: 12px;
 }
 .marbles-stage-column { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
 .marbles-roster-panel .roster-list { margin-bottom: 8px; }
-.marbles-info-column { overflow: hidden; }
+.marbles-info-column { overflow-x: hidden; overflow-y: auto; scrollbar-width: thin; scrollbar-color: rgba(9,224,223,.28) transparent; }
 .marbles-process-mini span { border-color: rgba(246,189,53,.16); background: rgba(246,189,53,.035); }
 .marble-race { min-height: 0; flex: 1; display: flex; flex-direction: column; gap: 8px; }
 .marble-race-status {
-  min-height: 48px;
+  min-height: 52px;
   display: grid;
   grid-template-columns: 34px minmax(0,1fr) auto;
   align-items: center;
@@ -1452,16 +1452,18 @@ button:focus-visible, input:focus-visible, textarea:focus-visible {
 .marble-race-status strong, .marble-race-status small { display: block; }
 .marble-race-status strong { color: #f3ffff; font-size: 10px; text-transform: uppercase; letter-spacing: .45px; }
 .marble-race-status small { margin-top: 2px; color: #718b92; font-size: 7.5px; }
-.marble-race-status__count { padding: 5px 8px; border: 1px solid rgba(9,224,223,.23); border-radius: 999px; color: var(--cyan); font-size: 7.5px; font-weight: 800; text-transform: uppercase; }
+.marble-race-status__metrics { display: flex; justify-content: flex-end; gap: 5px; }
+.marble-race-status__metrics span { padding: 5px 7px; border: 1px solid rgba(9,224,223,.18); border-radius: 7px; color: #88a3a9; background: rgba(9,224,223,.035); font-size: 6.5px; font-weight: 800; text-transform: uppercase; white-space: nowrap; }
+.marble-race-status__metrics span:last-child { color: var(--cyan); border-color: rgba(9,224,223,.32); }
 .marble-arena {
   position: relative;
   min-height: 0;
   flex: 1;
   overflow: hidden;
   border: 1px solid rgba(246,189,53,.25);
-  border-radius: 23px;
-  background: #031015;
-  box-shadow: inset 0 0 0 6px #07110f, inset 0 0 0 8px rgba(198,139,26,.21), inset 0 0 55px #000, 0 18px 42px rgba(0,0,0,.4);
+  border-radius: 15px;
+  background: #02090d;
+  box-shadow: inset 0 0 0 4px #050b0d, inset 0 0 0 6px rgba(198,139,26,.21), inset 0 0 70px #000, 0 18px 42px rgba(0,0,0,.5);
 }
 .marble-arena canvas { width: 100%; height: 100%; display: block; }
 .marble-track-label { position: absolute; z-index: 3; left: 14px; display: inline-flex; align-items: center; gap: 4px; padding: 4px 7px; border-radius: 6px; color: #061116; background: var(--gold); font-size: 6.5px; font-weight: 900; letter-spacing: .7px; box-shadow: 0 3px 10px rgba(0,0,0,.55); pointer-events: none; }
@@ -1477,16 +1479,55 @@ button:focus-visible, input:focus-visible, textarea:focus-visible {
 .marble-power-feed { position: absolute; z-index: 4; left: 14px; bottom: 14px; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; pointer-events: none; }
 .marble-power-feed span { display: flex; align-items: center; gap: 4px; max-width: 220px; padding: 5px 8px; border: 1px solid rgba(217,124,255,.27); border-radius: 7px; color: #d8a1f2; background: rgba(8,10,18,.84); font-size: 6.5px; animation: marble-power-enter .28s ease-out both; }
 .marble-power-feed strong { overflow: hidden; max-width: 105px; color: white; text-overflow: ellipsis; white-space: nowrap; }
-.marble-controls { min-height: 62px; display: grid; grid-template-columns: 1fr minmax(230px, 390px) 1fr; align-items: center; gap: 10px; }
+.marble-map-stamp { position: absolute; z-index: 4; right: 15px; bottom: 14px; min-width: 120px; padding: 8px 10px; border: 1px solid rgba(246,189,53,.24); border-radius: 9px; background: rgba(2,8,11,.86); box-shadow: 0 8px 24px rgba(0,0,0,.48); pointer-events: none; }
+.marble-map-stamp span, .marble-map-stamp strong, .marble-map-stamp small { display: block; }
+.marble-map-stamp span { color: #6c888f; font-size: 5.8px; font-weight: 900; letter-spacing: .7px; }
+.marble-map-stamp strong { margin-top: 2px; color: var(--gold); font-size: 10px; }
+.marble-map-stamp small { margin-top: 2px; color: #739096; font-size: 6px; }
+.marble-controls { min-height: 52px; display: grid; grid-template-columns: minmax(210px, 1fr) minmax(260px, 390px) minmax(170px, 1fr); align-items: center; gap: 10px; }
 .marble-regenerate { justify-self: end; }
 .marble-start-button { width: 100%; }
-.marble-controls > small { display: flex; align-items: center; gap: 4px; color: #547078; font-size: 6.5px; line-height: 1.35; }
+.marble-difficulty-switch { justify-self: start; display: flex; gap: 4px; padding: 3px; border: 1px solid rgba(113,168,181,.15); border-radius: 9px; background: rgba(2,10,14,.72); }
+.marble-difficulty-switch button { min-width: 57px; height: 29px; padding: 0 8px; border: 1px solid transparent; border-radius: 6px; color: #637e85; background: transparent; font-size: 7px; font-weight: 900; text-transform: uppercase; cursor: pointer; }
+.marble-difficulty-switch button:hover:not(:disabled) { color: #cce6e9; }
+.marble-difficulty-switch button.is-active { color: #041014; border-color: var(--cyan); background: var(--cyan); box-shadow: 0 0 14px rgba(9,224,223,.25); }
+.marble-difficulty-switch button:disabled { cursor: not-allowed; opacity: .46; }
+.marble-generation-note { display: flex; align-items: center; justify-content: center; gap: 4px; min-height: 13px; color: #547078; font-size: 6.5px; line-height: 1.35; }
+.marble-map-info-card { flex: 0 0 auto; }
+.marble-map-info-grid { display: grid; grid-template-columns: 1.4fr repeat(3,.7fr); gap: 5px; }
+.marble-map-info-grid span { min-width: 0; padding: 6px; border: 1px solid rgba(113,168,181,.13); border-radius: 7px; background: rgba(7,23,29,.56); }
+.marble-map-info-grid small, .marble-map-info-grid strong { display: block; }
+.marble-map-info-grid small { color: #607d84; font-size: 5.8px; text-transform: uppercase; }
+.marble-map-info-grid strong { overflow: hidden; margin-top: 3px; color: #def5f6; font-size: 7.5px; text-overflow: ellipsis; white-space: nowrap; }
+.marble-power-legend-card { flex: 0 0 auto; }
+.marble-power-legend { display: flex; flex-wrap: wrap; gap: 5px; }
+.marble-power-chip { display: inline-flex; align-items: center; gap: 5px; min-height: 22px; padding: 4px 7px; border: 1px solid rgba(113,168,181,.13); border-radius: 7px; color: #8da5aa; background: rgba(5,18,23,.68); font-size: 6.5px; font-weight: 800; }
+.marble-power-chip i { width: 6px; height: 6px; border-radius: 50%; background: var(--cyan); box-shadow: 0 0 8px currentColor; }
+.marble-power-chip--shield i { background: #74e46e; }
+.marble-power-chip--freeze i { background: #8fe9ff; }
+.marble-power-chip--reverse i, .marble-power-chip--restart i { background: #e45e54; }
+.marble-power-chip--giant i { background: var(--gold); }
+.marble-power-chip--tiny i { background: #c779ff; }
 .marbles-final-state { border-color: rgba(9,224,223,.27); background: radial-gradient(circle, rgba(9,224,223,.11), transparent 42%), rgba(3,13,18,.7); }
 .marble-result-symbol { background: linear-gradient(145deg, #6ef1e5, #087d83); }
 .result-reveal--marbles { box-shadow: 0 0 0 1px rgba(255,255,255,.04), 0 30px 100px #000, 0 0 85px rgba(217,124,255,.13); }
 
 @keyframes marble-gauge-spin { to { transform: rotate(360deg); } }
 @keyframes marble-power-enter { from { opacity: 0; transform: translateX(-10px); } }
+
+.marble-setup-difficulty { margin-top: 10px; padding: 9px; border: 1px solid rgba(9,224,223,.16); border-radius: 10px; background: linear-gradient(100deg, rgba(9,224,223,.055), rgba(4,14,19,.72)); }
+.marble-setup-difficulty__heading { display: flex; align-items: center; gap: 7px; color: var(--cyan); }
+.marble-setup-difficulty__heading span, .marble-setup-difficulty__heading strong, .marble-setup-difficulty__heading small { display: block; }
+.marble-setup-difficulty__heading strong { color: #e9fbfb; font-size: 8.5px; text-transform: uppercase; }
+.marble-setup-difficulty__heading small { margin-top: 2px; color: #668188; font-size: 6.5px; }
+.marble-setup-difficulty__options { display: grid; grid-template-columns: repeat(3,1fr); gap: 6px; margin-top: 8px; }
+.marble-setup-difficulty__options button { min-height: 43px; display: grid; grid-template-columns: 20px 1fr; align-content: center; align-items: center; padding: 5px 8px; border: 1px solid rgba(113,168,181,.14); border-radius: 8px; color: #668188; background: rgba(3,12,16,.74); text-align: left; cursor: pointer; }
+.marble-setup-difficulty__options button svg { grid-row: 1 / 3; }
+.marble-setup-difficulty__options button strong, .marble-setup-difficulty__options button small { display: block; }
+.marble-setup-difficulty__options button strong { color: #b8cbcf; font-size: 8px; }
+.marble-setup-difficulty__options button small { margin-top: 2px; color: #547078; font-size: 5.8px; }
+.marble-setup-difficulty__options button.is-active { color: var(--cyan); border-color: var(--cyan); background: rgba(9,224,223,.09); box-shadow: inset 0 0 18px rgba(9,224,223,.05); }
+.marble-setup-difficulty__options button.is-active strong { color: white; }
 
 /* Puesta en escena del resultado */
 .result-reveal > *:not(.reveal-spotlights):not(.confetti) { position: relative; z-index: 2; }
@@ -1510,7 +1551,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible {
 
 @media (max-width: 1240px) {
   .cards-workspace { grid-template-columns: 215px minmax(540px,1fr) 255px; gap: 8px; }
-  .marbles-workspace { grid-template-columns: 215px minmax(560px,1fr) 255px; gap: 8px; }
+  .marbles-workspace { grid-template-columns: 215px minmax(600px,1fr) 245px; gap: 8px; }
   .card-grid { inset: 17px; }
 }
 
@@ -1519,6 +1560,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible {
   .marbles-workspace { grid-template-columns: 220px minmax(540px,1fr); }
   .cards-info-column { display: none; }
   .marbles-info-column { display: none; }
+  .marble-race-status__metrics span:nth-child(-n+2) { display: none; }
 }
 
 @media (max-height: 790px) {
@@ -1529,7 +1571,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible {
   .card-grid { inset: 16px; }
   .marble-race-status { min-height: 41px; padding-top: 5px; padding-bottom: 5px; }
   .marble-controls { min-height: 50px; }
-  .marble-controls > small { display: none; }
+  .marble-generation-note { display: none; }
 }
 
 @media (max-width: 1050px) {

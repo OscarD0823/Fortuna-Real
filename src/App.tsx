@@ -35,6 +35,7 @@ import "./App.css";
 import type {
   DrawMode,
   GameId,
+  MarbleDifficulty,
   Participant,
   Parity,
   RouletteEntry,
@@ -43,7 +44,7 @@ import type {
 import { CardGame } from "./games/cards/CardGame";
 import type { CardAssignment } from "./games/cards/cardDeck";
 import { MarbleRace } from "./games/marbles/MarbleRace";
-import type { MarbleRacer } from "./games/marbles/marbleRaceEngine";
+import { difficultyLabels, powerLabels, powersByDifficulty, type MarbleRacer, type MarbleTrack } from "./games/marbles/marbleRaceEngine";
 import { RouletteWheel } from "./games/roulette/RouletteWheel";
 import { arrangeEliminationEntries } from "./games/roulette/rouletteEntries";
 import { DrawSetup } from "./modules/draw/DrawSetup";
@@ -101,6 +102,8 @@ function App() {
   const game = useDrawStore((state) => state.game);
   const mode = useDrawStore((state) => state.mode);
   const prize = useDrawStore((state) => state.prize);
+  const marbleDifficulty = useDrawStore((state) => state.marbleDifficulty);
+  const setMarbleDifficulty = useDrawStore((state) => state.setMarbleDifficulty);
   const roundNumber = useDrawStore((state) => state.roundNumber);
   const startDraw = useDrawStore((state) => state.startDraw);
   const recordSelection = useDrawStore((state) => state.recordSelection);
@@ -365,10 +368,12 @@ function App() {
             history={history}
             latestResult={latestResult}
             mode={mode}
+            difficulty={marbleDifficulty}
             prize={prize}
             roundNumber={roundNumber}
             sessionWinner={sessionWinner}
             onFinish={finishMarbleRace}
+            onDifficultyChange={setMarbleDifficulty}
             onRestart={restartSession}
           />
         )}
@@ -900,10 +905,12 @@ function MarblesScreen({
   history,
   latestResult,
   mode,
+  difficulty,
   prize,
   roundNumber,
   sessionWinner,
   onFinish,
+  onDifficultyChange,
   onRestart,
 }: {
   participants: Participant[];
@@ -913,13 +920,16 @@ function MarblesScreen({
   history: RoundResult[];
   latestResult: RoundResult | null;
   mode: DrawMode;
+  difficulty: MarbleDifficulty;
   prize: string;
   roundNumber: number;
   sessionWinner: RoundResult | null;
   onFinish: (racer: MarbleRacer, label: string) => void;
+  onDifficultyChange: (difficulty: MarbleDifficulty) => void;
   onRestart: () => void;
 }) {
   const cannotPlay = !!sessionWinner || activeParticipants.length < 2;
+  const [trackInfo, setTrackInfo] = useState<MarbleTrack | null>(null);
 
   return (
     <section className="marbles-workspace">
@@ -972,7 +982,10 @@ function MarblesScreen({
           <MarbleRace
             participants={activeParticipants}
             mode={mode}
+            difficulty={difficulty}
             disabled={cannotPlay}
+            onDifficultyChange={onDifficultyChange}
+            onTrackPrepared={setTrackInfo}
             onFinish={onFinish}
           />
         )}
@@ -988,6 +1001,34 @@ function MarblesScreen({
           </p>
           <div className="cards-process-mini marbles-process-mini">
             <span>1 · Pista</span><span>2 · Poderes</span><span>3 · Carrera</span><span>4 · Meta</span>
+          </div>
+        </section>
+
+        <section className="panel marble-map-info-card">
+          <div className="panel-title panel-title--spread">
+            <span><Dices size={18} /> Mapa actual</span>
+            <small>{difficultyLabels[difficulty]}</small>
+          </div>
+          {trackInfo ? (
+            <div className="marble-map-info-grid">
+              <span><small>Semilla</small><strong>{trackInfo.signature.toUpperCase()}</strong></span>
+              <span><small>Secciones</small><strong>{trackInfo.sections.length}</strong></span>
+              <span><small>Trampas</small><strong>{trackInfo.obstacles.length}</strong></span>
+              <span><small>Poderes</small><strong>{trackInfo.powerZones.length}</strong></span>
+            </div>
+          ) : (
+            <div className="history-empty">{sessionWinner ? "Carrera finalizada" : "Generando módulos compatibles…"}</div>
+          )}
+        </section>
+
+        <section className="panel marble-power-legend-card">
+          <div className="panel-title"><Sparkles size={18} /> Poderes y efectos</div>
+          <div className="marble-power-legend">
+            {powersByDifficulty[difficulty].map((power) => (
+              <span key={power} className={`marble-power-chip marble-power-chip--${power}`}>
+                <i />{powerLabels[power]}
+              </span>
+            ))}
           </div>
         </section>
 

@@ -1,12 +1,25 @@
 import { buildCardAssignments, shuffleCards } from "../src/games/cards/cardDeck.ts";
-import { prepareMarbleRace, getMarbleProgress, getTrackPosition } from "../src/games/marbles/marbleRaceEngine.ts";
+import {
+  generateMarbleTrack,
+  getMarbleProgress,
+  getTrackPosition,
+  prepareMarbleRace,
+  powersByDifficulty,
+  validateMarbleTrack,
+} from "../src/games/marbles/marbleRaceEngine.ts";
 import { arrangeEliminationEntries } from "../src/games/roulette/rouletteEntries.ts";
 import { calculateSpinRotations } from "../src/games/roulette/rouletteMath.ts";
-import type { DrawMode, Participant, RouletteEntry } from "../src/core/types.ts";
+import type { DrawMode, MarbleDifficulty, Participant, RouletteEntry } from "../src/core/types.ts";
 
 const startedAt = performance.now();
 let maxCardLogicMs = 0;
 let maxMarbleLogicMs = 0;
+const proceduralLayouts = new Set<string>();
+const difficultyRanges: Record<MarbleDifficulty, { sections: number; obstacleMin: number; obstacleMax: number; powers: number }> = {
+  easy: { sections: 8, obstacleMin: 1, obstacleMax: 2, powers: 1 },
+  medium: { sections: 15, obstacleMin: 4, obstacleMax: 6, powers: 4 },
+  hard: { sections: 24, obstacleMin: 8, obstacleMax: 10, powers: 7 },
+};
 
 for (let count = 2; count <= 200; count += 1) {
   const participants: Participant[] = Array.from({ length: count }, (_, index) => ({
@@ -57,29 +70,56 @@ for (let count = 2; count <= 200; count += 1) {
   }
 
   caseStartedAt = performance.now();
-  for (const mode of ["direct", "elimination"] satisfies DrawMode[]) {
-    const race = prepareMarbleRace(participants, mode, `test-${count}-${mode}`);
-    if (race.racers.length !== count || race.track.points.length < 10 || race.track.obstacles.length < 5) {
-      throw new Error(`Carrera de canicas inválida para ${count} participantes.`);
+  for (const difficulty of ["easy", "medium", "hard"] satisfies MarbleDifficulty[]) {
+    const layoutSeed = `layout-${count}-${difficulty}`;
+    const track = generateMarbleTrack(layoutSeed, difficulty);
+    const repeatedTrack = generateMarbleTrack(layoutSeed, difficulty);
+    const validation = validateMarbleTrack(track);
+    const expected = difficultyRanges[difficulty];
+    const layoutKey = `${difficulty}:${track.points.map((point) => `${point.x},${point.y}`).join("|")}`;
+    if (proceduralLayouts.has(layoutKey)) {
+      throw new Error(`La pista procedural se repitió para ${count} participantes en dificultad ${difficulty}.`);
     }
-    const durations = race.racers.map((racer) => racer.durationMs);
-    const expectedDuration = mode === "direct" ? Math.min(...durations) : Math.max(...durations);
-    if (race.selected.durationMs !== expectedDuration) {
-      throw new Error(`Resultado de canicas inválido para ${count} participantes en modo ${mode}.`);
+    proceduralLayouts.add(layoutKey);
+    if (
+      !validation.valid ||
+      track.sections.length !== expected.sections ||
+      track.obstacles.length < expected.obstacleMin ||
+      track.obstacles.length > expected.obstacleMax ||
+      track.powerZones.length !== expected.powers ||
+      JSON.stringify(track) !== JSON.stringify(repeatedTrack)
+    ) {
+      throw new Error(`Generación procedural inválida para ${count} participantes en dificultad ${difficulty}.`);
     }
-    race.racers.forEach((racer) => {
-      const state = getMarbleProgress(racer, racer.durationMs * 0.5);
-      const point = getTrackPosition(race.track.points, state.progress);
-      if (
-        !Number.isFinite(state.progress) ||
-        state.progress < 0 ||
-        state.progress > 1 ||
-        !Number.isFinite(point.x) ||
-        !Number.isFinite(point.y)
-      ) {
-        throw new Error(`Progreso de canica inválido para ${count} participantes.`);
+
+    for (const mode of ["direct", "elimination"] satisfies DrawMode[]) {
+      const race = prepareMarbleRace(participants, mode, `test-${count}-${mode}-${difficulty}`, difficulty);
+      if (race.racers.length !== count || !validateMarbleTrack(race.track).valid) {
+        throw new Error(`Carrera de canicas inválida para ${count} participantes.`);
       }
-    });
+      const allowedPowers = new Set(powersByDifficulty[difficulty]);
+      if (race.racers.some((racer) => racer.power !== null && !allowedPowers.has(racer.power))) {
+        throw new Error(`Poder no permitido en dificultad ${difficulty}.`);
+      }
+      const durations = race.racers.map((racer) => racer.durationMs);
+      const expectedDuration = mode === "direct" ? Math.min(...durations) : Math.max(...durations);
+      if (race.selected.durationMs !== expectedDuration) {
+        throw new Error(`Resultado de canicas inválido para ${count} participantes en modo ${mode}.`);
+      }
+      race.racers.forEach((racer) => {
+        const state = getMarbleProgress(racer, racer.durationMs * 0.5);
+        const point = getTrackPosition(race.track.points, state.progress);
+        if (
+          !Number.isFinite(state.progress) ||
+          state.progress < 0 ||
+          state.progress > 1 ||
+          !Number.isFinite(point.x) ||
+          !Number.isFinite(point.y)
+        ) {
+          throw new Error(`Progreso de canica inválido para ${count} participantes.`);
+        }
+      });
+    }
   }
   maxMarbleLogicMs = Math.max(maxMarbleLogicMs, performance.now() - caseStartedAt);
 }
@@ -89,7 +129,9 @@ console.log(JSON.stringify({
   participantCounts: 199,
   cardAssignmentsAndShuffles: 398,
   rouletteLayoutsAndSpins: 398,
-  marbleRaces: 398,
+  marbleRaces: 1194,
+  proceduralTracksValidated: proceduralLayouts.size,
+  difficulties: ["easy", "medium", "hard"],
   maxCardLogicMs: Number(maxCardLogicMs.toFixed(3)),
   maxMarbleLogicMs: Number(maxMarbleLogicMs.toFixed(3)),
   totalMs: Number((performance.now() - startedAt).toFixed(1)),
