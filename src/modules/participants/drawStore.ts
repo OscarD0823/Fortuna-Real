@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type {
   DrawMode,
+  GameId,
   Participant,
   Parity,
   RoundResult,
@@ -33,6 +34,9 @@ const makeParticipant = (name: string, index: number): Participant => ({
 const normalizeDrawMode = (mode: unknown): DrawMode =>
   mode === "direct" ? "direct" : "elimination";
 
+const normalizeGame = (game: unknown): GameId =>
+  game === "cards" ? "cards" : "roulette";
+
 interface AddNamesResult {
   added: number;
   skipped: number;
@@ -46,15 +50,21 @@ interface DrawState {
   blockedWinnerIds: string[];
   eliminationParity: Parity | null;
   mode: DrawMode;
+  game: GameId;
   prize: string;
   roundNumber: number;
   addNames: (names: string[]) => AddNamesResult;
   removeParticipant: (id: string) => void;
   clearParticipants: () => void;
   setMode: (mode: DrawMode) => void;
+  setGame: (game: GameId) => void;
   setPrize: (prize: string) => void;
   startDraw: () => void;
-  recordSelection: (participantId: string, landedNumber: number) => RoundResult;
+  recordSelection: (
+    participantId: string,
+    landedNumber: number,
+    selectionLabel?: string,
+  ) => RoundResult;
   recordParitySelection: (parity: Parity, landedNumber: number) => RoundResult;
   reenableWinner: (participantId: string) => void;
   reenableAllWinners: () => void;
@@ -71,8 +81,13 @@ export const mergePersistedDrawState = (
     ...currentState,
     ...stored,
     mode: normalizeDrawMode(stored.mode),
+    game: normalizeGame(stored.game),
     winnerRecords: (stored.winnerRecords ?? currentState.winnerRecords).map(
-      (record) => ({ ...record, mode: normalizeDrawMode(record.mode) }),
+      (record) => ({
+        ...record,
+        mode: normalizeDrawMode(record.mode),
+        game: normalizeGame(record.game),
+      }),
     ),
   };
 };
@@ -81,12 +96,14 @@ const createWinnerRecord = (
   participant: Participant,
   prize: string,
   mode: DrawMode,
+  game: GameId,
 ): WinnerRecord => ({
   id: makeId(),
   participantId: participant.id,
   participantName: participant.name,
   prize: prize.trim() || "Premio del sorteo",
   mode,
+  game,
   createdAt: new Date().toISOString(),
 });
 
@@ -100,6 +117,7 @@ export const useDrawStore = create<DrawState>()(
       blockedWinnerIds: [],
       eliminationParity: null,
       mode: "elimination",
+      game: "roulette",
       prize: "Premio del sorteo",
       roundNumber: 1,
 
@@ -166,6 +184,15 @@ export const useDrawStore = create<DrawState>()(
           roundNumber: 1,
         }),
 
+      setGame: (game) =>
+        set({
+          game,
+          eliminatedIds: [],
+          history: [],
+          eliminationParity: null,
+          roundNumber: 1,
+        }),
+
       setPrize: (prize) => set({ prize }),
 
       startDraw: () =>
@@ -176,7 +203,7 @@ export const useDrawStore = create<DrawState>()(
           roundNumber: 1,
         }),
 
-      recordSelection: (participantId, landedNumber) => {
+      recordSelection: (participantId, landedNumber, selectionLabel) => {
         const state = get();
         const participant = state.participants.find((person) => person.id === participantId);
         if (!participant) throw new Error("El participante ya no existe.");
@@ -216,7 +243,7 @@ export const useDrawStore = create<DrawState>()(
               new Set([...state.blockedWinnerIds, resultParticipant.id]),
             );
             nextWinnerRecords = [
-              createWinnerRecord(resultParticipant, state.prize, state.mode),
+              createWinnerRecord(resultParticipant, state.prize, state.mode, state.game),
               ...state.winnerRecords,
             ];
           } else {
@@ -230,7 +257,7 @@ export const useDrawStore = create<DrawState>()(
             new Set([...state.blockedWinnerIds, participantId]),
           );
           nextWinnerRecords = [
-            createWinnerRecord(participant, state.prize, state.mode),
+            createWinnerRecord(participant, state.prize, state.mode, state.game),
             ...state.winnerRecords,
           ];
         }
@@ -240,10 +267,12 @@ export const useDrawStore = create<DrawState>()(
           participantId: resultParticipant.id,
           participantName: resultParticipant.name,
           selectedParticipantName,
+          selectionLabel,
           kind,
           landedNumber,
           parity,
           mode: state.mode,
+          game: state.game,
           prize: kind === "winner" ? state.prize.trim() || "Premio del sorteo" : undefined,
           round: state.roundNumber,
           remainingCount,
@@ -282,6 +311,8 @@ export const useDrawStore = create<DrawState>()(
           landedNumber,
           parity,
           mode: state.mode,
+          game: "roulette",
+          selectionLabel: `Casilla ${parityName}`,
           round: state.roundNumber,
           remainingCount: activeParticipants.length,
           eligibleCount,
@@ -326,6 +357,7 @@ export const useDrawStore = create<DrawState>()(
       partialize: (state) => ({
         participants: state.participants,
         mode: state.mode,
+        game: state.game,
         prize: state.prize,
         winnerRecords: state.winnerRecords,
         blockedWinnerIds: state.blockedWinnerIds,

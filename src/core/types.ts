@@ -1,4 +1,5 @@
 export type DrawMode = "direct" | "elimination";
+export type GameId = "roulette" | "cards";
 export type Parity = "even" | "odd";
 
 export interface Participant {
@@ -24,6 +25,7 @@ export interface WinnerRecord {
   participantName: string;
   prize: string;
   mode: DrawMode;
+  game: GameId;
   createdAt: string;
 }
 
@@ -32,10 +34,12 @@ export interface RoundResult {
   participantId: string | null;
   participantName: string;
   selectedParticipantName?: string;
+  selectionLabel?: string;
   kind: "winner" | "eliminated" | "qualified" | "parity-selected";
   landedNumber: number;
   parity: Parity;
   mode: DrawMode;
+  game: GameId;
   prize?: string;
   round: number;
   remainingCount: number;

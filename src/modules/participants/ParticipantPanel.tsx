@@ -16,6 +16,7 @@ export function ParticipantPanel() {
   const [showBulk, setShowBulk] = useState(false);
   const [notice, setNotice] = useState("");
   const participants = useDrawStore((state) => state.participants);
+  const game = useDrawStore((state) => state.game);
   const addNames = useDrawStore((state) => state.addNames);
   const removeParticipant = useDrawStore((state) => state.removeParticipant);
   const clearParticipants = useDrawStore((state) => state.clearParticipants);
@@ -50,7 +51,7 @@ export function ParticipantPanel() {
         <span className="step-number">1</span>
         <div>
           <h2>Cargar participantes</h2>
-          <p>Sin casillas vacías: la rueda se adapta a cada lista</p>
+          <p>{game === "roulette" ? "Sin casillas vacías: la rueda se adapta a cada lista" : "Cada nombre recibe una carta visible antes de barajar"}</p>
         </div>
         <span className="count-pill"><Users size={14} /> {participants.length}</span>
       </div>

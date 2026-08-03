@@ -8,8 +8,10 @@ import {
 import { useDrawStore } from "../participants/drawStore";
 
 export function DrawSetup() {
+  const game = useDrawStore((state) => state.game);
   const mode = useDrawStore((state) => state.mode);
   const prize = useDrawStore((state) => state.prize);
+  const setGame = useDrawStore((state) => state.setGame);
   const setMode = useDrawStore((state) => state.setMode);
   const setPrize = useDrawStore((state) => state.setPrize);
 
@@ -20,23 +22,31 @@ export function DrawSetup() {
           <span className="step-number">2</span>
           <div>
             <h2>Elegir juego</h2>
-            <p>La ruleta es el primer juego disponible</p>
+            <p>Elige entre la ruleta y la mesa de cartas</p>
           </div>
         </div>
         <div className="game-options game-options--large">
-          <button type="button" className="game-option is-active">
+          <button
+            type="button"
+            className={`game-option ${game === "roulette" ? "is-active" : ""}`}
+            onClick={() => setGame("roulette")}
+          >
             <CircleDot size={30} />
             <span>Ruleta casino</span>
+            <small>Disponible</small>
+          </button>
+          <button
+            type="button"
+            className={`game-option ${game === "cards" ? "is-active" : ""}`}
+            onClick={() => setGame("cards")}
+          >
+            <Layers3 size={29} />
+            <span>Cartas</span>
             <small>Disponible</small>
           </button>
           <button type="button" className="game-option" disabled title="Próximamente">
             <Gem size={29} />
             <span>Canicas</span>
-            <small>Próximamente</small>
-          </button>
-          <button type="button" className="game-option" disabled title="Próximamente">
-            <Layers3 size={29} />
-            <span>Cartas</span>
             <small>Próximamente</small>
           </button>
         </div>
@@ -70,12 +80,12 @@ export function DrawSetup() {
             <UsersRound size={22} />
             <span>
               <strong>Eliminación</strong>
-              <small>Incluye las casillas PAR e IMPAR</small>
+              <small>{game === "roulette" ? "Incluye las casillas PAR e IMPAR" : "Una carta sale en cada ronda"}</small>
             </span>
           </button>
         </div>
 
-        {mode === "elimination" && (
+        {mode === "elimination" && game === "roulette" && (
           <div className="casino-rule-preview elimination-rule-preview">
             <span className="parity-token parity-token--even">PAR</span>
                 <p>Si cae en PAR, la siguiente tirada elimina un solo número par y después vuelven todos los demás.</p>
@@ -84,10 +94,17 @@ export function DrawSetup() {
           </div>
         )}
 
+        {mode === "elimination" && game === "cards" && (
+          <div className="direct-rule-preview cards-rule-preview">
+            <Layers3 size={17} />
+            <p>Las cartas se muestran, se reúnen, se barajan y se reparten boca abajo. La carta elegida elimina a una sola persona; el mazo se reconstruye con quienes continúan.</p>
+          </div>
+        )}
+
         {mode === "direct" && (
           <div className="direct-rule-preview">
             <Trophy size={17} />
-            <p>Cada ganador queda fuera de las siguientes tiradas hasta que pulses “Volver a incluir”. Sus premios se guardan aunque cambies de modo.</p>
+            <p>Cada ganador queda fuera de las siguientes rondas hasta que pulses “Volver a incluir”. Sus premios se guardan aunque cambies de juego o de modo.</p>
           </div>
         )}
 

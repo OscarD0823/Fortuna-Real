@@ -1,4 +1,4 @@
-import { Binary, Crown, RotateCcw, Target, Trophy, Volume2, VolumeX, X } from "lucide-react";
+import { Binary, Crown, Layers3, RotateCcw, Target, Trophy, Volume2, VolumeX, X } from "lucide-react";
 import type { RoundResult } from "../../core/types";
 
 export function ResultReveal({
@@ -15,12 +15,13 @@ export function ResultReveal({
   const isWinner = result.kind === "winner";
   const isQualifiedRound = result.kind === "qualified";
   const isParitySelection = result.kind === "parity-selected";
+  const isCardGame = result.game === "cards";
   const parityLabel = result.parity === "even" ? "PAR" : "IMPAR";
 
   return (
     <div className="reveal-backdrop" onMouseDown={onClose} role="presentation">
       <div
-        className={`result-reveal ${
+        className={`result-reveal result-reveal--${result.game} ${
           isWinner
             ? "result-reveal--winner"
             : isQualifiedRound || isParitySelection
@@ -29,17 +30,18 @@ export function ResultReveal({
         }`}
         role="dialog"
         aria-modal="true"
-        aria-label="Resultado de la ruleta"
+        aria-label={`Resultado de ${isCardGame ? "las cartas" : "la ruleta"}`}
         onMouseDown={(event) => event.stopPropagation()}
       >
         <button className="reveal-close" type="button" onClick={onClose} aria-label="Cerrar resultado">
           <X size={19} />
         </button>
-        <div className="confetti" aria-hidden="true">
-          {Array.from({ length: 22 }, (_, index) => <i key={index} />)}
+        <div className="reveal-spotlights" aria-hidden="true"><i /><i /><i /></div>
+        <div className={`confetti ${isWinner ? "is-celebrating" : ""}`} aria-hidden="true">
+          {Array.from({ length: 28 }, (_, index) => <i key={index} />)}
         </div>
         <div className="reveal-icon">
-          {isWinner ? <Crown size={51} /> : isQualifiedRound || isParitySelection ? <Binary size={50} /> : <Target size={48} />}
+          {isWinner ? <Crown size={51} /> : isQualifiedRound || isParitySelection ? <Binary size={50} /> : isCardGame ? <Layers3 size={48} /> : <Target size={48} />}
         </div>
 
         {(isWinner || (!isQualifiedRound && !isParitySelection)) && (
@@ -47,7 +49,7 @@ export function ResultReveal({
             {soundEnabled ? <Volume2 size={14} /> : <VolumeX size={14} />}
             <span>
               {soundEnabled
-                ? isWinner ? "Anuncio por voz: ganador" : "Anuncio por voz: eliminado"
+                ? isWinner ? "Locución celebratoria: ganador" : "Anuncio oficial: eliminado"
                 : "Anuncio por voz silenciado"}
             </span>
           </div>
@@ -82,13 +84,19 @@ export function ResultReveal({
                 ? result.selectedParticipantName
                   ? `GANADOR TRAS SALIR ${result.selectedParticipantName.toUpperCase()}`
                   : "TENEMOS GANADOR"
-                : `NÚMERO ${result.landedNumber} · SALE DE LA RULETA`}
+                : isCardGame
+                  ? `${(result.selectionLabel || `CARTA ${result.landedNumber}`).toUpperCase()} · CARTA SELECCIONADA`
+                  : `NÚMERO ${result.landedNumber} · SALE DE LA RULETA`}
             </span>
             <h2>{result.participantName}</h2>
             <p>
               {isWinner
-                ? <>Se lleva <strong>{result.prize || "Premio del sorteo"}</strong>. Quedará fuera hasta que decidas habilitarlo nuevamente.</>
-                : "Su casilla desaparece de la ruleta y el nombre queda marcado como eliminado."}
+                ? result.selectedParticipantName
+                  ? <>Tras salir <strong>{result.selectedParticipantName}</strong>, se convierte en ganador final y recibe <strong>{result.prize || "Premio del sorteo"}</strong>.</>
+                  : <>Se lleva <strong>{result.prize || "Premio del sorteo"}</strong>. Quedará fuera hasta que decidas habilitarlo nuevamente.</>
+                : isCardGame
+                  ? "Su carta sale del mazo y el nombre queda marcado como eliminado para la siguiente ronda."
+                  : "Su casilla desaparece de la ruleta y el nombre queda marcado como eliminado."}
             </p>
           </>
         )}

@@ -54,6 +54,29 @@ class FortunaAudioEngine {
     oscillator.stop(start + duration + 0.02);
   }
 
+  private noise(duration: number, volume = 0.025, delay = 0) {
+    const context = this.getContext();
+    if (!context) return;
+    const start = context.currentTime + delay;
+    const buffer = context.createBuffer(1, Math.ceil(context.sampleRate * duration), context.sampleRate);
+    const channel = buffer.getChannelData(0);
+    for (let index = 0; index < channel.length; index += 1) {
+      channel[index] = (Math.random() * 2 - 1) * (1 - index / channel.length);
+    }
+    const source = context.createBufferSource();
+    const filter = context.createBiquadFilter();
+    const gain = context.createGain();
+    filter.type = "bandpass";
+    filter.frequency.setValueAtTime(1700, start);
+    filter.Q.setValueAtTime(0.8, start);
+    gain.gain.setValueAtTime(0.0001, start);
+    gain.gain.exponentialRampToValueAtTime(volume, start + 0.015);
+    gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
+    source.buffer = buffer;
+    source.connect(filter).connect(gain).connect(context.destination);
+    source.start(start);
+  }
+
   playClick() {
     this.tone(520, 0.08, { type: "triangle", volume: 0.045, endFrequency: 760 });
   }
@@ -71,6 +94,46 @@ class FortunaAudioEngine {
   playBallDrop() {
     this.tone(920, 0.08, { type: "square", volume: 0.035, endFrequency: 430 });
     this.tone(510, 0.16, { type: "triangle", volume: 0.055, delay: 0.08, endFrequency: 280 });
+  }
+
+  playCardGather() {
+    this.noise(0.42, 0.035);
+    this.tone(680, 0.42, { type: "triangle", volume: 0.035, endFrequency: 240 });
+  }
+
+  playCardShuffle() {
+    [0, 0.12, 0.24, 0.39, 0.52, 0.66].forEach((delay, index) => {
+      this.noise(0.09, 0.025 + (index % 2) * 0.008, delay);
+      this.tone(index % 2 === 0 ? 230 : 310, 0.08, {
+        type: "triangle",
+        volume: 0.026,
+        delay,
+        endFrequency: index % 2 === 0 ? 360 : 180,
+      });
+    });
+  }
+
+  playCardDeal() {
+    Array.from({ length: 9 }, (_, index) => index * 0.075).forEach((delay, index) => {
+      this.noise(0.055, 0.018, delay);
+      this.tone(360 + (index % 3) * 55, 0.055, {
+        type: "triangle",
+        volume: 0.025,
+        delay,
+        endFrequency: 250,
+      });
+    });
+  }
+
+  playCardSelect() {
+    this.noise(0.2, 0.03);
+    [392, 587, 784].forEach((frequency, index) => {
+      this.tone(frequency, 0.34, {
+        type: "triangle",
+        volume: 0.05,
+        delay: index * 0.085,
+      });
+    });
   }
 
   playResult(winner: boolean, parity?: "even" | "odd") {
@@ -111,27 +174,58 @@ class FortunaAudioEngine {
     if (typeof SpeechSynthesisUtterance === "undefined") return;
 
     this.cancelAnnouncement();
-    const message = result.kind === "winner"
-      ? `Atención. ${result.participantName} es el ganador. Premio: ${result.prize || "premio del sorteo"}.`
-      : `Participante número ${result.landedNumber}. ${result.participantName}. Eliminado.`;
-
     this.announcementTimer = window.setTimeout(() => {
-      const announcement = new SpeechSynthesisUtterance(message);
       const spanishVoices = window.speechSynthesis.getVoices().filter(
         (voice) => voice.lang.toLocaleLowerCase().startsWith("es"),
       );
-      announcement.voice = spanishVoices.find(
-        (voice) => /colombia|mexico|mexican|sabina|helena|pablo|jorge/i.test(
-          `${voice.name} ${voice.lang}`,
+      const voice = spanishVoices.find(
+        (candidate) => /natural|neural|colombia|mexico|mexican|sabina|helena|dalia|elvira/i.test(
+          `${candidate.name} ${candidate.lang}`,
         ),
       ) ?? spanishVoices[0] ?? null;
-      announcement.lang = announcement.voice?.lang || "es-CO";
-      announcement.rate = result.kind === "winner" ? 0.86 : 0.78;
-      announcement.pitch = result.kind === "winner" ? 0.86 : 0.68;
-      announcement.volume = 1;
+
+      const contextLabel = result.game === "cards"
+        ? result.selectionLabel || `Carta ${result.landedNumber}`
+        : `Número ${result.landedNumber}`;
+      const parts = result.kind === "winner"
+        ? result.selectedParticipantName
+          ? [
+              { text: `Resultado confirmado. ${result.selectedParticipantName} ha sido eliminado.`, rate: 0.88, pitch: 0.82 },
+              { text: `¡Atención! ${result.participantName} es el gran ganador de Fortuna Real.`, rate: 0.96, pitch: 1.08 },
+              { text: `Premio: ${result.prize || "premio del sorteo"}. ¡Felicidades!`, rate: 1, pitch: 1.12 },
+            ]
+          : [
+              { text: "¡Atención! Fortuna Real tiene un resultado.", rate: 0.97, pitch: 1.02 },
+              { text: `${contextLabel}. ¡${result.participantName} es el gran ganador!`, rate: 0.94, pitch: 1.12 },
+              { text: `Premio: ${result.prize || "premio del sorteo"}. ¡Felicidades!`, rate: 1, pitch: 1.15 },
+            ]
+        : [
+            { text: "Atención. Resultado confirmado.", rate: 0.82, pitch: 0.78 },
+            { text: `${contextLabel}. ${result.participantName}. Eliminado.`, rate: 0.76, pitch: 0.68 },
+          ];
+
+      if (result.kind === "winner") {
+        [659, 831, 1047].forEach((frequency, index) => this.tone(frequency, 0.45, {
+          type: "triangle",
+          volume: 0.04,
+          delay: index * 0.1,
+        }));
+      } else {
+        this.tone(440, 0.18, { type: "sine", volume: 0.035 });
+        this.tone(330, 0.32, { type: "sine", volume: 0.04, delay: 0.19, endFrequency: 220 });
+      }
+
+      parts.forEach((part) => {
+        const announcement = new SpeechSynthesisUtterance(part.text);
+        announcement.voice = voice;
+        announcement.lang = voice?.lang || "es-CO";
+        announcement.rate = part.rate;
+        announcement.pitch = part.pitch;
+        announcement.volume = 1;
+        window.speechSynthesis.speak(announcement);
+      });
       this.announcementTimer = null;
-      window.speechSynthesis.speak(announcement);
-    }, result.kind === "winner" ? 950 : 720);
+    }, result.kind === "winner" ? 720 : 560);
   }
 
   startRoulette(): StopSound {

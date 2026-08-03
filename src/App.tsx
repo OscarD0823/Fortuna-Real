@@ -16,10 +16,12 @@ import {
   Gift,
   Hash,
   History,
+  Layers3,
   Play,
   RotateCcw,
   Settings2,
   ShieldCheck,
+  Shuffle,
   Sparkles,
   Target,
   Trophy,
@@ -30,11 +32,14 @@ import {
 import "./App.css";
 import type {
   DrawMode,
+  GameId,
   Participant,
   Parity,
   RouletteEntry,
   RoundResult,
 } from "./core/types";
+import { CardGame } from "./games/cards/CardGame";
+import type { CardAssignment } from "./games/cards/cardDeck";
 import { RouletteWheel } from "./games/roulette/RouletteWheel";
 import { arrangeEliminationEntries } from "./games/roulette/rouletteEntries";
 import { DrawSetup } from "./modules/draw/DrawSetup";
@@ -68,7 +73,8 @@ const numberParity = (number: number): Parity =>
 
 function App() {
   const [showSplash, setShowSplash] = useState(true);
-  const [screen, setScreen] = useState<"setup" | "roulette">("setup");
+  const [screen, setScreen] = useState<"setup" | GameId>("setup");
+  const [cardRoundKey, setCardRoundKey] = useState(0);
   const [isSpinning, setIsSpinning] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(
     () => localStorage.getItem("fortuna-real-sound") !== "off",
@@ -87,6 +93,7 @@ function App() {
   const blockedWinnerIds = useDrawStore((state) => state.blockedWinnerIds);
   const eliminationParity = useDrawStore((state) => state.eliminationParity);
   const history = useDrawStore((state) => state.history);
+  const game = useDrawStore((state) => state.game);
   const mode = useDrawStore((state) => state.mode);
   const prize = useDrawStore((state) => state.prize);
   const roundNumber = useDrawStore((state) => state.roundNumber);
@@ -152,20 +159,23 @@ function App() {
     [],
   );
 
-  const enterRoulette = () => {
+  const enterSelectedGame = () => {
     if (activeParticipants.length < 2) return;
     startDraw();
+    setIsSpinning(false);
     setCurrentResult(null);
     setSpinRequest(null);
-    setScreen("roulette");
+    setCardRoundKey((key) => key + 1);
+    setScreen(game);
     fortunaAudio.playEnterGame();
   };
 
   const returnToSetup = () => {
-    if (isSpinning) return;
+    if (screen === "roulette" && isSpinning) return;
     fortunaAudio.playClick();
     setCurrentResult(null);
     setSpinRequest(null);
+    setIsSpinning(false);
     startDraw();
     setScreen("setup");
   };
@@ -200,7 +210,7 @@ function App() {
     fortunaAudio.playBallDrop();
     const result = selection.kind === "parity"
       ? recordParitySelection(selection.parity, selection.number)
-      : recordSelection(selection.participantId as string, selection.number);
+      : recordSelection(selection.participantId as string, selection.number, `Número ${selection.number}`);
     setIsSpinning(false);
     setCurrentResult(result);
     pendingSelection.current = null;
@@ -211,20 +221,37 @@ function App() {
     }, 170);
   }, [recordParitySelection, recordSelection]);
 
+  const finishCardSelection = useCallback((assignment: CardAssignment, position: number) => {
+    const result = recordSelection(assignment.participant.id, position, assignment.label);
+    setCurrentResult(result);
+
+    window.setTimeout(() => {
+      fortunaAudio.playResult(result.kind === "winner", result.parity);
+      fortunaAudio.announceResult(result);
+    }, 170);
+  }, [recordSelection]);
+
+  const closeCurrentResult = () => {
+    setCurrentResult(null);
+    if (screen === "cards") setCardRoundKey((key) => key + 1);
+  };
+
   const allowCurrentWinnerToReturn = () => {
     if (currentResult?.kind !== "winner" || !currentResult.participantId) return;
     reenableWinner(currentResult.participantId);
     if (currentResult.mode === "elimination") startDraw();
     fortunaAudio.playClick();
     setCurrentResult(null);
+    setCardRoundKey((key) => key + 1);
   };
 
   const restartSession = () => {
-    if (isSpinning) return;
+    if (screen === "roulette" && isSpinning) return;
     fortunaAudio.playClick();
     startDraw();
     setCurrentResult(null);
     setSpinRequest(null);
+    setCardRoundKey((key) => key + 1);
   };
 
   const toggleSound = () => {
@@ -256,6 +283,7 @@ function App() {
       <main className={`app-shell ${showSplash ? "app-shell--waiting" : ""}`}>
         <Topbar
           screen={screen}
+          game={game}
           soundEnabled={soundEnabled}
           onToggleSound={toggleSound}
           onToggleFullscreen={toggleFullscreen}
@@ -266,11 +294,12 @@ function App() {
 
         {screen === "setup" ? (
           <SetupScreen
-            onStart={enterRoulette}
+            onStart={enterSelectedGame}
+            game={game}
             participantCount={participants.length}
             eligibleCount={activeParticipants.length}
           />
-        ) : (
+        ) : screen === "roulette" ? (
           <RouletteScreen
             participants={participants}
             activeParticipants={activeParticipants}
@@ -291,13 +320,29 @@ function App() {
             onSpinEnd={finishSpin}
             onRestart={restartSession}
           />
+        ) : (
+          <CardsScreen
+            key={cardRoundKey}
+            participants={participants}
+            activeParticipants={activeParticipants}
+            blockedWinnerIds={blockedWinnerIds}
+            eliminatedIds={eliminatedIds}
+            history={history}
+            latestResult={latestResult}
+            mode={mode}
+            prize={prize}
+            roundNumber={roundNumber}
+            sessionWinner={sessionWinner}
+            onSelect={finishCardSelection}
+            onRestart={restartSession}
+          />
         )}
       </main>
 
       {currentResult && (
         <ResultReveal
           result={currentResult}
-          onClose={() => setCurrentResult(null)}
+          onClose={closeCurrentResult}
           onReenableWinner={allowCurrentWinnerToReturn}
           soundEnabled={soundEnabled}
         />
@@ -309,6 +354,7 @@ function App() {
 
 function Topbar({
   screen,
+  game,
   soundEnabled,
   onToggleSound,
   onToggleFullscreen,
@@ -316,7 +362,8 @@ function Topbar({
   roundNumber,
   activeCount,
 }: {
-  screen: "setup" | "roulette";
+  screen: "setup" | GameId;
+  game: GameId;
   soundEnabled: boolean;
   onToggleSound: () => void;
   onToggleFullscreen: () => void;
@@ -337,12 +384,12 @@ function Topbar({
         </div>
       </div>
 
-      {screen === "roulette" ? (
+      {screen !== "setup" ? (
         <div className="round-pill">
-          <CircleDot size={19} />
+          {screen === "roulette" ? <CircleDot size={19} /> : <Layers3 size={19} />}
           <div>
             <strong>Ronda {roundNumber}</strong>
-            <span>{activeCount} participantes disponibles</span>
+            <span>{activeCount} participantes · {screen === "roulette" ? "ruleta" : "cartas"}</span>
           </div>
         </div>
       ) : (
@@ -350,13 +397,13 @@ function Topbar({
           <ShieldCheck size={20} />
           <div>
             <strong>Configuración del sorteo</strong>
-            <span>La ruleta se adapta a la cantidad de nombres</span>
+            <span>{game === "roulette" ? "La ruleta se adapta a cada lista" : "Asignación visible y barajado por fases"}</span>
           </div>
         </div>
       )}
 
       <div className="topbar-actions">
-        {screen === "roulette" && (
+        {screen !== "setup" && (
           <button className="back-button" type="button" onClick={onBack}>
             <ArrowLeft size={17} /> Inicio
           </button>
@@ -382,10 +429,12 @@ function Topbar({
 
 function SetupScreen({
   onStart,
+  game,
   participantCount,
   eligibleCount,
 }: {
   onStart: () => void;
+  game: GameId;
   participantCount: number;
   eligibleCount: number;
 }) {
@@ -407,7 +456,7 @@ function SetupScreen({
             className="start-button setup-start-button setup-hero-start"
             onClick={onStart}
             disabled={eligibleCount < 2}
-            title={eligibleCount < 2 ? "Agrega al menos dos participantes" : "Entrar a la ruleta"}
+            title={eligibleCount < 2 ? "Agrega al menos dos participantes" : `Entrar a ${game === "roulette" ? "la ruleta" : "la mesa de cartas"}`}
           >
             <Play size={21} fill="currentColor" /> Iniciar sorteo
           </button>
@@ -648,6 +697,152 @@ function RouletteScreen({
         <div className="casino-stats-row">
           <StatCard icon={<Users />} tone="cyan" label="Activos" value={activeParticipants.length} />
           <StatCard icon={<CheckCircle2 />} tone="green" label="Casillas" value={entries.length} />
+        </div>
+      </aside>
+    </section>
+  );
+}
+
+function CardsScreen({
+  participants,
+  activeParticipants,
+  blockedWinnerIds,
+  eliminatedIds,
+  history,
+  latestResult,
+  mode,
+  prize,
+  roundNumber,
+  sessionWinner,
+  onSelect,
+  onRestart,
+}: {
+  participants: Participant[];
+  activeParticipants: Participant[];
+  blockedWinnerIds: string[];
+  eliminatedIds: string[];
+  history: RoundResult[];
+  latestResult: RoundResult | null;
+  mode: DrawMode;
+  prize: string;
+  roundNumber: number;
+  sessionWinner: RoundResult | null;
+  onSelect: (assignment: CardAssignment, position: number) => void;
+  onRestart: () => void;
+}) {
+  const cannotPlay = !!sessionWinner || activeParticipants.length < 2;
+
+  return (
+    <section className="cards-workspace">
+      <aside className="panel casino-roster-panel cards-roster-panel">
+        <div className="panel-title panel-title--spread">
+          <span><Users size={18} /> Participantes</span>
+          <small>{activeParticipants.length}/{participants.length}</small>
+        </div>
+        <p className="roster-help">Todos los nombres se muestran primero en su carta asignada.</p>
+        <div className="roster-list" aria-label="Participantes de la mesa de cartas">
+          {participants.map((person) => {
+            const activeIndex = activeParticipants.findIndex((active) => active.id === person.id);
+            const isEliminated = eliminatedIds.includes(person.id);
+            const isWinner = blockedWinnerIds.includes(person.id);
+            return (
+              <div
+                className={`roster-row ${isEliminated ? "is-eliminated" : ""} ${isWinner ? "is-winner" : ""}`}
+                key={person.id}
+              >
+                <span className="roster-number">{activeIndex >= 0 ? activeIndex + 1 : "—"}</span>
+                <i style={{ background: person.color }} />
+                <strong title={person.name}>{person.name}</strong>
+                <em>{isWinner ? "Ganador" : isEliminated ? "Eliminado" : "En juego"}</em>
+              </div>
+            );
+          })}
+        </div>
+        <button className="text-button cards-restart-button" type="button" onClick={onRestart}>
+          <RotateCcw size={15} /> Reiniciar con los habilitados
+        </button>
+      </aside>
+
+      <section className="cards-stage-column">
+        <div className="stage-heading casino-stage-heading">
+          <div>
+            <span className="eyebrow">{modeLabels[mode]} · RONDA {roundNumber}</span>
+            <h1>Mesa de cartas</h1>
+          </div>
+          <div className="live-badge"><span /> {sessionWinner ? "RONDA FINALIZADA" : "MAZO VERIFICABLE"}</div>
+        </div>
+
+        {sessionWinner ? (
+          <div className="cards-final-state">
+            <Crown size={58} />
+            <span>Ganador final</span>
+            <strong>{sessionWinner.participantName}</strong>
+            <p>El historial conserva el premio y permite habilitarlo para otro sorteo.</p>
+          </div>
+        ) : (
+          <CardGame
+            participants={activeParticipants}
+            mode={mode}
+            disabled={cannotPlay}
+            onSelect={onSelect}
+          />
+        )}
+      </section>
+
+      <aside className="casino-info-column cards-info-column">
+        <section className="panel casino-mode-card">
+          <div className="panel-title"><Layers3 size={18} /> {modeLabels[mode]}</div>
+          <p className="mode-description">
+            {mode === "direct"
+              ? "La carta elegida entrega el premio. Su ganador queda fuera hasta que lo habilites nuevamente."
+              : "La carta elegida elimina una sola persona. Después se crea un nuevo mazo con quienes siguen."}
+          </p>
+          <div className="cards-process-mini">
+            <span>1 · Ver</span><span>2 · Reunir</span><span>3 · Barajar</span><span>4 · Elegir</span>
+          </div>
+        </section>
+
+        <section className="panel casino-prize-card">
+          <div className="panel-title"><Gift size={18} /> Premio actual</div>
+          <div className="compact-prize"><Trophy size={28} /><strong>{prize || "Premio sorpresa"}</strong></div>
+        </section>
+
+        <section className="panel casino-current-result">
+          <div className="panel-title"><Target size={18} /> Resultado actual</div>
+          {latestResult ? (
+            <div className={`round-result-summary round-result-summary--${latestResult.kind}`}>
+              <span className="landed-number card-result-symbol"><Layers3 size={16} /></span>
+              <strong>{latestResult.participantName}</strong>
+              <em>{latestResult.kind === "winner" ? "Ganador" : "Eliminado"}</em>
+              {latestResult.selectionLabel && <small>{latestResult.selectionLabel}</small>}
+            </div>
+          ) : (
+            <div className="empty-result"><Layers3 size={25} /><strong>Mazo preparado</strong><span>Muestra y baraja las cartas.</span></div>
+          )}
+        </section>
+
+        <WinnerHistory compact />
+
+        <section className="panel history-panel casino-history-panel cards-history-panel">
+          <div className="panel-title panel-title--spread">
+            <span><History size={18} /> Historial</span><small>{history.length}</small>
+          </div>
+          <div className="history-list">
+            {history.length === 0 ? (
+              <div className="history-empty">Las cartas elegidas aparecerán aquí.</div>
+            ) : history.map((result) => (
+              <div className="history-row casino-history-row" key={result.id}>
+                <span>R{result.round} · carta {result.landedNumber}</span>
+                <strong>{result.participantName}</strong>
+                <em className={result.kind}>{result.kind === "winner" ? "GANÓ" : "FUERA"}</em>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <div className="casino-stats-row">
+          <StatCard icon={<Users />} tone="cyan" label="Activos" value={activeParticipants.length} />
+          <StatCard icon={<Shuffle />} tone="gold" label="Cartas" value={activeParticipants.length} />
         </div>
       </aside>
     </section>

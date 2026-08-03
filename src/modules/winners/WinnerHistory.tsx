@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { Gift, RotateCcw, Trophy } from "lucide-react";
+import { CircleDot, Gift, Layers3, RotateCcw, Trophy } from "lucide-react";
 import type { WinnerRecord } from "../../core/types";
 import { useDrawStore } from "../participants/drawStore";
 
@@ -71,7 +71,8 @@ export function WinnerHistory({ compact = false }: { compact?: boolean }) {
                 <div className="winner-awards">
                   {group.awards.map((award) => (
                     <span key={award.id} title={new Date(award.createdAt).toLocaleString()}>
-                      <Gift size={11} /> {award.prize}
+                      {award.game === "cards" ? <Layers3 size={11} /> : <CircleDot size={11} />}
+                      {award.prize}
                     </span>
                   ))}
                 </div>
@@ -88,7 +89,7 @@ export function WinnerHistory({ compact = false }: { compact?: boolean }) {
       )}
       {!compact && groups.length > 0 && (
         <p className="winner-participation-help">
-          Volver a incluir no borra ningún premio: solo permite que esa persona aparezca de nuevo en la ruleta.
+          Volver a incluir no borra ningún premio: permite que esa persona aparezca de nuevo en cualquier juego.
         </p>
       )}
     </section>
