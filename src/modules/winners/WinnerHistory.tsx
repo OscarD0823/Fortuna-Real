@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { CircleDot, Gift, Layers3, RotateCcw, Trophy } from "lucide-react";
+import { CircleDot, Gem, Gift, Layers3, RotateCcw, Trophy } from "lucide-react";
 import type { WinnerRecord } from "../../core/types";
 import { useDrawStore } from "../participants/drawStore";
 
@@ -71,7 +71,11 @@ export function WinnerHistory({ compact = false }: { compact?: boolean }) {
                 <div className="winner-awards">
                   {group.awards.map((award) => (
                     <span key={award.id} title={new Date(award.createdAt).toLocaleString()}>
-                      {award.game === "cards" ? <Layers3 size={11} /> : <CircleDot size={11} />}
+                      {award.game === "cards"
+                        ? <Layers3 size={11} />
+                        : award.game === "marbles"
+                          ? <Gem size={11} />
+                          : <CircleDot size={11} />}
                       {award.prize}
                     </span>
                   ))}

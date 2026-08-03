@@ -1,13 +1,14 @@
 {
   "name": "fortuna-real",
   "private": true,
-  "version": "0.3.0",
+  "version": "0.4.0",
   "type": "module",
   "scripts": {
     "crear-instalador": "powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File ./crear-instalador.ps1",
     "fortuna": "powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File ./iniciar-fortuna.ps1",
     "dev": "vite",
     "build": "tsc && vite build",
+    "test:capacity": "node --experimental-strip-types ./scripts/capacity-check.ts",
     "preview": "vite preview",
     "tauri": "tauri"
   },

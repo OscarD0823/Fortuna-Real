@@ -22,7 +22,7 @@ export function DrawSetup() {
           <span className="step-number">2</span>
           <div>
             <h2>Elegir juego</h2>
-            <p>Elige entre la ruleta y la mesa de cartas</p>
+            <p>Ruleta, cartas o carrera de canicas</p>
           </div>
         </div>
         <div className="game-options game-options--large">
@@ -44,10 +44,14 @@ export function DrawSetup() {
             <span>Cartas</span>
             <small>Disponible</small>
           </button>
-          <button type="button" className="game-option" disabled title="Próximamente">
+          <button
+            type="button"
+            className={`game-option ${game === "marbles" ? "is-active" : ""}`}
+            onClick={() => setGame("marbles")}
+          >
             <Gem size={29} />
             <span>Canicas</span>
-            <small>Próximamente</small>
+            <small>Disponible</small>
           </button>
         </div>
       </section>
@@ -80,7 +84,13 @@ export function DrawSetup() {
             <UsersRound size={22} />
             <span>
               <strong>Eliminación</strong>
-              <small>{game === "roulette" ? "Incluye las casillas PAR e IMPAR" : "Una carta sale en cada ronda"}</small>
+              <small>
+                {game === "roulette"
+                  ? "Incluye las casillas PAR e IMPAR"
+                  : game === "cards"
+                    ? "Una carta sale en cada ronda"
+                    : "La última canica queda eliminada"}
+              </small>
             </span>
           </button>
         </div>
@@ -98,6 +108,13 @@ export function DrawSetup() {
           <div className="direct-rule-preview cards-rule-preview">
             <Layers3 size={17} />
             <p>Las cartas se muestran, se reúnen, se barajan y se reparten boca abajo. La carta elegida elimina a una sola persona; el mazo se reconstruye con quienes continúan.</p>
+          </div>
+        )}
+
+        {mode === "elimination" && game === "marbles" && (
+          <div className="direct-rule-preview marbles-rule-preview">
+            <Gem size={17} />
+            <p>La última canica en cruzar queda eliminada. Cada ronda genera otra pista con obstáculos y poderes automáticos.</p>
           </div>
         )}
 

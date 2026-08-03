@@ -1,5 +1,5 @@
 export type DrawMode = "direct" | "elimination";
-export type GameId = "roulette" | "cards";
+export type GameId = "roulette" | "cards" | "marbles";
 export type Parity = "even" | "odd";
 
 export interface Participant {

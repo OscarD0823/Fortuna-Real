@@ -1,4 +1,4 @@
-import { Binary, Crown, Layers3, RotateCcw, Target, Trophy, Volume2, VolumeX, X } from "lucide-react";
+import { Binary, Crown, Gem, Layers3, RotateCcw, Target, Trophy, Volume2, VolumeX, X } from "lucide-react";
 import type { RoundResult } from "../../core/types";
 
 export function ResultReveal({
@@ -16,6 +16,7 @@ export function ResultReveal({
   const isQualifiedRound = result.kind === "qualified";
   const isParitySelection = result.kind === "parity-selected";
   const isCardGame = result.game === "cards";
+  const isMarbleGame = result.game === "marbles";
   const parityLabel = result.parity === "even" ? "PAR" : "IMPAR";
 
   return (
@@ -30,7 +31,7 @@ export function ResultReveal({
         }`}
         role="dialog"
         aria-modal="true"
-        aria-label={`Resultado de ${isCardGame ? "las cartas" : "la ruleta"}`}
+        aria-label={`Resultado de ${isCardGame ? "las cartas" : isMarbleGame ? "las canicas" : "la ruleta"}`}
         onMouseDown={(event) => event.stopPropagation()}
       >
         <button className="reveal-close" type="button" onClick={onClose} aria-label="Cerrar resultado">
@@ -41,7 +42,7 @@ export function ResultReveal({
           {Array.from({ length: 28 }, (_, index) => <i key={index} />)}
         </div>
         <div className="reveal-icon">
-          {isWinner ? <Crown size={51} /> : isQualifiedRound || isParitySelection ? <Binary size={50} /> : isCardGame ? <Layers3 size={48} /> : <Target size={48} />}
+          {isWinner ? <Crown size={51} /> : isQualifiedRound || isParitySelection ? <Binary size={50} /> : isCardGame ? <Layers3 size={48} /> : isMarbleGame ? <Gem size={48} /> : <Target size={48} />}
         </div>
 
         {(isWinner || (!isQualifiedRound && !isParitySelection)) && (
@@ -83,9 +84,13 @@ export function ResultReveal({
               {isWinner
                 ? result.selectedParticipantName
                   ? `GANADOR TRAS SALIR ${result.selectedParticipantName.toUpperCase()}`
-                  : "TENEMOS GANADOR"
+                  : isMarbleGame && result.selectionLabel
+                    ? `${result.selectionLabel.toUpperCase()} · TENEMOS GANADOR`
+                    : "TENEMOS GANADOR"
                 : isCardGame
                   ? `${(result.selectionLabel || `CARTA ${result.landedNumber}`).toUpperCase()} · CARTA SELECCIONADA`
+                  : isMarbleGame
+                    ? `${(result.selectionLabel || `CANICA ${result.landedNumber}`).toUpperCase()} · CARRERA FINALIZADA`
                   : `NÚMERO ${result.landedNumber} · SALE DE LA RULETA`}
             </span>
             <h2>{result.participantName}</h2>
@@ -96,6 +101,8 @@ export function ResultReveal({
                   : <>Se lleva <strong>{result.prize || "Premio del sorteo"}</strong>. Quedará fuera hasta que decidas habilitarlo nuevamente.</>
                 : isCardGame
                   ? "Su carta sale del mazo y el nombre queda marcado como eliminado para la siguiente ronda."
+                  : isMarbleGame
+                    ? "Su canica cruzó de última y el nombre queda marcado como eliminado. La próxima ronda tendrá una pista nueva."
                   : "Su casilla desaparece de la ruleta y el nombre queda marcado como eliminado."}
             </p>
           </>

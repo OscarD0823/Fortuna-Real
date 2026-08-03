@@ -39,6 +39,13 @@ const wait = (milliseconds: number) =>
 const nextFrame = () =>
   new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
 
+const waitForAnimations = async (animations: Animation[], fallbackMs: number) => {
+  await Promise.race([
+    Promise.all(animations.map((animation) => animation.finished.catch(() => undefined))),
+    wait(fallbackMs),
+  ]);
+};
+
 export function CardGame({
   participants,
   mode,
@@ -62,14 +69,18 @@ export function CardGame({
   );
   const columns = Math.max(2, Math.ceil(Math.sqrt(assignments.length * 1.35)));
   const rows = Math.ceil(assignments.length / columns);
+  const highDensity = assignments.length > 96;
   const copy = phaseCopy[phase];
   const faceDown = phase !== "assigned";
 
-  useEffect(() => () => {
-    mountedRef.current = false;
-    cardRefs.current.forEach((card) => {
-      card.getAnimations().forEach((animation) => animation.cancel());
-    });
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      cardRefs.current.forEach((card) => {
+        card.getAnimations().forEach((animation) => animation.cancel());
+      });
+    };
   }, []);
 
   const stackTransform = (card: HTMLElement, center: { x: number; y: number }, index: number) => {
@@ -98,26 +109,35 @@ export function CardGame({
     const cards = assignments
       .map((assignment) => cardRefs.current.get(assignment.id))
       .filter((card): card is HTMLButtonElement => Boolean(card));
-    const gatherDuration = reducedMotion ? 40 : 720;
+    const gatherDuration = reducedMotion ? 40 : highDensity ? 520 : 720;
     const gatherAnimations = cards.map((card, index) => card.animate(
-      [
-        { transform: "none", filter: "brightness(1)" },
-        { transform: stackTransform(card, center, index), filter: "brightness(.72)" },
-      ],
+      highDensity
+        ? [
+            { transform: "none", opacity: 1 },
+            { transform: stackTransform(card, center, index), opacity: 0.82 },
+          ]
+        : [
+            { transform: "none", filter: "brightness(1)" },
+            { transform: stackTransform(card, center, index), filter: "brightness(.72)" },
+          ],
       {
         duration: gatherDuration,
-        delay: reducedMotion ? 0 : Math.min(index * 9, 240),
+        delay: reducedMotion || highDensity ? 0 : Math.min(index * 9, 240),
         easing: "cubic-bezier(.55, 0, .2, 1)",
         fill: "forwards",
       },
     ));
-    await Promise.all(gatherAnimations.map((animation) => animation.finished.catch(() => undefined)));
+    await waitForAnimations(
+      gatherAnimations,
+      gatherDuration + (reducedMotion || highDensity ? 90 : 340),
+    );
     if (!mountedRef.current) return;
 
     setPhase("shuffling");
     fortunaAudio.playCardShuffle();
-    const shuffleDuration = reducedMotion ? 50 : 1250;
-    const shuffleAnimations = cards.map((card, index) => {
+    const shuffleDuration = reducedMotion ? 50 : highDensity ? 820 : 1250;
+    const visibleShuffleCards = highDensity ? cards.slice(-36) : cards;
+    const shuffleAnimations = visibleShuffleCards.map((card, index) => {
       const base = stackTransform(card, center, index);
       const side = index % 2 === 0 ? 1 : -1;
       return card.animate(
@@ -129,13 +149,16 @@ export function CardGame({
         ],
         {
           duration: shuffleDuration,
-          delay: reducedMotion ? 0 : (index % 11) * 18,
+          delay: reducedMotion || highDensity ? 0 : (index % 11) * 18,
           easing: "ease-in-out",
           fill: "forwards",
         },
       );
     });
-    await Promise.all(shuffleAnimations.map((animation) => animation.finished.catch(() => undefined)));
+    await waitForAnimations(
+      shuffleAnimations,
+      shuffleDuration + (reducedMotion || highDensity ? 90 : 300),
+    );
     if (!mountedRef.current) return;
 
     cards.forEach((card) => card.getAnimations().forEach((animation) => animation.cancel()));
@@ -153,12 +176,15 @@ export function CardGame({
       ],
       {
         duration: reducedMotion ? 40 : 760,
-        delay: reducedMotion ? 0 : Math.min(index * 12, 360),
+        delay: reducedMotion || highDensity ? 0 : Math.min(index * 12, 360),
         easing: "cubic-bezier(.16, 1, .3, 1)",
         fill: "both",
       },
     ));
-    await Promise.all(dealAnimations.map((animation) => animation.finished.catch(() => undefined)));
+    await waitForAnimations(
+      dealAnimations,
+      (reducedMotion ? 40 : 760) + (reducedMotion || highDensity ? 90 : 470),
+    );
     if (!mountedRef.current) return;
     setPhase("choosing");
   };
@@ -174,7 +200,11 @@ export function CardGame({
   };
 
   return (
-    <div className={`card-game card-game--${phase} card-game--${mode}`}>
+    <div
+      className={`card-game card-game--${phase} card-game--${mode}`}
+      data-card-count={assignments.length}
+      data-performance-mode={highDensity ? "high-density" : "standard"}
+    >
       <div className="card-game-status" aria-live="polite">
         <span className="card-game-status__icon">
           {phase === "assigned" ? <Layers3 size={18} /> : phase === "choosing" ? <Hand size={18} /> : <Shuffle size={18} />}
@@ -190,7 +220,7 @@ export function CardGame({
         <div className="card-table__felt" aria-hidden="true"><Crown size={100} /></div>
         <div
           ref={boardRef}
-          className={`card-grid ${assignments.length > 36 ? "card-grid--dense" : ""} ${assignments.length > 72 ? "card-grid--very-dense" : ""}`}
+          className={`card-grid ${assignments.length > 36 ? "card-grid--dense" : ""} ${assignments.length > 72 ? "card-grid--very-dense" : ""} ${highDensity ? "card-grid--ultra-dense" : ""}`}
           style={{
             gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`,
             gridTemplateRows: `repeat(${rows}, minmax(0, 1fr))`,

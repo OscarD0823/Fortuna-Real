@@ -570,7 +570,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible {
   .workspace { grid-template-columns: 285px minmax(430px, 1fr); }
   .right-column { display: none; }
   .topbar { grid-template-columns: 1fr auto; }
-  .fairness-pill { display: none; }
+  .fairness-pill, .round-pill { display: none; }
   .roulette { width: min(68vh, 58vw, 620px); }
 }
 
@@ -1259,6 +1259,9 @@ button:focus-visible, input:focus-visible, textarea:focus-visible {
 .casino-stage .casino-roulette.roulette--large {
   width: min(68vh, 48vw, 700px);
 }
+.casino-stage .casino-roulette.roulette--huge {
+  width: min(72vh, 52vw, 760px);
+}
 .roulette--idle .wheel-outer-frame {
   box-shadow: 0 0 0 2px #623c09, 0 0 0 5px #091820, 0 0 0 6px rgba(9,224,223,.82), 0 0 34px rgba(9,224,223,.4), 0 32px 65px rgba(0,0,0,.7), inset 0 0 20px rgba(255,255,255,.46);
 }
@@ -1266,6 +1269,9 @@ button:focus-visible, input:focus-visible, textarea:focus-visible {
 @media (max-height: 790px) {
   .casino-stage .casino-roulette.roulette--large {
     width: min(59vh, 46vw, 560px);
+  }
+  .casino-stage .casino-roulette.roulette--huge {
+    width: min(61vh, 49vw, 590px);
   }
 }
 
@@ -1344,8 +1350,10 @@ button:focus-visible, input:focus-visible, textarea:focus-visible {
   perspective: 700px;
   cursor: default;
   transform-origin: center;
-  will-change: transform, filter;
 }
+.card-game--gathering .playing-card,
+.card-game--shuffling .playing-card,
+.card-game--redealing .playing-card { will-change: transform, opacity; }
 .playing-card:not(:disabled) { cursor: pointer; }
 .playing-card:not(:disabled):hover { z-index: 5; transform: translateY(-5px) scale(1.04); }
 .playing-card__inner { position: absolute; inset: 0; display: block; border-radius: inherit; transform-style: preserve-3d; transition: transform .54s cubic-bezier(.2,.75,.2,1), filter .25s; }
@@ -1391,6 +1399,13 @@ button:focus-visible, input:focus-visible, textarea:focus-visible {
 .card-grid--very-dense .playing-card__suit { font-size: clamp(11px, 1.3vw, 20px); }
 .card-grid--very-dense .playing-card__person { left: 3%; right: 3%; bottom: 4%; padding: 2px 1px; font-size: clamp(4px, .38vw, 6px); }
 .card-grid--very-dense .playing-card__number { display: none; }
+.card-grid--ultra-dense { gap: 2px; }
+.card-grid--ultra-dense .playing-card { border-radius: 2px; }
+.card-grid--ultra-dense .playing-card__face { box-shadow: inset 0 0 0 1px rgba(255,255,255,.6); }
+.card-grid--ultra-dense .playing-card__corner { top: 4%; left: 6%; font-size: clamp(3.8px, .32vw, 5px); }
+.card-grid--ultra-dense .playing-card__suit { font-size: clamp(8px, .9vw, 13px); }
+.card-grid--ultra-dense .playing-card__person { font-size: clamp(3.2px, .3vw, 4.8px); }
+.card-grid--ultra-dense .playing-card__back { background-size: 6px 6px; box-shadow: inset 0 0 0 2px #07141a, inset 0 0 0 3px rgba(246,189,53,.48); }
 
 .card-game-controls { min-height: 62px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px; }
 .card-shuffle-button { width: min(390px, 78%); }
@@ -1405,6 +1420,73 @@ button:focus-visible, input:focus-visible, textarea:focus-visible {
 .cards-final-state p { color: #789198; font-size: 9px; }
 .card-result-symbol { background: linear-gradient(145deg, #ffe477, #b9780d); }
 .round-result-summary > small { grid-column: 2; overflow: hidden; color: #668188; font-size: 6.5px; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Carrera de canicas */
+.marbles-workspace {
+  max-width: 1800px;
+  height: calc(100vh - 124px);
+  min-height: 590px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: minmax(215px, 255px) minmax(650px, 1fr) minmax(250px, 295px);
+  gap: 12px;
+}
+.marbles-stage-column { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.marbles-roster-panel .roster-list { margin-bottom: 8px; }
+.marbles-info-column { overflow: hidden; }
+.marbles-process-mini span { border-color: rgba(246,189,53,.16); background: rgba(246,189,53,.035); }
+.marble-race { min-height: 0; flex: 1; display: flex; flex-direction: column; gap: 8px; }
+.marble-race-status {
+  min-height: 48px;
+  display: grid;
+  grid-template-columns: 34px minmax(0,1fr) auto;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 12px;
+  border: 1px solid rgba(246,189,53,.23);
+  border-radius: 12px;
+  background: linear-gradient(90deg, rgba(246,189,53,.08), rgba(4,16,23,.86) 42%);
+}
+.marble-race-status__icon { width: 32px; height: 32px; display: grid; place-items: center; border-radius: 50%; color: var(--gold); background: rgba(246,189,53,.1); box-shadow: inset 0 0 14px rgba(246,189,53,.08); }
+.marble-race--racing .marble-race-status__icon svg { animation: marble-gauge-spin 1.1s linear infinite; }
+.marble-race-status strong, .marble-race-status small { display: block; }
+.marble-race-status strong { color: #f3ffff; font-size: 10px; text-transform: uppercase; letter-spacing: .45px; }
+.marble-race-status small { margin-top: 2px; color: #718b92; font-size: 7.5px; }
+.marble-race-status__count { padding: 5px 8px; border: 1px solid rgba(9,224,223,.23); border-radius: 999px; color: var(--cyan); font-size: 7.5px; font-weight: 800; text-transform: uppercase; }
+.marble-arena {
+  position: relative;
+  min-height: 0;
+  flex: 1;
+  overflow: hidden;
+  border: 1px solid rgba(246,189,53,.25);
+  border-radius: 23px;
+  background: #031015;
+  box-shadow: inset 0 0 0 6px #07110f, inset 0 0 0 8px rgba(198,139,26,.21), inset 0 0 55px #000, 0 18px 42px rgba(0,0,0,.4);
+}
+.marble-arena canvas { width: 100%; height: 100%; display: block; }
+.marble-track-label { position: absolute; z-index: 3; left: 14px; display: inline-flex; align-items: center; gap: 4px; padding: 4px 7px; border-radius: 6px; color: #061116; background: var(--gold); font-size: 6.5px; font-weight: 900; letter-spacing: .7px; box-shadow: 0 3px 10px rgba(0,0,0,.55); pointer-events: none; }
+.marble-track-label--start { top: 15px; }
+.marble-track-label--finish { bottom: 15px; color: white; background: #dd4c3c; }
+.marble-live-ranking { position: absolute; z-index: 4; top: 15px; right: 15px; width: min(185px, 31%); padding: 8px; border: 1px solid rgba(9,224,223,.25); border-radius: 10px; background: rgba(2,11,15,.84); box-shadow: 0 8px 25px rgba(0,0,0,.45); backdrop-filter: blur(7px); }
+.marble-live-ranking > div { display: flex; align-items: center; gap: 5px; margin-bottom: 6px; color: var(--cyan); font-size: 7px; font-weight: 900; text-transform: uppercase; }
+.marble-live-ranking > span { display: grid; grid-template-columns: 14px 6px minmax(0,1fr) auto; align-items: center; gap: 5px; min-height: 23px; border-top: 1px solid rgba(103,151,161,.1); color: #dcecef; }
+.marble-live-ranking b { color: var(--gold); font-size: 7px; }
+.marble-live-ranking i { width: 6px; height: 6px; border-radius: 50%; }
+.marble-live-ranking strong { overflow: hidden; font-size: 7px; text-overflow: ellipsis; white-space: nowrap; }
+.marble-live-ranking em { color: #66848b; font-size: 6px; font-style: normal; }
+.marble-power-feed { position: absolute; z-index: 4; left: 14px; bottom: 14px; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; pointer-events: none; }
+.marble-power-feed span { display: flex; align-items: center; gap: 4px; max-width: 220px; padding: 5px 8px; border: 1px solid rgba(217,124,255,.27); border-radius: 7px; color: #d8a1f2; background: rgba(8,10,18,.84); font-size: 6.5px; animation: marble-power-enter .28s ease-out both; }
+.marble-power-feed strong { overflow: hidden; max-width: 105px; color: white; text-overflow: ellipsis; white-space: nowrap; }
+.marble-controls { min-height: 62px; display: grid; grid-template-columns: 1fr minmax(230px, 390px) 1fr; align-items: center; gap: 10px; }
+.marble-regenerate { justify-self: end; }
+.marble-start-button { width: 100%; }
+.marble-controls > small { display: flex; align-items: center; gap: 4px; color: #547078; font-size: 6.5px; line-height: 1.35; }
+.marbles-final-state { border-color: rgba(9,224,223,.27); background: radial-gradient(circle, rgba(9,224,223,.11), transparent 42%), rgba(3,13,18,.7); }
+.marble-result-symbol { background: linear-gradient(145deg, #6ef1e5, #087d83); }
+.result-reveal--marbles { box-shadow: 0 0 0 1px rgba(255,255,255,.04), 0 30px 100px #000, 0 0 85px rgba(217,124,255,.13); }
+
+@keyframes marble-gauge-spin { to { transform: rotate(360deg); } }
+@keyframes marble-power-enter { from { opacity: 0; transform: translateX(-10px); } }
 
 /* Puesta en escena del resultado */
 .result-reveal > *:not(.reveal-spotlights):not(.confetti) { position: relative; z-index: 2; }
@@ -1428,12 +1510,15 @@ button:focus-visible, input:focus-visible, textarea:focus-visible {
 
 @media (max-width: 1240px) {
   .cards-workspace { grid-template-columns: 215px minmax(540px,1fr) 255px; gap: 8px; }
+  .marbles-workspace { grid-template-columns: 215px minmax(560px,1fr) 255px; gap: 8px; }
   .card-grid { inset: 17px; }
 }
 
 @media (max-width: 1040px) {
   .cards-workspace { grid-template-columns: 220px minmax(520px,1fr); }
+  .marbles-workspace { grid-template-columns: 220px minmax(540px,1fr); }
   .cards-info-column { display: none; }
+  .marbles-info-column { display: none; }
 }
 
 @media (max-height: 790px) {
@@ -1442,4 +1527,11 @@ button:focus-visible, input:focus-visible, textarea:focus-visible {
   .card-choice-callout { min-height: 35px; }
   .card-fairness-note { display: none; }
   .card-grid { inset: 16px; }
+  .marble-race-status { min-height: 41px; padding-top: 5px; padding-bottom: 5px; }
+  .marble-controls { min-height: 50px; }
+  .marble-controls > small { display: none; }
+}
+
+@media (max-width: 1050px) {
+  .topbar .round-pill { display: none; }
 }

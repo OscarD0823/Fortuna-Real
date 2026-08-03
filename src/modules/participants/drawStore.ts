@@ -35,7 +35,7 @@ const normalizeDrawMode = (mode: unknown): DrawMode =>
   mode === "direct" ? "direct" : "elimination";
 
 const normalizeGame = (game: unknown): GameId =>
-  game === "cards" ? "cards" : "roulette";
+  game === "cards" || game === "marbles" ? game : "roulette";
 
 interface AddNamesResult {
   added: number;

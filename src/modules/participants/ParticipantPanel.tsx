@@ -51,7 +51,13 @@ export function ParticipantPanel() {
         <span className="step-number">1</span>
         <div>
           <h2>Cargar participantes</h2>
-          <p>{game === "roulette" ? "Sin casillas vacías: la rueda se adapta a cada lista" : "Cada nombre recibe una carta visible antes de barajar"}</p>
+          <p>
+            {game === "roulette"
+              ? "Sin casillas vacías: la rueda se adapta a cada lista"
+              : game === "cards"
+                ? "Cada nombre recibe una carta visible antes de barajar"
+                : "Cada nombre recibe una canica identificada en la carrera"}
+          </p>
         </div>
         <span className="count-pill"><Users size={14} /> {participants.length}</span>
       </div>

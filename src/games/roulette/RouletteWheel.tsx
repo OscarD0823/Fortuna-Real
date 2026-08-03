@@ -20,6 +20,7 @@ export function RouletteWheel({
   onSpinEnd,
 }: RouletteWheelProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const rotorRef = useRef<HTMLDivElement>(null);
   const wheelRotationRef = useRef(0);
   const ballRotationRef = useRef(0);
   const finishTimer = useRef<number | null>(null);
@@ -87,42 +88,44 @@ export function RouletteWheel({
           : isRed
             ? "#7b1814"
             : "#010406";
-      const segmentGradient = context.createRadialGradient(
-        center,
-        center,
-        innerRadius,
-        center,
-        center,
-        outerRadius,
-      );
-      segmentGradient.addColorStop(0, edgeColor);
-      segmentGradient.addColorStop(0.3, baseColor);
-      segmentGradient.addColorStop(
-        0.84,
-        entry.disabled
-          ? "#24343a"
-          : isSpecial
-            ? isEvenSpecial
-              ? "#10d7d3"
-              : "#e7a61a"
-            : isRed
-              ? "#e04a34"
-              : "#14252b",
-      );
-      segmentGradient.addColorStop(1, edgeColor);
+      const outerColor = entry.disabled
+        ? "#24343a"
+        : isSpecial
+          ? isEvenSpecial
+            ? "#10d7d3"
+            : "#e7a61a"
+          : isRed
+            ? "#e04a34"
+            : "#14252b";
+      let segmentFill: string | CanvasGradient = baseColor;
+      if (entries.length <= 120) {
+        const segmentGradient = context.createRadialGradient(
+          center,
+          center,
+          innerRadius,
+          center,
+          center,
+          outerRadius,
+        );
+        segmentGradient.addColorStop(0, edgeColor);
+        segmentGradient.addColorStop(0.3, baseColor);
+        segmentGradient.addColorStop(0.84, outerColor);
+        segmentGradient.addColorStop(1, edgeColor);
+        segmentFill = segmentGradient;
+      }
 
       context.beginPath();
       context.arc(center, center, outerRadius, start, end);
       context.arc(center, center, innerRadius, end, start, true);
       context.closePath();
-      context.fillStyle = segmentGradient;
+      context.fillStyle = segmentFill;
       context.fill();
       context.strokeStyle = isSpecial
         ? "rgba(255, 246, 187, .98)"
         : entry.disabled
           ? "rgba(104, 137, 145, .35)"
           : "rgba(245, 188, 52, .82)";
-      context.lineWidth = entries.length > 70 ? 0.9 : entries.length > 36 ? 1.4 : 3.2;
+      context.lineWidth = entries.length > 140 ? 0.65 : entries.length > 70 ? 0.9 : entries.length > 36 ? 1.4 : 3.2;
       context.stroke();
 
     });
@@ -182,13 +185,20 @@ export function RouletteWheel({
     if (isSpinning || entries.length === 0) return;
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
 
-    const idleTimer = window.setInterval(() => {
-      const nextRotation = wheelRotationRef.current + 0.32;
-      wheelRotationRef.current = nextRotation;
-      setWheelRotation(nextRotation);
-    }, 90);
+    let lastFrame = performance.now();
+    let animationFrame = 0;
+    const animateIdle = (now: number) => {
+      const elapsed = Math.min(50, now - lastFrame);
+      lastFrame = now;
+      wheelRotationRef.current += elapsed * 0.00355;
+      if (rotorRef.current) {
+        rotorRef.current.style.transform = `rotate(${wheelRotationRef.current}deg)`;
+      }
+      animationFrame = window.requestAnimationFrame(animateIdle);
+    };
+    animationFrame = window.requestAnimationFrame(animateIdle);
 
-    return () => window.clearInterval(idleTimer);
+    return () => window.cancelAnimationFrame(animationFrame);
   }, [entries.length, isSpinning]);
 
   useEffect(() => {
@@ -200,14 +210,15 @@ export function RouletteWheel({
   const studCount = Math.min(60, Math.max(18, entries.length));
   const showEntryNames = entries.length <= 32;
   const isLargeWheel = entries.length >= 33;
-  const labelRadius = entries.length > 80 ? 42 : entries.length > 32 ? 41 : 35.5;
-  const numberFontSize = Math.max(5.5, Math.min(13, 800 / Math.max(entries.length, 1)));
+  const isHugeWheel = entries.length > 120;
+  const numberFontSize = Math.max(4.5, Math.min(13, 880 / Math.max(entries.length, 1)));
 
   return (
-    <div className={`roulette casino-roulette ${isLargeWheel ? "roulette--large" : ""} ${entries.length > 0 && !isSpinning ? "roulette--idle" : ""} ${isSpinning ? "roulette--spinning" : ""}`}>
+    <div className={`roulette casino-roulette ${isLargeWheel ? "roulette--large" : ""} ${isHugeWheel ? "roulette--huge" : ""} ${entries.length > 0 && !isSpinning ? "roulette--idle" : ""} ${isSpinning ? "roulette--spinning" : ""}`}>
       <div className="roulette-pointer" aria-hidden="true"><span /></div>
       <div className="wheel-outer-frame casino-wheel-frame">
         <div
+          ref={rotorRef}
           className="wheel-rotor"
           style={{
             transform: `rotate(${wheelRotation}deg)`,
@@ -225,6 +236,9 @@ export function RouletteWheel({
             {entries.map((entry, index) => {
               const angle = (index * 360) / entries.length;
               const radians = (angle * Math.PI) / 180;
+              const labelRadius = isHugeWheel
+                ? index % 2 === 0 ? 43.3 : 39.1
+                : entries.length > 80 ? 42 : entries.length > 32 ? 41 : 35.5;
               const left = 50 + Math.sin(radians) * labelRadius;
               const top = 50 - Math.cos(radians) * labelRadius;
               const maxLength = entries.length > 24 ? 8 : entries.length > 14 ? 11 : 15;

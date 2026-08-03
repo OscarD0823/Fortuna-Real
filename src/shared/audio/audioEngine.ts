@@ -136,6 +136,35 @@ class FortunaAudioEngine {
     });
   }
 
+  playMarbleStart() {
+    this.cancelAnnouncement();
+    this.noise(0.32, 0.035);
+    [196, 294, 392, 587].forEach((frequency, index) => {
+      this.tone(frequency, 0.48, {
+        type: index < 2 ? "sawtooth" : "triangle",
+        volume: 0.035,
+        delay: index * 0.08,
+        endFrequency: frequency * 1.35,
+      });
+    });
+  }
+
+  playMarblePower() {
+    this.tone(460, 0.13, { type: "square", volume: 0.028, endFrequency: 920 });
+    this.tone(740, 0.18, { type: "triangle", volume: 0.035, delay: 0.08, endFrequency: 1240 });
+  }
+
+  playMarbleFinish() {
+    this.noise(0.28, 0.032);
+    [392, 523, 659, 880].forEach((frequency, index) => {
+      this.tone(frequency, 0.42, {
+        type: "triangle",
+        volume: 0.045,
+        delay: index * 0.075,
+      });
+    });
+  }
+
   playResult(winner: boolean, parity?: "even" | "odd") {
     if (winner) {
       [523, 659, 784, 1047].forEach((frequency, index) => {
@@ -186,7 +215,9 @@ class FortunaAudioEngine {
 
       const contextLabel = result.game === "cards"
         ? result.selectionLabel || `Carta ${result.landedNumber}`
-        : `Número ${result.landedNumber}`;
+        : result.game === "marbles"
+          ? result.selectionLabel || `Canica ${result.landedNumber}`
+          : `Número ${result.landedNumber}`;
       const parts = result.kind === "winner"
         ? result.selectedParticipantName
           ? [

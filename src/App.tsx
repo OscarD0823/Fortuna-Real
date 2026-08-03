@@ -13,6 +13,8 @@ import {
   Crown,
   Dices,
   Expand,
+  Flag,
+  Gem,
   Gift,
   Hash,
   History,
@@ -40,6 +42,8 @@ import type {
 } from "./core/types";
 import { CardGame } from "./games/cards/CardGame";
 import type { CardAssignment } from "./games/cards/cardDeck";
+import { MarbleRace } from "./games/marbles/MarbleRace";
+import type { MarbleRacer } from "./games/marbles/marbleRaceEngine";
 import { RouletteWheel } from "./games/roulette/RouletteWheel";
 import { arrangeEliminationEntries } from "./games/roulette/rouletteEntries";
 import { DrawSetup } from "./modules/draw/DrawSetup";
@@ -75,6 +79,7 @@ function App() {
   const [showSplash, setShowSplash] = useState(true);
   const [screen, setScreen] = useState<"setup" | GameId>("setup");
   const [cardRoundKey, setCardRoundKey] = useState(0);
+  const [marbleRoundKey, setMarbleRoundKey] = useState(0);
   const [isSpinning, setIsSpinning] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(
     () => localStorage.getItem("fortuna-real-sound") !== "off",
@@ -166,6 +171,7 @@ function App() {
     setCurrentResult(null);
     setSpinRequest(null);
     setCardRoundKey((key) => key + 1);
+    setMarbleRoundKey((key) => key + 1);
     setScreen(game);
     fortunaAudio.playEnterGame();
   };
@@ -173,11 +179,11 @@ function App() {
   const returnToSetup = () => {
     if (screen === "roulette" && isSpinning) return;
     fortunaAudio.playClick();
+    setScreen("setup");
     setCurrentResult(null);
     setSpinRequest(null);
     setIsSpinning(false);
     startDraw();
-    setScreen("setup");
   };
 
   const startSpin = () => {
@@ -231,9 +237,20 @@ function App() {
     }, 170);
   }, [recordSelection]);
 
+  const finishMarbleRace = useCallback((racer: MarbleRacer, label: string) => {
+    const result = recordSelection(racer.participant.id, racer.number, label);
+    setCurrentResult(result);
+
+    window.setTimeout(() => {
+      fortunaAudio.playResult(result.kind === "winner", result.parity);
+      fortunaAudio.announceResult(result);
+    }, 170);
+  }, [recordSelection]);
+
   const closeCurrentResult = () => {
     setCurrentResult(null);
     if (screen === "cards") setCardRoundKey((key) => key + 1);
+    if (screen === "marbles") setMarbleRoundKey((key) => key + 1);
   };
 
   const allowCurrentWinnerToReturn = () => {
@@ -243,6 +260,7 @@ function App() {
     fortunaAudio.playClick();
     setCurrentResult(null);
     setCardRoundKey((key) => key + 1);
+    setMarbleRoundKey((key) => key + 1);
   };
 
   const restartSession = () => {
@@ -252,6 +270,7 @@ function App() {
     setCurrentResult(null);
     setSpinRequest(null);
     setCardRoundKey((key) => key + 1);
+    setMarbleRoundKey((key) => key + 1);
   };
 
   const toggleSound = () => {
@@ -320,7 +339,7 @@ function App() {
             onSpinEnd={finishSpin}
             onRestart={restartSession}
           />
-        ) : (
+        ) : screen === "cards" ? (
           <CardsScreen
             key={cardRoundKey}
             participants={participants}
@@ -334,6 +353,22 @@ function App() {
             roundNumber={roundNumber}
             sessionWinner={sessionWinner}
             onSelect={finishCardSelection}
+            onRestart={restartSession}
+          />
+        ) : (
+          <MarblesScreen
+            key={marbleRoundKey}
+            participants={participants}
+            activeParticipants={activeParticipants}
+            blockedWinnerIds={blockedWinnerIds}
+            eliminatedIds={eliminatedIds}
+            history={history}
+            latestResult={latestResult}
+            mode={mode}
+            prize={prize}
+            roundNumber={roundNumber}
+            sessionWinner={sessionWinner}
+            onFinish={finishMarbleRace}
             onRestart={restartSession}
           />
         )}
@@ -386,10 +421,10 @@ function Topbar({
 
       {screen !== "setup" ? (
         <div className="round-pill">
-          {screen === "roulette" ? <CircleDot size={19} /> : <Layers3 size={19} />}
+          {screen === "roulette" ? <CircleDot size={19} /> : screen === "cards" ? <Layers3 size={19} /> : <Gem size={19} />}
           <div>
             <strong>Ronda {roundNumber}</strong>
-            <span>{activeCount} participantes · {screen === "roulette" ? "ruleta" : "cartas"}</span>
+            <span>{activeCount} participantes · {screen === "roulette" ? "ruleta" : screen === "cards" ? "cartas" : "canicas"}</span>
           </div>
         </div>
       ) : (
@@ -397,7 +432,13 @@ function Topbar({
           <ShieldCheck size={20} />
           <div>
             <strong>Configuración del sorteo</strong>
-            <span>{game === "roulette" ? "La ruleta se adapta a cada lista" : "Asignación visible y barajado por fases"}</span>
+            <span>
+              {game === "roulette"
+                ? "La ruleta se adapta a cada lista"
+                : game === "cards"
+                  ? "Asignación visible y barajado por fases"
+                  : "Pistas procedurales y carrera verificable"}
+            </span>
           </div>
         </div>
       )}
@@ -456,7 +497,9 @@ function SetupScreen({
             className="start-button setup-start-button setup-hero-start"
             onClick={onStart}
             disabled={eligibleCount < 2}
-            title={eligibleCount < 2 ? "Agrega al menos dos participantes" : `Entrar a ${game === "roulette" ? "la ruleta" : "la mesa de cartas"}`}
+            title={eligibleCount < 2
+              ? "Agrega al menos dos participantes"
+              : `Entrar a ${game === "roulette" ? "la ruleta" : game === "cards" ? "la mesa de cartas" : "la pista de canicas"}`}
           >
             <Play size={21} fill="currentColor" /> Iniciar sorteo
           </button>
@@ -843,6 +886,152 @@ function CardsScreen({
         <div className="casino-stats-row">
           <StatCard icon={<Users />} tone="cyan" label="Activos" value={activeParticipants.length} />
           <StatCard icon={<Shuffle />} tone="gold" label="Cartas" value={activeParticipants.length} />
+        </div>
+      </aside>
+    </section>
+  );
+}
+
+function MarblesScreen({
+  participants,
+  activeParticipants,
+  blockedWinnerIds,
+  eliminatedIds,
+  history,
+  latestResult,
+  mode,
+  prize,
+  roundNumber,
+  sessionWinner,
+  onFinish,
+  onRestart,
+}: {
+  participants: Participant[];
+  activeParticipants: Participant[];
+  blockedWinnerIds: string[];
+  eliminatedIds: string[];
+  history: RoundResult[];
+  latestResult: RoundResult | null;
+  mode: DrawMode;
+  prize: string;
+  roundNumber: number;
+  sessionWinner: RoundResult | null;
+  onFinish: (racer: MarbleRacer, label: string) => void;
+  onRestart: () => void;
+}) {
+  const cannotPlay = !!sessionWinner || activeParticipants.length < 2;
+
+  return (
+    <section className="marbles-workspace">
+      <aside className="panel casino-roster-panel marbles-roster-panel">
+        <div className="panel-title panel-title--spread">
+          <span><Users size={18} /> Participantes</span>
+          <small>{activeParticipants.length}/{participants.length}</small>
+        </div>
+        <p className="roster-help">Cada nombre conserva su número y color durante toda la carrera.</p>
+        <div className="roster-list" aria-label="Participantes de la carrera de canicas">
+          {participants.map((person) => {
+            const activeIndex = activeParticipants.findIndex((active) => active.id === person.id);
+            const isEliminated = eliminatedIds.includes(person.id);
+            const isWinner = blockedWinnerIds.includes(person.id);
+            return (
+              <div
+                className={`roster-row ${isEliminated ? "is-eliminated" : ""} ${isWinner ? "is-winner" : ""}`}
+                key={person.id}
+              >
+                <span className="roster-number">{activeIndex >= 0 ? activeIndex + 1 : "—"}</span>
+                <i style={{ background: person.color }} />
+                <strong title={person.name}>{person.name}</strong>
+                <em>{isWinner ? "Ganador" : isEliminated ? "Eliminado" : "En carrera"}</em>
+              </div>
+            );
+          })}
+        </div>
+        <button className="text-button cards-restart-button" type="button" onClick={onRestart}>
+          <RotateCcw size={15} /> Reiniciar con los habilitados
+        </button>
+      </aside>
+
+      <section className="marbles-stage-column">
+        <div className="stage-heading casino-stage-heading">
+          <div>
+            <span className="eyebrow">{modeLabels[mode]} · RONDA {roundNumber}</span>
+            <h1>Carrera de canicas</h1>
+          </div>
+          <div className="live-badge"><span /> {sessionWinner ? "CARRERA FINALIZADA" : "PISTA PROCEDURAL"}</div>
+        </div>
+
+        {sessionWinner ? (
+          <div className="cards-final-state marbles-final-state">
+            <Crown size={58} />
+            <span>Ganador final</span>
+            <strong>{sessionWinner.participantName}</strong>
+            <p>El historial conserva el premio y permite habilitarlo para otra carrera.</p>
+          </div>
+        ) : (
+          <MarbleRace
+            participants={activeParticipants}
+            mode={mode}
+            disabled={cannotPlay}
+            onFinish={onFinish}
+          />
+        )}
+      </section>
+
+      <aside className="casino-info-column marbles-info-column">
+        <section className="panel casino-mode-card">
+          <div className="panel-title"><Flag size={18} /> {modeLabels[mode]}</div>
+          <p className="mode-description">
+            {mode === "direct"
+              ? "La primera canica en cruzar la meta gana. Queda fuera hasta que decidas habilitarla nuevamente."
+              : "La última canica en cruzar queda eliminada. En cada ronda se genera una pista nueva."}
+          </p>
+          <div className="cards-process-mini marbles-process-mini">
+            <span>1 · Pista</span><span>2 · Poderes</span><span>3 · Carrera</span><span>4 · Meta</span>
+          </div>
+        </section>
+
+        <section className="panel casino-prize-card">
+          <div className="panel-title"><Gift size={18} /> Premio actual</div>
+          <div className="compact-prize"><Trophy size={28} /><strong>{prize || "Premio sorpresa"}</strong></div>
+        </section>
+
+        <section className="panel casino-current-result">
+          <div className="panel-title"><Target size={18} /> Resultado actual</div>
+          {latestResult ? (
+            <div className={`round-result-summary round-result-summary--${latestResult.kind}`}>
+              <span className="landed-number marble-result-symbol"><Gem size={16} /></span>
+              <strong>{latestResult.participantName}</strong>
+              <em>{latestResult.kind === "winner" ? "Ganador" : "Eliminado"}</em>
+              {latestResult.selectionLabel && <small>{latestResult.selectionLabel}</small>}
+            </div>
+          ) : (
+            <div className="empty-result"><Gem size={25} /><strong>Compuerta cerrada</strong><span>Abre la salida para iniciar.</span></div>
+          )}
+        </section>
+
+        <WinnerHistory compact />
+
+        <section className="panel history-panel casino-history-panel marbles-history-panel">
+          <div className="panel-title panel-title--spread">
+            <span><History size={18} /> Historial</span><small>{history.length}</small>
+          </div>
+          <div className="history-list">
+            {history.length === 0 ? (
+              <div className="history-empty">Los resultados de meta aparecerán aquí.</div>
+            ) : history.map((result) => (
+              <div className="history-row casino-history-row" key={result.id}>
+                <span>R{result.round} · canica {result.landedNumber}</span>
+                <strong>{result.participantName}</strong>
+                <em className={result.kind}>{result.kind === "winner" ? "GANÓ" : "ÚLTIMA"}</em>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <div className="casino-stats-row">
+          <StatCard icon={<Users />} tone="cyan" label="Activos" value={activeParticipants.length} />
+          <StatCard icon={<Gem />} tone="gold" label="Canicas" value={activeParticipants.length} />
         </div>
       </aside>
     </section>
