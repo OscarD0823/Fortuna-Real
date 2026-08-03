@@ -17,8 +17,11 @@ import {
   type TrackSectionType,
   type TrackZoneType,
 } from "./marbleRaceEngine";
+import { disposeMarbleRace3D, drawMarbleRace3D } from "./marbleRace3d";
 
 type RacePhase = "ready" | "racing" | "finished";
+
+const webglFallbackCanvases = new WeakSet<HTMLCanvasElement>();
 
 interface RankingItem {
   racer: MarbleRacer;
@@ -589,6 +592,15 @@ const drawRace = (
   elapsedMs: number,
   phase: RacePhase,
 ) => {
+  if (!webglFallbackCanvases.has(canvas)) {
+    try {
+      drawMarbleRace3D(canvas, race, elapsedMs, phase);
+      return;
+    } catch (error) {
+      webglFallbackCanvases.add(canvas);
+      console.warn("Fortuna Real no pudo iniciar la escena 3D; se usarÃ¡ el render compatible.", error);
+    }
+  }
   const bounds = canvas.getBoundingClientRect();
   const ratio = Math.min(window.devicePixelRatio || 1, 2);
   const width = Math.max(520, bounds.width);
@@ -755,10 +767,12 @@ export function MarbleRace({
 
   useEffect(() => {
     mountedRef.current = true;
+    const canvas = canvasRef.current;
     return () => {
       mountedRef.current = false;
       window.cancelAnimationFrame(frameRef.current);
       if (finishTimerRef.current) window.clearTimeout(finishTimerRef.current);
+      if (canvas) disposeMarbleRace3D(canvas);
     };
   }, []);
 
@@ -883,8 +897,10 @@ export function MarbleRace({
       <div className="marble-arena">
         <canvas
           ref={canvasRef}
-          aria-label={`Pista ${race.track.name}, dificultad ${difficultyLabels[difficulty]}, ${race.track.sections.length} secciones y ${participants.length} canicas`}
+          aria-label={`Escenario 3D ${race.track.name}, dificultad ${difficultyLabels[difficulty]}, ${race.track.sections.length} secciones y ${participants.length} canicas`}
         />
+
+        <div className="marble-render-badge"><span /> ESCENA 3D</div>
 
         {(phase === "racing" || phase === "finished") && (
           <div className="marble-live-ranking">

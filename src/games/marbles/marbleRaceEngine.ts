@@ -237,23 +237,31 @@ export const createMarbleSeed = () =>
 
 const buildRouteAnchors = (random: () => number, rows: number): TrackPoint[] => {
   const anchors: TrackPoint[] = [];
-  const top = 0.105;
-  const bottom = 0.895;
-  const left = 0.075;
-  const right = 0.925;
-  const anchorsPerRow = 5;
+  const top = 0.09;
+  const bottom = 0.91;
+  const left = 0.065;
+  const right = 0.935;
+  const anchorsPerRow = 7;
+  const rowSpacing = (bottom - top) / Math.max(1, rows - 1);
 
   for (let row = 0; row < rows; row += 1) {
     const direction = row % 2 === 0 ? 1 : -1;
     const baseY = top + (row / (rows - 1)) * (bottom - top);
+    const waveAmplitude = rowSpacing * (0.2 + random() * 0.08);
+    const wavePhase = random() * Math.PI * 0.9 + row * 0.72;
     for (let column = 0; column < anchorsPerRow; column += 1) {
-      if (row > 0 && column === 0) continue;
       const ratio = column / (anchorsPerRow - 1);
       const xRatio = direction === 1 ? ratio : 1 - ratio;
       const isEdge = column === 0 || column === anchorsPerRow - 1;
+      const wave = isEdge
+        ? 0
+        : Math.sin(ratio * Math.PI * 2 + wavePhase) * waveAmplitude;
+      const secondaryWave = isEdge
+        ? 0
+        : Math.sin(ratio * Math.PI * 4 - wavePhase * 0.5) * rowSpacing * 0.055;
       anchors.push({
-        x: roundPoint(left + xRatio * (right - left) + (isEdge ? 0 : (random() - 0.5) * 0.035)),
-        y: roundPoint(baseY + (isEdge ? 0 : (random() - 0.5) * 0.075)),
+        x: roundPoint(left + xRatio * (right - left) + (isEdge ? 0 : (random() - 0.5) * 0.065)),
+        y: roundPoint(clamp(baseY + wave + secondaryWave + (isEdge ? 0 : (random() - 0.5) * rowSpacing * 0.08), 0.065, 0.935)),
       });
     }
   }

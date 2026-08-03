@@ -1466,6 +1466,8 @@ button:focus-visible, input:focus-visible, textarea:focus-visible {
   box-shadow: inset 0 0 0 4px #050b0d, inset 0 0 0 6px rgba(198,139,26,.21), inset 0 0 70px #000, 0 18px 42px rgba(0,0,0,.5);
 }
 .marble-arena canvas { width: 100%; height: 100%; display: block; }
+.marble-render-badge { position: absolute; z-index: 4; top: 14px; left: 14px; display: inline-flex; align-items: center; gap: 5px; padding: 5px 8px; border: 1px solid rgba(9,224,223,.3); border-radius: 7px; color: #aefcff; background: rgba(2,11,15,.78); box-shadow: 0 8px 20px rgba(0,0,0,.42), inset 0 0 14px rgba(9,224,223,.05); backdrop-filter: blur(7px); font-size: 6px; font-weight: 900; letter-spacing: .75px; pointer-events: none; }
+.marble-render-badge span { width: 6px; height: 6px; border-radius: 50%; background: var(--cyan); box-shadow: 0 0 9px var(--cyan); animation: marble-render-pulse 1.5s ease-in-out infinite; }
 .marble-track-label { position: absolute; z-index: 3; left: 14px; display: inline-flex; align-items: center; gap: 4px; padding: 4px 7px; border-radius: 6px; color: #061116; background: var(--gold); font-size: 6.5px; font-weight: 900; letter-spacing: .7px; box-shadow: 0 3px 10px rgba(0,0,0,.55); pointer-events: none; }
 .marble-track-label--start { top: 15px; }
 .marble-track-label--finish { bottom: 15px; color: white; background: #dd4c3c; }
@@ -1514,6 +1516,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible {
 
 @keyframes marble-gauge-spin { to { transform: rotate(360deg); } }
 @keyframes marble-power-enter { from { opacity: 0; transform: translateX(-10px); } }
+@keyframes marble-render-pulse { 50% { opacity: .42; transform: scale(.75); } }
 
 .marble-setup-difficulty { margin-top: 10px; padding: 9px; border: 1px solid rgba(9,224,223,.16); border-radius: 10px; background: linear-gradient(100deg, rgba(9,224,223,.055), rgba(4,14,19,.72)); }
 .marble-setup-difficulty__heading { display: flex; align-items: center; gap: 7px; color: var(--cyan); }
