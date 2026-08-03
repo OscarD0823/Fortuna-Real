@@ -217,6 +217,10 @@ export function RouletteWheel({
     <div className={`roulette casino-roulette ${isLargeWheel ? "roulette--large" : ""} ${isHugeWheel ? "roulette--huge" : ""} ${entries.length > 0 && !isSpinning ? "roulette--idle" : ""} ${isSpinning ? "roulette--spinning" : ""}`}>
       <div className="roulette-pointer" aria-hidden="true"><span /></div>
       <div className="wheel-outer-frame casino-wheel-frame">
+        <div className="wheel-depth-rim" aria-hidden="true">
+          {Array.from({ length: 24 }, (_, index) => <i key={index} style={{ transform: `rotate(${index * 15}deg)` }} />)}
+        </div>
+        <div className="wheel-bowl-slope" aria-hidden="true" />
         <div
           ref={rotorRef}
           className="wheel-rotor"
@@ -279,6 +283,7 @@ export function RouletteWheel({
 
         <div className="wheel-hub" aria-hidden="true">
           <span className="hub-ring" />
+          <span className="hub-cross"><i /><i /><b /></span>
           <Crown size={42} strokeWidth={1.25} />
           <small>FORTUNA REAL</small>
         </div>

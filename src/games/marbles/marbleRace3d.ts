@@ -59,9 +59,15 @@ const trackWidthToWorld = (track: MarbleTrack) => track.trackWidth / 35.5;
 const trackElevation = (track: MarbleTrack, progress: number) => {
   const phase = (hashText(track.signature) % 628) / 100;
   const strength = track.difficulty === "easy" ? 0.12 : track.difficulty === "medium" ? 0.2 : 0.28;
+  const bridgeCenters = track.difficulty === "hard" ? [0.28, 0.62] : track.difficulty === "medium" ? [0.46] : [0.54];
+  const bridgeLift = bridgeCenters.reduce((total, center) => {
+    const distance = (progress - center) / (track.difficulty === "hard" ? 0.055 : 0.065);
+    return total + Math.exp(-(distance * distance)) * (track.difficulty === "easy" ? 0.38 : 0.68);
+  }, 0);
   return 0.58
     + Math.sin(progress * Math.PI * 5 + phase) * strength
-    + Math.sin(progress * Math.PI * 2 - phase * 0.4) * 0.08;
+    + Math.sin(progress * Math.PI * 2 - phase * 0.4) * 0.08
+    + bridgeLift;
 };
 
 const worldPointAt = (track: MarbleTrack, progress: number): TrackWorldPoint => {
@@ -375,6 +381,53 @@ const addArrow = (group: THREE.Object3D, color: string, z: number, scale = 1) =>
   return arrow;
 };
 
+const addIndustrialModule = (
+  group: THREE.Group,
+  zone: TrackZone,
+  width: number,
+  animatedParts: AnimatedPart[],
+) => {
+  const side = hashText(zone.id) % 2 === 0 ? 1 : -1;
+  const module = new THREE.Group();
+  module.position.set(side * width * 1.22, -0.1, ((hashText(`${zone.id}-offset`) % 100) / 100 - 0.5) * 0.9);
+  group.add(module);
+  const steel = metalMaterial(0x343d40, 0.2);
+  const brass = metalMaterial(0xb97d24, 0.18);
+  addMesh(module, new THREE.CylinderGeometry(0.78, 0.9, 0.35, 10), steel, [0, -0.12, 0]);
+  addMesh(module, new THREE.TorusGeometry(0.72, 0.075, 7, 20), brass, [0, 0.08, 0], [Math.PI / 2, 0, 0]);
+
+  if (["launch", "forge", "royal"].includes(zone.type)) {
+    const cannon = new THREE.Group();
+    cannon.position.y = 0.78;
+    addMesh(cannon, new THREE.CylinderGeometry(0.2, 0.31, 1.55, 12), steel, [0, 0, 0], [Math.PI / 2, 0, 0]);
+    [-0.47, 0.42].forEach((z) => addMesh(cannon, new THREE.TorusGeometry(0.285, 0.065, 7, 14), brass, [0, 0, z]));
+    addMesh(cannon, new THREE.CylinderGeometry(0.12, 0.16, 0.8, 9), brass, [0, -0.5, 0]);
+    cannon.rotation.y = side * 0.42;
+    module.add(cannon);
+    animatedParts.push({ object: cannon, update: (object, time) => { object.rotation.x = Math.sin(time * 0.42 + side) * 0.08; } });
+  } else if (["turbine", "gravity"].includes(zone.type)) {
+    const gear = new THREE.Group();
+    gear.position.y = 0.28;
+    addMesh(gear, new THREE.CylinderGeometry(0.58, 0.58, 0.22, 12), steel);
+    addMesh(gear, new THREE.TorusGeometry(0.6, 0.12, 6, 12), brass, [0, 0, 0], [Math.PI / 2, 0, 0]);
+    for (let tooth = 0; tooth < 12; tooth += 1) {
+      const angle = tooth * Math.PI / 6;
+      addMesh(gear, new THREE.BoxGeometry(0.18, 0.18, 0.32), brass, [Math.cos(angle) * 0.72, 0, Math.sin(angle) * 0.72], [0, -angle, 0]);
+    }
+    module.add(gear);
+    animatedParts.push({ object: gear, update: (object, time) => { object.rotation.y = time * side * 0.45; } });
+  } else {
+    const tower = new THREE.Group();
+    tower.position.y = 0.2;
+    addMesh(tower, new THREE.CylinderGeometry(0.17, 0.28, 1.25, 8), steel, [0, 0.55, 0]);
+    const energy = addMesh(tower, new THREE.SphereGeometry(0.28, 14, 10), glowMaterial(zone.color, 1.5), [0, 1.25, 0]);
+    addMesh(tower, new THREE.TorusGeometry(0.44, 0.045, 6, 20), glowMaterial(zone.color, 1.15), [0, 1.25, 0], [Math.PI / 2, 0, 0]);
+    module.add(tower);
+    animatedParts.push({ object: energy, update: (object, time) => { object.scale.setScalar(1 + Math.sin(time * 2.1) * 0.12); } });
+  }
+  return side;
+};
+
 const addZoneFeature = (
   scene: THREE.Scene,
   track: MarbleTrack,
@@ -408,6 +461,7 @@ const addZoneFeature = (
   const steel = metalMaterial(0x30383a, 0.2);
   const brass = metalMaterial(GOLD, 0.18);
   const scale = zone.scale;
+  const factorySide = addIndustrialModule(group, zone, width, animatedParts);
 
   if (zone.type === "launch") {
     [-1, 1].forEach((side) => {
@@ -470,7 +524,7 @@ const addZoneFeature = (
   }
 
   const label = createLabelSprite(zone.label, zone.color);
-  label.position.set(width * 0.7, 2.35 * scale, 0);
+  label.position.set(-factorySide * width * 0.72, 2.35 * scale, 0);
   group.add(label);
 };
 
