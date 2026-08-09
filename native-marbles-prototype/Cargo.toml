@@ -1,0 +1,18 @@
+[package]
+name = "fortuna-real-canicas-native"
+version = "0.1.0"
+edition = "2024"
+description = "Prototipo 3D nativo del circuito de canicas de Fortuna Real"
+
+[dependencies]
+bevy = "0.19.0"
+
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3
+
+[profile.release]
+lto = "thin"
+codegen-units = 1

@@ -69,7 +69,12 @@ export function CardGame({
   );
   const columns = Math.max(2, Math.ceil(Math.sqrt(assignments.length * 1.35)));
   const rows = Math.ceil(assignments.length / columns);
-  const highDensity = assignments.length > 96;
+  const performanceMode = assignments.length > 120
+    ? "ultra"
+    : assignments.length > 64
+      ? "dense"
+      : "standard";
+  const highDensity = performanceMode !== "standard";
   const copy = phaseCopy[phase];
   const faceDown = phase !== "assigned";
 
@@ -88,7 +93,7 @@ export function CardGame({
     const offsetX = center.x - (rect.left + rect.width / 2);
     const offsetY = center.y - (rect.top + rect.height / 2);
     const rotation = ((index % 9) - 4) * 0.7;
-    return `translate(${offsetX}px, ${offsetY}px) rotate(${rotation}deg) scale(.78)`;
+    return `translate3d(${offsetX}px, ${offsetY}px, 16px) rotate(${rotation}deg) scale(.78)`;
   };
 
   const gatherAndShuffle = async () => {
@@ -136,15 +141,19 @@ export function CardGame({
     setPhase("shuffling");
     fortunaAudio.playCardShuffle();
     const shuffleDuration = reducedMotion ? 50 : highDensity ? 820 : 1250;
-    const visibleShuffleCards = highDensity ? cards.slice(-36) : cards;
+    const visibleShuffleCards = performanceMode === "ultra"
+      ? cards.slice(-24)
+      : highDensity
+        ? cards.slice(-42)
+        : cards;
     const shuffleAnimations = visibleShuffleCards.map((card, index) => {
       const base = stackTransform(card, center, index);
       const side = index % 2 === 0 ? 1 : -1;
       return card.animate(
         [
           { transform: base },
-          { transform: `${base} translateX(${side * (22 + (index % 5) * 5)}px) rotate(${side * 8}deg)` },
-          { transform: `${base} translateX(${side * -18}px) rotate(${side * -6}deg)` },
+          { transform: `${base} translate3d(${side * (22 + (index % 5) * 5)}px, -5px, 38px) rotateY(${side * 12}deg) rotate(${side * 8}deg)` },
+          { transform: `${base} translate3d(${side * -18}px, 4px, 24px) rotateY(${side * -9}deg) rotate(${side * -6}deg)` },
           { transform: base },
         ],
         {
@@ -191,10 +200,35 @@ export function CardGame({
 
   const selectCard = async (assignment: CardAssignment, position: number) => {
     if (phase !== "choosing" || disabled) return;
+    const card = cardRefs.current.get(assignment.id);
+    const board = boardRef.current;
     setSelectedCardId(assignment.id);
     setPhase("revealing");
     fortunaAudio.playCardSelect();
-    await wait(reducedMotion ? 50 : 980);
+    await nextFrame();
+    if (card && board && !reducedMotion) {
+      const cardRect = card.getBoundingClientRect();
+      const boardRect = board.getBoundingClientRect();
+      const offsetX = boardRect.left + boardRect.width / 2 - (cardRect.left + cardRect.width / 2);
+      const offsetY = boardRect.top + boardRect.height / 2 - (cardRect.top + cardRect.height / 2);
+      const scale = Math.min(2.35, Math.max(1.28, 104 / Math.max(cardRect.width, 1)));
+      await waitForAnimations([
+        card.animate(
+          [
+            { transform: "translate3d(0, 0, 0) scale(1)", offset: 0 },
+            { transform: `translate3d(${offsetX * .72}px, ${offsetY * .72}px, 70px) rotateZ(-2deg) scale(${scale * .92})`, offset: .68 },
+            { transform: `translate3d(${offsetX}px, ${offsetY}px, 96px) rotateZ(0deg) scale(${scale})`, offset: 1 },
+          ],
+          {
+            duration: 780,
+            easing: "cubic-bezier(.16, 1, .3, 1)",
+            fill: "forwards",
+          },
+        ),
+      ], 850);
+    } else {
+      await wait(reducedMotion ? 50 : 820);
+    }
     if (!mountedRef.current) return;
     onSelect(assignment, position);
   };
@@ -203,7 +237,7 @@ export function CardGame({
     <div
       className={`card-game card-game--${phase} card-game--${mode}`}
       data-card-count={assignments.length}
-      data-performance-mode={highDensity ? "high-density" : "standard"}
+      data-performance-mode={performanceMode}
     >
       <div className="card-game-status" aria-live="polite">
         <span className="card-game-status__icon">
@@ -218,6 +252,11 @@ export function CardGame({
 
       <div className="card-table">
         <div className="card-table__felt" aria-hidden="true"><Crown size={100} /></div>
+        <div className="card-table__rail" aria-hidden="true"><i /><i /><i /><i /></div>
+        <div className={`card-deck-stage card-deck-stage--${phase}`} aria-hidden="true">
+          {Array.from({ length: 6 }, (_, index) => <i key={index} />)}
+          <span><Crown size={24} /><b>FR</b></span>
+        </div>
         <div
           ref={boardRef}
           className={`card-grid ${assignments.length > 36 ? "card-grid--dense" : ""} ${assignments.length > 72 ? "card-grid--very-dense" : ""} ${highDensity ? "card-grid--ultra-dense" : ""}`}

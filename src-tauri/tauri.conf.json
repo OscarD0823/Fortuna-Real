@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Fortuna Real",
-  "version": "0.8.0",
+  "version": "1.0.0",
   "identifier": "com.fortunareal.desktop",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -32,7 +32,7 @@
     "publisher": "Fortuna Real",
     "category": "CasinoGame",
     "shortDescription": "Sorteos con emoción real",
-    "longDescription": "Fortuna Real es una aplicación de escritorio para realizar sorteos mediante una ruleta animada, con modos de ganador directo y eliminación.",
+    "longDescription": "Fortuna Real es una aplicación de escritorio para realizar sorteos mediante ruleta, cartas y Pinball 3D procedural, con modos de ganador directo y eliminación.",
     "copyright": "Copyright © 2026 Fortuna Real",
     "icon": [
       "icons/32x32.png",

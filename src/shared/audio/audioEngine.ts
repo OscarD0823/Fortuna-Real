@@ -136,6 +136,41 @@ class FortunaAudioEngine {
     });
   }
 
+  playPinballStart() {
+    this.cancelAnnouncement();
+    this.noise(0.24, 0.028);
+    [147, 220, 330, 660].forEach((frequency, index) => {
+      this.tone(frequency, 0.38, {
+        type: index < 2 ? "sawtooth" : "triangle",
+        volume: 0.034,
+        delay: index * 0.065,
+        endFrequency: frequency * 1.45,
+      });
+    });
+  }
+
+  playPinballLaunch() {
+    this.noise(0.12, 0.025);
+    this.tone(170, 0.17, { type: "sawtooth", volume: 0.032, endFrequency: 620 });
+    this.tone(880, 0.08, { type: "square", volume: 0.025, delay: 0.11, endFrequency: 440 });
+  }
+
+  playPinballImpact(strength = 0.5) {
+    const volume = 0.012 + Math.min(1, strength) * 0.018;
+    this.tone(520 + strength * 540, 0.055, { type: "triangle", volume, endFrequency: 280 });
+  }
+
+  playPinballFlipper() {
+    this.tone(125, 0.065, { type: "square", volume: 0.025, endFrequency: 230 });
+  }
+
+  playPinballFinish() {
+    this.noise(0.32, 0.034);
+    [392, 587, 784, 1175].forEach((frequency, index) => {
+      this.tone(frequency, 0.44, { type: "triangle", volume: 0.046, delay: index * 0.08 });
+    });
+  }
+
   playMarbleStart() {
     this.cancelAnnouncement();
     this.noise(0.32, 0.035);
@@ -215,6 +250,8 @@ class FortunaAudioEngine {
 
       const contextLabel = result.game === "cards"
         ? result.selectionLabel || `Carta ${result.landedNumber}`
+        : result.game === "pinball"
+          ? result.selectionLabel || `Pelota ${result.landedNumber}`
         : result.game === "marbles"
           ? result.selectionLabel || `Canica ${result.landedNumber}`
           : `Número ${result.landedNumber}`;

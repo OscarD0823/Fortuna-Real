@@ -33,7 +33,7 @@ export function RouletteWheel({
     if (!canvas) return;
 
     const size = 900;
-    const ratio = Math.min(window.devicePixelRatio || 1, 2);
+    const ratio = Math.min(window.devicePixelRatio || 1, entries.length > 120 ? 1.5 : 2);
     canvas.width = size * ratio;
     canvas.height = size * ratio;
     const context = canvas.getContext("2d");
@@ -188,6 +188,11 @@ export function RouletteWheel({
     let lastFrame = performance.now();
     let animationFrame = 0;
     const animateIdle = (now: number) => {
+      if (document.hidden) {
+        lastFrame = now;
+        animationFrame = window.requestAnimationFrame(animateIdle);
+        return;
+      }
       const elapsed = Math.min(50, now - lastFrame);
       lastFrame = now;
       wheelRotationRef.current += elapsed * 0.00355;
@@ -214,9 +219,13 @@ export function RouletteWheel({
   const numberFontSize = Math.max(4.5, Math.min(13, 880 / Math.max(entries.length, 1)));
 
   return (
-    <div className={`roulette casino-roulette ${isLargeWheel ? "roulette--large" : ""} ${isHugeWheel ? "roulette--huge" : ""} ${entries.length > 0 && !isSpinning ? "roulette--idle" : ""} ${isSpinning ? "roulette--spinning" : ""}`}>
+    <div
+      className={`roulette casino-roulette ${isLargeWheel ? "roulette--large" : ""} ${isHugeWheel ? "roulette--huge" : ""} ${entries.length > 0 && !isSpinning ? "roulette--idle" : ""} ${isSpinning ? "roulette--spinning" : ""}`}
+      data-entry-count={entries.length}
+    >
       <div className="roulette-pointer" aria-hidden="true"><span /></div>
       <div className="wheel-outer-frame casino-wheel-frame">
+        <div className="wheel-floor-shadow" aria-hidden="true" />
         <div className="wheel-depth-rim" aria-hidden="true">
           {Array.from({ length: 24 }, (_, index) => <i key={index} style={{ transform: `rotate(${index * 15}deg)` }} />)}
         </div>
@@ -270,6 +279,7 @@ export function RouletteWheel({
             ))}
           </div>
         </div>
+        <div className="wheel-reflection" aria-hidden="true" />
 
         <div className="casino-ball-track" aria-hidden="true">
           <div
@@ -277,6 +287,7 @@ export function RouletteWheel({
             data-ball-phase={ballPhase}
             style={{ transform: `rotate(${ballRotation}deg)` }}
           >
+            <span className="casino-ball-trail" />
             <span className="casino-ball" />
           </div>
         </div>
@@ -284,6 +295,7 @@ export function RouletteWheel({
         <div className="wheel-hub" aria-hidden="true">
           <span className="hub-ring" />
           <span className="hub-cross"><i /><i /><b /></span>
+          <span className="hub-cap" />
           <Crown size={42} strokeWidth={1.25} />
           <small>FORTUNA REAL</small>
         </div>

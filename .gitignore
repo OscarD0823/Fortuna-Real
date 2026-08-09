@@ -11,6 +11,7 @@ node_modules
 dist
 dist-ssr
 instaladores
+native-marbles-prototype/target
 *.local
 *.key
 

@@ -1,0 +1,113 @@
+============================================================
+                 FORTUNA REAL 1.0.0
+             GUÍA DE INSTALACIÓN Y USO
+============================================================
+
+CONTENIDO DE ESTA CARPETA
+
+- Fortuna-Real-1.0.0-Instalador.exe
+  Es el instalador de Fortuna Real para Windows.
+
+- INSTRUCCIONES - LEER PRIMERO.txt
+  Es este instructivo.
+
+
+1. REQUISITOS
+
+- Computador con Windows 10 u 11 de 64 bits.
+- Aproximadamente 500 MB de espacio disponible.
+
+
+2. CÓMO INSTALAR FORTUNA REAL
+
+1. Abre la carpeta “Fortuna Real 1.0.0”.
+2. Haz doble clic en “Fortuna-Real-1.0.0-Instalador.exe”.
+3. Si Windows muestra “Windows protegió su PC”:
+   a. Pulsa “Más información”.
+   b. Comprueba que el archivo sea Fortuna-Real-1.0.0-Instalador.exe.
+   c. Pulsa “Ejecutar de todas formas”.
+4. Sigue las instrucciones del instalador.
+5. Abre “Fortuna Real” desde el menú Inicio o su acceso directo.
+
+La advertencia puede aparecer porque esta es una aplicación privada y no usa
+un certificado comercial. Continúa solamente si recibiste la carpeta de una
+persona de confianza.
+
+
+3. PREPARAR UN SORTEO
+
+1. Agrega los nombres uno por uno o usa “Pegar varios nombres”.
+2. Selecciona Ruleta, Cartas o Pinball 3D. Canicas sigue desactivado.
+3. Elige Ganador directo o Eliminación.
+4. Escribe el premio.
+5. Pulsa “Iniciar sorteo”.
+
+
+4. PINBALL 3D
+
+Cada pelota representa al participante con el mismo número de la lista. La
+mesa genera una distribución nueva cada vez que ingresas.
+
+Modo automático:
+- Pulsa “Encender y jugar”.
+- La máquina lanza las pelotas y mueve los flippers sola.
+
+Modo manual:
+- Pulsa “Encender y jugar”.
+- Usa LANZAR o la barra espaciadora hasta soltar todas las pelotas.
+- Usa A o flecha izquierda para el flipper izquierdo.
+- Usa D o flecha derecha para el flipper derecho.
+- También puedes usar los tres botones de la pantalla.
+
+En Ganador directo, la pelota sellada entra al jackpot. En Eliminación, la
+pelota sellada cae al pozo y sale una sola persona. El resultado se decide con
+azar seguro antes de la animación: los controles manuales no pueden cambiarlo.
+La mesa está optimizada para listas de 2 a 200 participantes.
+
+
+5. RULETA
+
+- Cada número corresponde al nombre con el mismo número en la lista.
+- Pulsa “Lanzar pelota” y espera el resultado oficial.
+- En Eliminación, PAR o IMPAR habilita ese grupo únicamente para la siguiente
+  tirada; se elimina una persona y luego vuelven los demás.
+
+
+6. CARTAS
+
+- Revisa las cartas y nombres antes de ocultarlos.
+- Pulsa “Reunir y barajar”.
+- Espera el nuevo reparto y elige cualquier carta boca abajo.
+
+
+7. GANADORES, PREMIOS Y SONIDO
+
+- Los ganadores y premios quedan guardados aunque cambies de juego.
+- Un ganador no se repite hasta que pulses “Volver a incluir”.
+- Volver a incluir no borra los premios anteriores.
+- El altavoz activa o silencia sonidos y anuncios por voz.
+- El botón de las cuatro esquinas activa la pantalla completa.
+
+
+8. ACTUALIZACIONES
+
+- Cuando recibas una versión nueva, abre su instalador sobre la versión actual.
+- Los datos guardados se conservan.
+- Instala solo versiones recibidas de la persona de confianza que te entregó
+  Fortuna Real.
+
+
+9. DESINSTALAR
+
+Abre Configuración de Windows > Aplicaciones > Aplicaciones instaladas, busca
+“Fortuna Real” y selecciona “Desinstalar”.
+
+
+SOPORTE
+
+Si el programa no abre, reinicia Windows e intenta de nuevo. Si continúa el
+problema, toma una foto del mensaje y envíala a quien compartió el programa.
+
+============================================================
+                SORTEOS CON EMOCIÓN REAL
+============================================================

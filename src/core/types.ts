@@ -1,5 +1,6 @@
 export type DrawMode = "direct" | "elimination";
-export type GameId = "roulette" | "cards" | "marbles";
+export type GameId = "roulette" | "cards" | "pinball" | "marbles";
+export type PinballControlMode = "automatic" | "manual";
 export type MarbleDifficulty = "easy" | "medium" | "hard";
 export type Parity = "even" | "odd";
 

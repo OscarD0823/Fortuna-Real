@@ -56,7 +56,9 @@ export function ParticipantPanel() {
               ? "Sin casillas vacías: la rueda se adapta a cada lista"
               : game === "cards"
                 ? "Cada nombre recibe una carta visible antes de barajar"
-                : "Cada nombre recibe una canica identificada en la carrera"}
+                : game === "pinball"
+                  ? "Cada nombre recibe una pelota numerada en la mesa 3D"
+                  : "Cada nombre recibe una canica identificada en la carrera"}
           </p>
         </div>
         <span className="count-pill"><Users size={14} /> {participants.length}</span>

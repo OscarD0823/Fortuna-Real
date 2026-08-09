@@ -6,6 +6,7 @@ import type {
   MarbleDifficulty,
   Participant,
   Parity,
+  PinballControlMode,
   RoundResult,
   WinnerRecord,
 } from "../../core/types";
@@ -36,7 +37,10 @@ const normalizeDrawMode = (mode: unknown): DrawMode =>
   mode === "direct" ? "direct" : "elimination";
 
 const normalizeGame = (game: unknown): GameId =>
-  game === "cards" || game === "marbles" ? game : "roulette";
+  game === "cards" || game === "pinball" ? game : "roulette";
+
+const normalizePinballControlMode = (mode: unknown): PinballControlMode =>
+  mode === "manual" ? "manual" : "automatic";
 
 const normalizeMarbleDifficulty = (difficulty: unknown): MarbleDifficulty =>
   difficulty === "easy" || difficulty === "hard" ? difficulty : "medium";
@@ -56,6 +60,7 @@ interface DrawState {
   mode: DrawMode;
   game: GameId;
   marbleDifficulty: MarbleDifficulty;
+  pinballControlMode: PinballControlMode;
   prize: string;
   roundNumber: number;
   addNames: (names: string[]) => AddNamesResult;
@@ -64,6 +69,7 @@ interface DrawState {
   setMode: (mode: DrawMode) => void;
   setGame: (game: GameId) => void;
   setMarbleDifficulty: (difficulty: MarbleDifficulty) => void;
+  setPinballControlMode: (mode: PinballControlMode) => void;
   setPrize: (prize: string) => void;
   startDraw: () => void;
   recordSelection: (
@@ -89,6 +95,7 @@ export const mergePersistedDrawState = (
     mode: normalizeDrawMode(stored.mode),
     game: normalizeGame(stored.game),
     marbleDifficulty: normalizeMarbleDifficulty(stored.marbleDifficulty),
+    pinballControlMode: normalizePinballControlMode(stored.pinballControlMode),
     winnerRecords: (stored.winnerRecords ?? currentState.winnerRecords).map(
       (record) => ({
         ...record,
@@ -126,6 +133,7 @@ export const useDrawStore = create<DrawState>()(
       mode: "elimination",
       game: "roulette",
       marbleDifficulty: "medium",
+      pinballControlMode: "automatic",
       prize: "Premio del sorteo",
       roundNumber: 1,
 
@@ -194,7 +202,7 @@ export const useDrawStore = create<DrawState>()(
 
       setGame: (game) =>
         set({
-          game,
+          game: normalizeGame(game),
           eliminatedIds: [],
           history: [],
           eliminationParity: null,
@@ -202,6 +210,8 @@ export const useDrawStore = create<DrawState>()(
         }),
 
       setMarbleDifficulty: (marbleDifficulty) => set({ marbleDifficulty }),
+
+      setPinballControlMode: (pinballControlMode) => set({ pinballControlMode }),
 
       setPrize: (prize) => set({ prize }),
 
@@ -369,6 +379,7 @@ export const useDrawStore = create<DrawState>()(
         mode: state.mode,
         game: state.game,
         marbleDifficulty: state.marbleDifficulty,
+        pinballControlMode: state.pinballControlMode,
         prize: state.prize,
         winnerRecords: state.winnerRecords,
         blockedWinnerIds: state.blockedWinnerIds,

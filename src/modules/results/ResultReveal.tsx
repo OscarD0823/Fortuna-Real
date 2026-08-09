@@ -1,4 +1,4 @@
-import { Binary, Crown, Gem, Layers3, RotateCcw, Target, Trophy, Volume2, VolumeX, X } from "lucide-react";
+import { Binary, Crown, Gamepad2, Gem, Layers3, RotateCcw, Target, Trophy, Volume2, VolumeX, X } from "lucide-react";
 import type { RoundResult } from "../../core/types";
 
 export function ResultReveal({
@@ -17,6 +17,7 @@ export function ResultReveal({
   const isParitySelection = result.kind === "parity-selected";
   const isCardGame = result.game === "cards";
   const isMarbleGame = result.game === "marbles";
+  const isPinballGame = result.game === "pinball";
   const parityLabel = result.parity === "even" ? "PAR" : "IMPAR";
 
   return (
@@ -31,7 +32,7 @@ export function ResultReveal({
         }`}
         role="dialog"
         aria-modal="true"
-        aria-label={`Resultado de ${isCardGame ? "las cartas" : isMarbleGame ? "las canicas" : "la ruleta"}`}
+        aria-label={`Resultado de ${isCardGame ? "las cartas" : isPinballGame ? "Pinball 3D" : isMarbleGame ? "las canicas" : "la ruleta"}`}
         onMouseDown={(event) => event.stopPropagation()}
       >
         <button className="reveal-close" type="button" onClick={onClose} aria-label="Cerrar resultado">
@@ -41,9 +42,24 @@ export function ResultReveal({
         <div className={`confetti ${isWinner ? "is-celebrating" : ""}`} aria-hidden="true">
           {Array.from({ length: 28 }, (_, index) => <i key={index} />)}
         </div>
-        <div className="reveal-icon">
-          {isWinner ? <Crown size={51} /> : isQualifiedRound || isParitySelection ? <Binary size={50} /> : isCardGame ? <Layers3 size={48} /> : isMarbleGame ? <Gem size={48} /> : <Target size={48} />}
-        </div>
+        {isWinner ? (
+          <div className="reward-chest" aria-hidden="true">
+            <span className="reward-chest__aura" />
+            <span className="reward-chest__rays"><i /><i /><i /><i /><i /><i /></span>
+            <span className="reward-chest__coins"><i /><i /><i /><i /><i /></span>
+            <span className="reward-chest__scene">
+              <span className="reward-chest__lid"><i /><b /></span>
+              <span className="reward-chest__body"><i /><b /></span>
+              <span className="reward-chest__lock"><Crown size={21} /></span>
+              <span className="reward-chest__foot reward-chest__foot--left" />
+              <span className="reward-chest__foot reward-chest__foot--right" />
+            </span>
+          </div>
+        ) : (
+          <div className="reveal-icon">
+            {isQualifiedRound || isParitySelection ? <Binary size={50} /> : isCardGame ? <Layers3 size={48} /> : isPinballGame ? <Gamepad2 size={48} /> : isMarbleGame ? <Gem size={48} /> : <Target size={48} />}
+          </div>
+        )}
 
         {(isWinner || (!isQualifiedRound && !isParitySelection)) && (
           <div className="reveal-announcement" aria-live="assertive">
@@ -84,11 +100,13 @@ export function ResultReveal({
               {isWinner
                 ? result.selectedParticipantName
                   ? `GANADOR TRAS SALIR ${result.selectedParticipantName.toUpperCase()}`
-                  : isMarbleGame && result.selectionLabel
+                  : (isMarbleGame || isPinballGame) && result.selectionLabel
                     ? `${result.selectionLabel.toUpperCase()} · TENEMOS GANADOR`
                     : "TENEMOS GANADOR"
                 : isCardGame
                   ? `${(result.selectionLabel || `CARTA ${result.landedNumber}`).toUpperCase()} · CARTA SELECCIONADA`
+                  : isPinballGame
+                    ? `${(result.selectionLabel || `PELOTA ${result.landedNumber}`).toUpperCase()} · PINBALL FINALIZADO`
                   : isMarbleGame
                     ? `${(result.selectionLabel || `CANICA ${result.landedNumber}`).toUpperCase()} · CARRERA FINALIZADA`
                   : `NÚMERO ${result.landedNumber} · SALE DE LA RULETA`}
@@ -101,6 +119,8 @@ export function ResultReveal({
                   : <>Se lleva <strong>{result.prize || "Premio del sorteo"}</strong>. Quedará fuera hasta que decidas habilitarlo nuevamente.</>
                 : isCardGame
                   ? "Su carta sale del mazo y el nombre queda marcado como eliminado para la siguiente ronda."
+                  : isPinballGame
+                    ? "Su pelota cayó al pozo y el nombre queda eliminado. La próxima ronda tendrá una distribución completamente nueva."
                   : isMarbleGame
                     ? "Su canica cruzó de última y el nombre queda marcado como eliminado. La próxima ronda tendrá una pista nueva."
                   : "Su casilla desaparece de la ruleta y el nombre queda marcado como eliminado."}
