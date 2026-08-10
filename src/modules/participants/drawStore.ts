@@ -37,7 +37,9 @@ const normalizeDrawMode = (mode: unknown): DrawMode =>
   mode === "direct" ? "direct" : "elimination";
 
 const normalizeGame = (game: unknown): GameId =>
-  game === "cards" || game === "pinball" ? game : "roulette";
+  game === "cards" || game === "pinball" || game === "marbles" || game === "ducks"
+    ? game
+    : "roulette";
 
 const normalizePinballControlMode = (mode: unknown): PinballControlMode =>
   mode === "manual" ? "manual" : "automatic";
@@ -78,6 +80,10 @@ interface DrawState {
     selectionLabel?: string,
   ) => RoundResult;
   recordParitySelection: (parity: Parity, landedNumber: number) => RoundResult;
+  recordDuckSurvival: (
+    survivorId: string,
+    knockouts: Array<{ participantId: string; number: number }>,
+  ) => RoundResult;
   reenableWinner: (participantId: string) => void;
   reenableAllWinners: () => void;
   clearWinnerHistory: () => void;
@@ -345,6 +351,64 @@ export const useDrawStore = create<DrawState>()(
           roundNumber: state.roundNumber + 1,
         });
         return result;
+      },
+
+      recordDuckSurvival: (survivorId, knockouts) => {
+        const state = get();
+        const survivor = state.participants.find((participant) => participant.id === survivorId);
+        if (!survivor) throw new Error("El superviviente ya no existe.");
+        const createdAt = new Date().toISOString();
+        const eliminatedResults: RoundResult[] = knockouts.flatMap((knockout, index) => {
+          const participant = state.participants.find((candidate) => candidate.id === knockout.participantId);
+          if (!participant) return [];
+          return [{
+            id: makeId(),
+            participantId: participant.id,
+            participantName: participant.name,
+            selectionLabel: `Pato #${knockout.number} · perdió sus 3 vidas`,
+            kind: "eliminated" as const,
+            landedNumber: knockout.number,
+            parity: (knockout.number % 2 === 0 ? "even" : "odd") as Parity,
+            mode: "elimination" as const,
+            game: "ducks" as const,
+            round: index + 1,
+            remainingCount: Math.max(1, knockouts.length - index),
+            eligibleCount: Math.max(1, knockouts.length - index),
+            createdAt,
+          } satisfies RoundResult];
+        });
+        const lastKnockout = eliminatedResults[eliminatedResults.length - 1];
+        const survivorNumber = Math.max(1, state.participants.findIndex((participant) => participant.id === survivorId) + 1);
+        const winnerResult: RoundResult = {
+          id: makeId(),
+          participantId: survivor.id,
+          participantName: survivor.name,
+          selectedParticipantName: lastKnockout?.participantName,
+          selectionLabel: `Pato #${survivorNumber} · último en pie`,
+          kind: "winner",
+          landedNumber: survivorNumber,
+          parity: survivorNumber % 2 === 0 ? "even" : "odd",
+          mode: "elimination",
+          game: "ducks",
+          prize: state.prize.trim() || "Premio del sorteo",
+          round: Math.max(1, knockouts.length),
+          remainingCount: 1,
+          eligibleCount: 1,
+          createdAt,
+        };
+
+        set({
+          history: [winnerResult, ...eliminatedResults.reverse(), ...state.history],
+          eliminatedIds: Array.from(new Set([...state.eliminatedIds, ...knockouts.map((knockout) => knockout.participantId)])),
+          blockedWinnerIds: Array.from(new Set([...state.blockedWinnerIds, survivor.id])),
+          winnerRecords: [
+            createWinnerRecord(survivor, state.prize, "elimination", "ducks"),
+            ...state.winnerRecords,
+          ],
+          roundNumber: Math.max(1, knockouts.length + 1),
+          eliminationParity: null,
+        });
+        return winnerResult;
       },
 
       reenableWinner: (participantId) =>

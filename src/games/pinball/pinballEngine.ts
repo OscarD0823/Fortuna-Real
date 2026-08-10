@@ -31,6 +31,10 @@ export interface PinballLane extends PinballPoint {
   label: string;
 }
 
+export interface PinballFinishGate extends PinballPoint {
+  width: number;
+}
+
 export interface PinballLayout {
   seed: string;
   signature: string;
@@ -44,6 +48,7 @@ export interface PinballLayout {
   jackpot: PinballPoint;
   launch: PinballPoint;
   drain: PinballPoint;
+  finishGate: PinballFinishGate;
 }
 
 export interface PinballBallAssignment {
@@ -54,15 +59,15 @@ export interface PinballBallAssignment {
   accent: string;
   launchDelayMs: number;
   laneBias: number;
+  previousWinner: boolean;
 }
 
 export interface PreparedPinballRound {
   layout: PinballLayout;
   balls: PinballBallAssignment[];
-  selected: PinballBallAssignment;
   drawMode: DrawMode;
   controlMode: PinballControlMode;
-  revealAfterMs: number;
+  overtimeAfterMs: number;
 }
 
 export interface PinballPhysicsBall {
@@ -227,6 +232,7 @@ export const generatePinballLayout = (seed: string, participantCount = 2): Pinba
     jackpot: { x: lanes[1].x, z: -8.65 },
     launch: { x: 6.55, z: 9.6 },
     drain: { x: 0, z: 11.15 },
+    finishGate: { x: 0, z: 9.82, width: 1.9 },
   };
 };
 
@@ -235,12 +241,21 @@ export const preparePinballRound = (
   drawMode: DrawMode,
   controlMode: PinballControlMode,
   seed: string,
-  selectedIndex = 0,
+  previousWinnerIds: ReadonlySet<string> = new Set(),
 ): PreparedPinballRound => {
   if (participants.length < 2) throw new Error("Pinball necesita al menos dos participantes.");
   const layout = generatePinballLayout(seed, participants.length);
   const random = createPinballRandom(`balls-${seed}-${participants.map((participant) => participant.id).join("|")}`);
   const launchWindowMs = Math.min(3800, Math.max(700, participants.length * 20));
+  const launchOrder = participants.map((_, index) => index);
+  for (let index = launchOrder.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(random() * (index + 1));
+    [launchOrder[index], launchOrder[swapIndex]] = [launchOrder[swapIndex], launchOrder[index]];
+  }
+  const launchRanks = new Uint16Array(participants.length);
+  launchOrder.forEach((participantIndex, rank) => {
+    launchRanks[participantIndex] = rank;
+  });
   const balls = participants.map((participant, index) => {
     const hue = (index * 137.508 + random() * 48) % 360;
     return {
@@ -248,20 +263,32 @@ export const preparePinballRound = (
       number: index + 1,
       participant,
       color: participant.color,
-      accent: `hsl(${hue} 92% 68%)`,
-      launchDelayMs: participants.length === 1 ? 0 : (index / (participants.length - 1)) * launchWindowMs,
+      accent: `hsl(${hue}, 92%, 68%)`,
+      launchDelayMs: participants.length === 1 ? 0 : (launchRanks[index] / (participants.length - 1)) * launchWindowMs,
       laneBias: random() * 2 - 1,
+      previousWinner: previousWinnerIds.has(participant.id),
     } satisfies PinballBallAssignment;
   });
-  const safeSelectedIndex = clamp(Math.floor(selectedIndex), 0, balls.length - 1);
   return {
     layout,
     balls,
-    selected: balls[safeSelectedIndex],
     drawMode,
     controlMode,
-    revealAfterMs: clamp(6200 + participants.length * 14, 6500, 9400),
+    overtimeAfterMs: clamp(7200 + participants.length * 8, 7500, 9000),
   };
+};
+
+export const getPinballFinishCrossing = (
+  fromX: number,
+  fromZ: number,
+  toX: number,
+  toZ: number,
+  gate: PinballFinishGate,
+) => {
+  if (toZ <= fromZ || fromZ > gate.z || toZ < gate.z) return null;
+  const progress = (gate.z - fromZ) / Math.max(0.000001, toZ - fromZ);
+  const crossingX = fromX + (toX - fromX) * progress;
+  return Math.abs(crossingX - gate.x) <= gate.width / 2 ? progress : null;
 };
 
 export const createPinballPhysicsBall = (assignment: PinballBallAssignment, layout: PinballLayout): PinballPhysicsBall => ({
@@ -383,12 +410,12 @@ export const stepPinballPhysics = (
   }
 
   const nearFlippers = ball.z > 7.35 && ball.z < 10.15;
-  if (nearFlippers && flippers.left && ball.x > -6.2 && ball.x < 0.45) {
+  if (nearFlippers && flippers.left && ball.x > -6.2 && ball.x < -0.68) {
     ball.vz = -11.4 - Math.abs(ball.vx) * 0.15;
     ball.vx += 2.3;
     ball.collisions += 1;
   }
-  if (nearFlippers && flippers.right && ball.x < 6.2 && ball.x > -0.45) {
+  if (nearFlippers && flippers.right && ball.x < 6.2 && ball.x > 0.68) {
     ball.vz = -11.4 - Math.abs(ball.vx) * 0.15;
     ball.vx -= 2.3;
     ball.collisions += 1;

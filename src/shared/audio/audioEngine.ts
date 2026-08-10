@@ -200,6 +200,49 @@ class FortunaAudioEngine {
     });
   }
 
+  playDuckStart() {
+    this.cancelAnnouncement();
+    this.noise(0.26, 0.025);
+    [220, 330, 494, 740].forEach((frequency, index) => {
+      this.tone(frequency, 0.34, {
+        type: index < 2 ? "sawtooth" : "triangle",
+        volume: 0.032,
+        delay: index * 0.07,
+        endFrequency: frequency * 1.32,
+      });
+    });
+  }
+
+  playDuckShot(hit: boolean) {
+    this.noise(0.17, hit ? 0.07 : 0.052);
+    this.tone(92, 0.16, { type: "sawtooth", volume: 0.055, endFrequency: 42 });
+    if (hit) {
+      this.tone(880, 0.11, { type: "square", volume: 0.04, delay: 0.09, endFrequency: 440 });
+      this.tone(523, 0.2, { type: "triangle", volume: 0.038, delay: 0.17, endFrequency: 784 });
+    }
+  }
+
+  playDuckShield() {
+    this.noise(0.12, 0.028);
+    this.tone(1180, 0.12, { type: "square", volume: 0.035, endFrequency: 620 });
+    this.tone(520, 0.32, { type: "triangle", volume: 0.04, delay: 0.08, endFrequency: 1040 });
+    this.tone(1560, 0.18, { type: "sine", volume: 0.025, delay: 0.16, endFrequency: 880 });
+  }
+
+  playDuckTakeoff() {
+    [0, 0.09, 0.18, 0.27].forEach((delay, index) => {
+      this.noise(0.075, 0.014, delay);
+      this.tone(280 + index * 75, 0.12, { type: "triangle", volume: 0.022, delay, endFrequency: 520 + index * 80 });
+    });
+  }
+
+  playDuckWinner() {
+    this.noise(0.3, 0.035);
+    [392, 523, 659, 880, 1175].forEach((frequency, index) => {
+      this.tone(frequency, 0.48, { type: "triangle", volume: 0.047, delay: index * 0.085 });
+    });
+  }
+
   playResult(winner: boolean, parity?: "even" | "odd") {
     if (winner) {
       [523, 659, 784, 1047].forEach((frequency, index) => {
@@ -254,6 +297,8 @@ class FortunaAudioEngine {
           ? result.selectionLabel || `Pelota ${result.landedNumber}`
         : result.game === "marbles"
           ? result.selectionLabel || `Canica ${result.landedNumber}`
+        : result.game === "ducks"
+          ? result.selectionLabel || `Pato ${result.landedNumber}`
           : `Número ${result.landedNumber}`;
       const parts = result.kind === "winner"
         ? result.selectedParticipantName

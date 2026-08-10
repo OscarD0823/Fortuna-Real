@@ -1,4 +1,4 @@
-import { Binary, Crown, Gamepad2, Gem, Layers3, RotateCcw, Target, Trophy, Volume2, VolumeX, X } from "lucide-react";
+import { Binary, Bird, Crown, Gamepad2, Gem, Layers3, RotateCcw, Target, Trophy, Volume2, VolumeX, X } from "lucide-react";
 import type { RoundResult } from "../../core/types";
 
 export function ResultReveal({
@@ -18,6 +18,7 @@ export function ResultReveal({
   const isCardGame = result.game === "cards";
   const isMarbleGame = result.game === "marbles";
   const isPinballGame = result.game === "pinball";
+  const isDuckGame = result.game === "ducks";
   const parityLabel = result.parity === "even" ? "PAR" : "IMPAR";
 
   return (
@@ -32,7 +33,7 @@ export function ResultReveal({
         }`}
         role="dialog"
         aria-modal="true"
-        aria-label={`Resultado de ${isCardGame ? "las cartas" : isPinballGame ? "Pinball 3D" : isMarbleGame ? "las canicas" : "la ruleta"}`}
+        aria-label={`Resultado de ${isCardGame ? "las cartas" : isPinballGame ? "Pinball 3D" : isMarbleGame ? "las canicas" : isDuckGame ? "Patos 3D" : "la ruleta"}`}
         onMouseDown={(event) => event.stopPropagation()}
       >
         <button className="reveal-close" type="button" onClick={onClose} aria-label="Cerrar resultado">
@@ -57,7 +58,7 @@ export function ResultReveal({
           </div>
         ) : (
           <div className="reveal-icon">
-            {isQualifiedRound || isParitySelection ? <Binary size={50} /> : isCardGame ? <Layers3 size={48} /> : isPinballGame ? <Gamepad2 size={48} /> : isMarbleGame ? <Gem size={48} /> : <Target size={48} />}
+            {isQualifiedRound || isParitySelection ? <Binary size={50} /> : isCardGame ? <Layers3 size={48} /> : isPinballGame ? <Gamepad2 size={48} /> : isMarbleGame ? <Gem size={48} /> : isDuckGame ? <Bird size={48} /> : <Target size={48} />}
           </div>
         )}
 
@@ -98,7 +99,9 @@ export function ResultReveal({
           <>
             <span className="reveal-kicker">
               {isWinner
-                ? result.selectedParticipantName
+                ? isDuckGame
+                  ? `ÚLTIMO PATO EN PIE · ${result.selectionLabel?.toUpperCase() || "SUPERVIVIENTE"}`
+                  : result.selectedParticipantName
                   ? `GANADOR TRAS SALIR ${result.selectedParticipantName.toUpperCase()}`
                   : (isMarbleGame || isPinballGame) && result.selectionLabel
                     ? `${result.selectionLabel.toUpperCase()} · TENEMOS GANADOR`
@@ -114,7 +117,9 @@ export function ResultReveal({
             <h2>{result.participantName}</h2>
             <p>
               {isWinner
-                ? result.selectedParticipantName
+                ? isDuckGame
+                  ? <>Es el último participante con vida y se lleva <strong>{result.prize || "Premio del sorteo"}</strong>. Podrás habilitarlo otra vez sin perder este premio.</>
+                  : result.selectedParticipantName
                   ? <>Tras salir <strong>{result.selectedParticipantName}</strong>, se convierte en ganador final y recibe <strong>{result.prize || "Premio del sorteo"}</strong>.</>
                   : <>Se lleva <strong>{result.prize || "Premio del sorteo"}</strong>. Quedará fuera hasta que decidas habilitarlo nuevamente.</>
                 : isCardGame

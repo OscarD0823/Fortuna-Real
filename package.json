@@ -9,6 +9,8 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "test:capacity": "node --experimental-strip-types ./scripts/capacity-check.ts",
+    "test:marble-seeds": "node --experimental-strip-types ./scripts/marble-seed-check.ts",
+    "test:ducks": "node --experimental-strip-types ./scripts/duck-game-check.ts",
     "preview": "vite preview",
     "tauri": "tauri"
   },

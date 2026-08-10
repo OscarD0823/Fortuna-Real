@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import {
-  getMarbleProgress,
+  getMarbleMotion,
   getTrackPosition,
   powerLabels,
   type MarbleTrack,
@@ -16,6 +16,7 @@ interface TrackWorldPoint {
   position: THREE.Vector3;
   tangent: THREE.Vector3;
   normal: THREE.Vector3;
+  up: THREE.Vector3;
 }
 
 interface AnimatedPart {
@@ -29,8 +30,28 @@ interface MarbleSceneState {
   scene: THREE.Scene;
   camera: THREE.OrthographicCamera;
   racers: THREE.InstancedMesh;
+  racerGlow: THREE.Points;
   racerLabels: THREE.Sprite[];
+  winnerCrowns: THREE.InstancedMesh;
   selectedRing: THREE.Mesh;
+  trackSamples: TrackWorldPoint[];
+  startPoint: TrackWorldPoint;
+  motionPoint: TrackWorldPoint;
+  matrix: THREE.Matrix4;
+  quaternion: THREE.Quaternion;
+  scaleVector: THREE.Vector3;
+  positionVector: THREE.Vector3;
+  stagingVector: THREE.Vector3;
+  labelVector: THREE.Vector3;
+  contentCenter: THREE.Vector3;
+  overviewCameraPosition: THREE.Vector3;
+  overviewCameraTarget: THREE.Vector3;
+  stagingCameraPosition: THREE.Vector3;
+  stagingCameraTarget: THREE.Vector3;
+  cameraTarget: THREE.Vector3;
+  readyZoom: number;
+  contentWidth: number;
+  contentDepth: number;
   animatedParts: AnimatedPart[];
   glowMaterials: THREE.MeshStandardMaterial[];
   participantCount: number;
@@ -58,16 +79,8 @@ const trackWidthToWorld = (track: MarbleTrack) => track.trackWidth / 35.5;
 
 const trackElevation = (track: MarbleTrack, progress: number) => {
   const phase = (hashText(track.signature) % 628) / 100;
-  const strength = track.difficulty === "easy" ? 0.12 : track.difficulty === "medium" ? 0.2 : 0.28;
-  const bridgeCenters = track.difficulty === "hard" ? [0.28, 0.62] : track.difficulty === "medium" ? [0.46] : [0.54];
-  const bridgeLift = bridgeCenters.reduce((total, center) => {
-    const distance = (progress - center) / (track.difficulty === "hard" ? 0.055 : 0.065);
-    return total + Math.exp(-(distance * distance)) * (track.difficulty === "easy" ? 0.38 : 0.68);
-  }, 0);
-  return 0.58
-    + Math.sin(progress * Math.PI * 5 + phase) * strength
-    + Math.sin(progress * Math.PI * 2 - phase * 0.4) * 0.08
-    + bridgeLift;
+  const piece = getTrackPosition(track.points, progress);
+  return 0.58 + piece.elevation + Math.sin(progress * Math.PI * 7 + phase) * 0.018;
 };
 
 const worldPointAt = (track: MarbleTrack, progress: number): TrackWorldPoint => {
@@ -86,8 +99,34 @@ const worldPointAt = (track: MarbleTrack, progress: number): TrackWorldPoint => 
     (after.y - before.y) * WORLD_DEPTH,
   ).normalize();
   const flatTangent = new THREE.Vector3(tangent.x, 0, tangent.z).normalize();
-  const normal = new THREE.Vector3(-flatTangent.z, 0, flatTangent.x);
-  return { position, tangent: flatTangent, normal };
+  const normal = new THREE.Vector3(-flatTangent.z, 0, flatTangent.x)
+    .applyAxisAngle(tangent, source.bank)
+    .normalize();
+  const up = normal.clone().cross(tangent).normalize();
+  return { position, tangent, normal, up };
+};
+
+const createEmptyWorldPoint = (): TrackWorldPoint => ({
+  position: new THREE.Vector3(),
+  tangent: new THREE.Vector3(0, 0, 1),
+  normal: new THREE.Vector3(-1, 0, 0),
+  up: new THREE.Vector3(0, 1, 0),
+});
+
+const sampleWorldPoint = (
+  samples: readonly TrackWorldPoint[],
+  progress: number,
+  target: TrackWorldPoint,
+) => {
+  const position = THREE.MathUtils.clamp(progress, 0, 1) * (samples.length - 1);
+  const startIndex = Math.floor(position);
+  const endIndex = Math.min(samples.length - 1, startIndex + 1);
+  const local = position - startIndex;
+  target.position.lerpVectors(samples[startIndex].position, samples[endIndex].position, local);
+  target.tangent.lerpVectors(samples[startIndex].tangent, samples[endIndex].tangent, local).normalize();
+  target.normal.lerpVectors(samples[startIndex].normal, samples[endIndex].normal, local).normalize();
+  target.up.lerpVectors(samples[startIndex].up, samples[endIndex].up, local).normalize();
+  return target;
 };
 
 const metalMaterial = (color: THREE.ColorRepresentation, roughness = 0.3) => new THREE.MeshStandardMaterial({
@@ -116,6 +155,25 @@ const glassMaterial = (color: THREE.ColorRepresentation) => new THREE.MeshPhysic
   clearcoat: 1,
   clearcoatRoughness: 0.08,
 });
+
+const createMarbleGlowTexture = () => {
+  const canvas = document.createElement("canvas");
+  canvas.width = 64;
+  canvas.height = 64;
+  const context = canvas.getContext("2d");
+  if (context) {
+    const gradient = context.createRadialGradient(32, 32, 1, 32, 32, 31);
+    gradient.addColorStop(0, "rgba(255,255,255,1)");
+    gradient.addColorStop(0.28, "rgba(255,255,255,.82)");
+    gradient.addColorStop(0.62, "rgba(255,255,255,.28)");
+    gradient.addColorStop(1, "rgba(255,255,255,0)");
+    context.fillStyle = gradient;
+    context.fillRect(0, 0, 64, 64);
+  }
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
+};
 
 const addMesh = <T extends THREE.BufferGeometry, M extends THREE.Material>(
   parent: THREE.Object3D,
@@ -147,7 +205,7 @@ const roundedRect = (
   context.roundRect(x, y, width, height, radius);
 };
 
-const createLabelSprite = (text: string, color: string, compact = false) => {
+const createLabelSprite = (text: string, color: string, compact = false, depthTest = false) => {
   const canvas = document.createElement("canvas");
   canvas.width = 512;
   canvas.height = 128;
@@ -172,7 +230,7 @@ const createLabelSprite = (text: string, color: string, compact = false) => {
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.minFilter = THREE.LinearFilter;
-  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false }));
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest }));
   sprite.renderOrder = 20;
   sprite.scale.set(compact ? 2.35 : 3.15, compact ? 0.59 : 0.78, 1);
   return sprite;
@@ -228,15 +286,15 @@ const createRibbonGeometry = (
   const uvs: number[] = [];
   const indices: number[] = [];
   samples.forEach((sample, index) => {
-    const left = sample.position.clone().addScaledVector(sample.normal, width / 2);
-    const right = sample.position.clone().addScaledVector(sample.normal, -width / 2);
-    left.y += topOffset;
-    right.y += topOffset;
+    const left = sample.position.clone().addScaledVector(sample.normal, width / 2).addScaledVector(sample.up, topOffset);
+    const right = sample.position.clone().addScaledVector(sample.normal, -width / 2).addScaledVector(sample.up, topOffset);
+    const bottomLeft = left.clone().addScaledVector(sample.up, -depth);
+    const bottomRight = right.clone().addScaledVector(sample.up, -depth);
     positions.push(
       left.x, left.y, left.z,
       right.x, right.y, right.z,
-      left.x, left.y - depth, left.z,
-      right.x, right.y - depth, right.z,
+      bottomLeft.x, bottomLeft.y, bottomLeft.z,
+      bottomRight.x, bottomRight.y, bottomRight.z,
     );
     const v = index / Math.max(1, samples.length - 1);
     uvs.push(0, v, 1, v, 0, v, 1, v);
@@ -282,7 +340,7 @@ const addTrackBody = (scene: THREE.Scene, track: MarbleTrack, samples: readonly 
   [-1, 1].forEach((side) => {
     const railPoints = samples.map((sample) => sample.position.clone()
       .addScaledVector(sample.normal, side * (width / 2 + 0.18))
-      .add(new THREE.Vector3(0, 0.25, 0)));
+      .addScaledVector(sample.up, 0.25));
     const railCurve = new THREE.CatmullRomCurve3(railPoints);
     addMesh(trackGroup, new THREE.TubeGeometry(railCurve, samples.length, 0.13, 7, false), metalMaterial(0x090c0d, 0.2));
     addMesh(trackGroup, new THREE.TubeGeometry(railCurve, samples.length, 0.075, 7, false), metalMaterial(0xe2a63e, 0.18));
@@ -292,11 +350,11 @@ const addTrackBody = (scene: THREE.Scene, track: MarbleTrack, samples: readonly 
   const tieGeometry = new THREE.BoxGeometry(width + 0.72, 0.12, 0.2);
   const ties = new THREE.InstancedMesh(tieGeometry, metalMaterial(0x342c22, 0.34), tieSamples.length);
   const matrix = new THREE.Matrix4();
+  const basis = new THREE.Matrix4();
   const quaternion = new THREE.Quaternion();
   tieSamples.forEach((sample, index) => {
-    const yaw = Math.atan2(sample.tangent.x, sample.tangent.z);
-    quaternion.setFromEuler(new THREE.Euler(0, yaw, 0));
-    matrix.compose(sample.position.clone().add(new THREE.Vector3(0, 0.095, 0)), quaternion, new THREE.Vector3(1, 1, 1));
+    quaternion.setFromRotationMatrix(basis.makeBasis(sample.normal, sample.up, sample.tangent));
+    matrix.compose(sample.position.clone().addScaledVector(sample.up, 0.095), quaternion, new THREE.Vector3(1, 1, 1));
     ties.setMatrixAt(index, matrix);
   });
   ties.castShadow = true;
@@ -309,8 +367,9 @@ const addTrackBody = (scene: THREE.Scene, track: MarbleTrack, samples: readonly 
     [-1, 1].forEach((side, sideIndex) => {
       const position = sample.position.clone()
         .addScaledVector(sample.normal, side * (width / 2 + 0.18))
-        .add(new THREE.Vector3(0, 0.31, 0));
-      matrix.compose(position, new THREE.Quaternion(), new THREE.Vector3(1, 1, 1));
+        .addScaledVector(sample.up, 0.31);
+      quaternion.setFromRotationMatrix(basis.makeBasis(sample.normal, sample.up, sample.tangent));
+      matrix.compose(position, quaternion, new THREE.Vector3(1, 1, 1));
       bolts.setMatrixAt(index * 2 + sideIndex, matrix);
     });
   });
@@ -321,8 +380,7 @@ const addTrackBody = (scene: THREE.Scene, track: MarbleTrack, samples: readonly 
   const wallGeometry = new THREE.BoxGeometry(0.34, 0.34, 0.42);
   const walls = new THREE.InstancedMesh(wallGeometry, metalMaterial(0x252b2d, 0.22), wallSamples.length * 2);
   wallSamples.forEach((sample, index) => {
-    const yaw = Math.atan2(sample.tangent.x, sample.tangent.z);
-    quaternion.setFromEuler(new THREE.Euler(0, yaw, 0));
+    quaternion.setFromRotationMatrix(basis.makeBasis(sample.normal, sample.up, sample.tangent));
     [-1, 1].forEach((side, sideIndex) => {
       const position = sample.position.clone()
         .addScaledVector(sample.normal, side * (width / 2 + 0.17))
@@ -354,7 +412,7 @@ const addTrackBody = (scene: THREE.Scene, track: MarbleTrack, samples: readonly 
 const orientGroupOnTrack = (group: THREE.Group, track: MarbleTrack, progress: number) => {
   const point = worldPointAt(track, progress);
   group.position.copy(point.position);
-  group.rotation.y = Math.atan2(point.tangent.x, point.tangent.z);
+  group.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(point.normal, point.up, point.tangent));
   return point;
 };
 
@@ -435,6 +493,7 @@ const addZoneFeature = (
   animatedParts: AnimatedPart[],
   glowMaterials: THREE.MeshStandardMaterial[],
   localLights: boolean,
+  labelIndex: number,
 ) => {
   const group = new THREE.Group();
   orientGroupOnTrack(group, track, zone.centerProgress);
@@ -523,24 +582,82 @@ const addZoneFeature = (
     [-0.55, 0, 0.55].forEach((x, index) => addMesh(group, new THREE.ConeGeometry(0.18, index === 1 ? 0.72 : 0.52, 4), glowMaterial(0xf6bd35, 1.25), [x, 1.96 + (index === 1 ? 0.1 : 0), 0]));
   }
 
-  const label = createLabelSprite(zone.label, zone.color);
-  label.position.set(-factorySide * width * 0.72, 2.35 * scale, 0);
-  group.add(label);
+  if (zone.type !== "royal") {
+    const label = createLabelSprite(zone.label, zone.color, true, true);
+    label.position.set(
+      -factorySide * width * (0.72 + (labelIndex % 2) * 0.18),
+      (2.02 + (labelIndex % 3) * 0.22) * scale,
+      0,
+    );
+    label.scale.multiplyScalar(track.difficulty === "hard" ? 0.66 : 0.78);
+    group.add(label);
+  }
 };
 
 const addSectionArchitecture = (scene: THREE.Scene, track: MarbleTrack) => {
   const width = trackWidthToWorld(track);
   track.sections.forEach((section, index) => {
     const progress = (section.startProgress + section.endProgress) / 2;
+    const connector = new THREE.Group();
+    orientGroupOnTrack(connector, track, section.startProgress);
+    scene.add(connector);
+    addMesh(
+      connector,
+      new THREE.BoxGeometry(width * 0.98, 0.085, 0.16),
+      metalMaterial(index % 4 === 0 ? GOLD : 0x536064, 0.18),
+      [0, 0.14, 0],
+    );
+    [-1, 1].forEach((side) => addMesh(
+      connector,
+      new THREE.CylinderGeometry(0.055, 0.055, 0.075, 7),
+      metalMaterial(0xefbd58, 0.14),
+      [side * width * 0.39, 0.2, 0],
+    ));
     const group = new THREE.Group();
     orientGroupOnTrack(group, track, progress);
     scene.add(group);
+    const surfaceColor = section.surface === "turbo"
+      ? 0x09e0df
+      : section.surface === "ice"
+        ? 0x8fe9ff
+        : section.surface === "grip"
+          ? 0xd49a38
+          : 0x718086;
     addMesh(
       group,
-      new THREE.BoxGeometry(width * 0.86, 0.055, index % 4 === 0 ? 0.2 : 0.11),
-      index % 4 === 0 ? metalMaterial(GOLD, 0.18) : metalMaterial(0x718086, 0.24),
+      new THREE.BoxGeometry(width * 0.86, 0.055, index % 4 === 0 ? 0.23 : 0.12),
+      section.surface === "turbo" || section.surface === "ice"
+        ? glowMaterial(surfaceColor, section.surface === "turbo" ? 1.05 : 0.58)
+        : metalMaterial(surfaceColor, 0.2),
       [0, 0.13, 0],
     );
+    [-1, 1].forEach((side) => {
+      addMesh(
+        group,
+        new THREE.BoxGeometry(0.075, 0.25, 0.42),
+        metalMaterial(index % 3 === 0 ? GOLD : 0x2e383b, 0.2),
+        [side * width * 0.48, -0.02, 0],
+        [0, 0, side * section.bank * 0.32],
+      );
+    });
+    if (Math.abs(section.elevationDelta) > 0.045 || section.bridgeLift > 0.08) {
+      [-1, 1].forEach((side) => addMesh(
+        group,
+        new THREE.BoxGeometry(0.08, section.bridgeLift > 0.08 ? 0.9 : 0.62, 0.08),
+        metalMaterial(0x7b5421, 0.3),
+        [side * width * 0.42, section.bridgeLift > 0.08 ? -0.48 : -0.34, 0],
+        [0, 0, side * 0.34],
+      ));
+      if (section.bridgeLift > 0.08) {
+        [-1, 1].forEach((side) => addMesh(
+          group,
+          new THREE.BoxGeometry(width * 0.76, 0.065, 0.08),
+          metalMaterial(side > 0 ? GOLD : 0x506064, 0.22),
+          [0, -0.34, side * 0.22],
+          [0, 0, side * 0.18],
+        ));
+      }
+    }
     if (section.type === "tunnel") {
       [-0.42, 0, 0.42].forEach((z) => addMesh(group, new THREE.TorusGeometry(width * 0.56, 0.07, 6, 16, Math.PI), metalMaterial(GOLD, 0.2), [0, 0.08, z], [0, 0, Math.PI]));
     } else if (section.type === "split") {
@@ -617,6 +734,7 @@ const addPowerZone = (
   scale: number,
   animatedParts: AnimatedPart[],
   glowMaterials: THREE.MeshStandardMaterial[],
+  showLabel: boolean,
 ) => {
   const group = new THREE.Group();
   orientGroupOnTrack(group, track, progress);
@@ -627,10 +745,12 @@ const addPowerZone = (
   addMesh(group, new THREE.TorusGeometry(0.58, 0.055, 7, 28), material, [0, 0.16, 0], [Math.PI / 2, 0, 0]);
   const orb = addMesh(group, new THREE.SphereGeometry(0.16, 14, 10), material, [0, 0.72, 0]);
   const halo = addMesh(group, new THREE.TorusGeometry(0.28, 0.035, 6, 20), material, [0, 0.72, 0]);
-  const label = createLabelSprite(labelText, color, true);
-  label.position.set(0.5, 1.22, 0);
-  label.scale.multiplyScalar(0.72);
-  group.add(label);
+  if (showLabel) {
+    const label = createLabelSprite(labelText, color, true, true);
+    label.position.set(0.5, 1.22, 0);
+    label.scale.multiplyScalar(0.5);
+    group.add(label);
+  }
   animatedParts.push({ object: orb, update: (object, time) => { object.position.y = 0.72 + Math.sin(time * 2.8 + progress * 10) * 0.16; } });
   animatedParts.push({ object: halo, update: (object, time) => { object.rotation.z = time * 1.5; object.rotation.y = time * 0.7; } });
 };
@@ -650,7 +770,29 @@ const addStartFinishAndBay = (scene: THREE.Scene, race: PreparedMarbleRace) => {
   scene.add(bay);
   const bayWidth = Math.max(width * 1.45, columns * spacing + 0.65);
   const bayDepth = rows * spacing + 0.75;
-  addMesh(bay, new THREE.BoxGeometry(bayWidth, 0.35, bayDepth), metalMaterial(0x11191b, 0.25), [0, -0.28, -bayDepth * 0.55]);
+  addMesh(bay, new THREE.BoxGeometry(bayWidth, 0.35, bayDepth), metalMaterial(0x202b2e, 0.23), [0, -0.28, -bayDepth * 0.55]);
+  addMesh(
+    bay,
+    new THREE.BoxGeometry(Math.max(0.4, bayWidth - 0.24), 0.055, Math.max(0.4, bayDepth - 0.22)),
+    metalMaterial(0x0d181c, 0.3),
+    [0, -0.075, -bayDepth * 0.55],
+  );
+  for (let column = 1; column < columns; column += 1) {
+    addMesh(
+      bay,
+      new THREE.BoxGeometry(0.025, 0.035, bayDepth - 0.28),
+      glowMaterial(column % 2 === 0 ? 0x09e0df : 0xd49a38, 0.48),
+      [(column - columns / 2) * spacing + spacing / 2, -0.035, -bayDepth * 0.55],
+    );
+  }
+  for (let row = 1; row <= rows; row += 1) {
+    addMesh(
+      bay,
+      new THREE.BoxGeometry(bayWidth - 0.28, 0.035, 0.025),
+      glowMaterial(row % 2 === 0 ? 0xd49a38 : 0x09e0df, 0.42),
+      [0, -0.03, -0.25 - row * spacing],
+    );
+  }
   addMesh(bay, new THREE.BoxGeometry(bayWidth + 0.16, 0.13, 0.14), metalMaterial(GOLD, 0.18), [0, -0.02, -bayDepth - 0.12]);
   [-1, 1].forEach((side) => addMesh(bay, new THREE.BoxGeometry(0.12, 0.28, bayDepth), metalMaterial(GOLD, 0.18), [side * bayWidth / 2, -0.04, -bayDepth * 0.55]));
 
@@ -767,20 +909,19 @@ const materialBatchKey = (material: THREE.Material) => {
 const batchStaticMeshes = (
   scene: THREE.Scene,
   animatedParts: readonly AnimatedPart[],
-  animatedMaterials: readonly THREE.Material[],
+  _animatedMaterials: readonly THREE.Material[],
   preservedObjects: readonly THREE.Object3D[],
 ) => {
   scene.updateMatrixWorld(true);
   const dynamicObjects = new Set<THREE.Object3D>(preservedObjects);
   animatedParts.forEach(({ object }) => object.traverse((child) => dynamicObjects.add(child)));
-  const dynamicMaterials = new Set(animatedMaterials);
   const groups = new Map<string, THREE.Mesh[]>();
 
   scene.traverse((object) => {
     if (!(object instanceof THREE.Mesh) || object instanceof THREE.InstancedMesh) return;
     if (dynamicObjects.has(object)) return;
     const material = Array.isArray(object.material) ? null : object.material;
-    if (!material || dynamicMaterials.has(material)) return;
+    if (!material) return;
     const attributes = Object.keys(object.geometry.attributes).sort().join(",");
     const key = `${materialBatchKey(material)}:${object.geometry.index ? "indexed" : "plain"}:${attributes}:${object.castShadow ? 1 : 0}:${object.receiveShadow ? 1 : 0}`;
     const list = groups.get(key) ?? [];
@@ -812,24 +953,74 @@ const batchStaticMeshes = (
 const buildScene = (renderer: THREE.WebGLRenderer, race: PreparedMarbleRace, key: string): MarbleSceneState => {
   const scene = new THREE.Scene();
   const camera = new THREE.OrthographicCamera(-16, 16, 11, -11, 0.1, 90);
-  camera.position.set(0, 24, 20);
-  camera.lookAt(0, 0.2, 0.4);
   addEnvironment(scene, race.track.difficulty);
   const animatedParts: AnimatedPart[] = [];
   const glowMaterials: THREE.MeshStandardMaterial[] = [];
   addAtmosphere(scene, race.track, animatedParts);
   const samples = createTrackSamples(race.track);
+  const count = race.racers.length;
+  const trackBounds = new THREE.Box3().setFromPoints(samples.map((sample) => sample.position));
+  const bayColumns = Math.max(2, Math.ceil(Math.sqrt(count * 1.15)));
+  const baySpacing = count > 150 ? 0.17 : count > 90 ? 0.2 : count > 48 ? 0.24 : count > 20 ? 0.3 : 0.42;
+  const bayRows = Math.ceil(count / bayColumns);
+  const bayWidth = Math.max(trackWidthToWorld(race.track) * 1.45, bayColumns * baySpacing + 0.65);
+  const bayDepth = bayRows * baySpacing + 0.75;
+  const bayStart = samples[0];
+  [-1, 1].forEach((side) => {
+    [0, 1].forEach((depthStep) => {
+      trackBounds.expandByPoint(
+        bayStart.position.clone()
+          .addScaledVector(bayStart.normal, side * bayWidth * 0.55)
+          .addScaledVector(bayStart.tangent, -bayDepth * (0.05 + depthStep)),
+      );
+    });
+  });
+  const contentCenter = trackBounds.getCenter(new THREE.Vector3());
+  const contentSize = trackBounds.getSize(new THREE.Vector3());
+  const cameraDepthDirection = bayStart.position.z < contentCenter.z ? -1 : 1;
+  const overviewCameraPosition = new THREE.Vector3(contentCenter.x, 24, contentCenter.z + 20 * cameraDepthDirection);
+  const overviewCameraTarget = new THREE.Vector3(contentCenter.x, Math.max(0.2, contentCenter.y * 0.42), contentCenter.z);
+  const stagingCameraPosition = new THREE.Vector3(bayStart.position.x, 22, bayStart.position.z + 8 * cameraDepthDirection);
+  const stagingCameraTarget = bayStart.position.clone().addScaledVector(bayStart.up, 0.35);
+  camera.position.copy(stagingCameraPosition);
+  camera.lookAt(stagingCameraTarget);
   addTrackBody(scene, race.track, samples);
-  race.track.zones.forEach((zone) => addZoneFeature(scene, race.track, zone, animatedParts, glowMaterials, race.racers.length <= 96));
+  race.track.zones.forEach((zone, zoneIndex) => addZoneFeature(
+    scene,
+    race.track,
+    zone,
+    animatedParts,
+    glowMaterials,
+    race.racers.length <= 96,
+    zoneIndex,
+  ));
   addSectionArchitecture(scene, race.track);
-  race.track.obstacles.forEach((obstacle) => addObstacle(scene, race.track, obstacle.type, obstacle.progress, obstacle.scale, animatedParts));
-  race.track.powerZones.forEach((zone) => addPowerZone(scene, race.track, zone.progress, zone.color, powerLabels[zone.power], zone.scale, animatedParts, glowMaterials));
+  race.track.obstacles.forEach((obstacle) => addObstacle(
+    scene,
+    race.track,
+    obstacle.type,
+    obstacle.progress,
+    obstacle.scale * (race.track.difficulty === "hard" ? 0.78 : race.track.difficulty === "medium" ? 0.9 : 1),
+    animatedParts,
+  ));
+  race.track.powerZones.forEach((zone) => addPowerZone(
+    scene,
+    race.track,
+    zone.progress,
+    zone.color,
+    powerLabels[zone.power],
+    zone.scale * (race.track.powerZones.length > 6 ? 0.54 : 0.84),
+    animatedParts,
+    glowMaterials,
+    race.track.powerZones.length <= 5 && race.racers.length <= 96,
+  ));
   addStartFinishAndBay(scene, race);
 
-  const count = race.racers.length;
   const sphereDetail = count > 150 ? [9, 6] : count > 100 ? [11, 7] : count > 40 ? [16, 10] : [22, 14];
-  const marbleMaterial = count > 48
-    ? new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, metalness: 0.18, roughness: 0.14 })
+  const marbleMaterial = count > 100
+    ? new THREE.MeshBasicMaterial({ color: 0xffffff, vertexColors: true })
+    : count > 48
+      ? new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, metalness: 0.12, roughness: 0.1 })
     : new THREE.MeshPhysicalMaterial({
       color: 0xffffff,
       vertexColors: true,
@@ -846,18 +1037,50 @@ const buildScene = (renderer: THREE.WebGLRenderer, race: PreparedMarbleRace, key
   if (racers.instanceColor) racers.instanceColor.needsUpdate = true;
   scene.add(racers);
 
+  const glowGeometry = new THREE.BufferGeometry();
+  glowGeometry.setAttribute("position", new THREE.Float32BufferAttribute(new Float32Array(count * 3), 3));
+  glowGeometry.setAttribute("color", new THREE.Float32BufferAttribute(
+    race.racers.flatMap((racer) => {
+      const color = new THREE.Color(racer.accent);
+      return [color.r, color.g, color.b];
+    }),
+    3,
+  ));
+  const racerGlow = new THREE.Points(glowGeometry, new THREE.PointsMaterial({
+    size: count > 150 ? 0.28 : count > 90 ? 0.31 : count > 48 ? 0.36 : 0.43,
+    map: createMarbleGlowTexture(),
+    vertexColors: true,
+    transparent: true,
+    opacity: count > 100 ? 0.82 : 0.64,
+    depthWrite: false,
+    alphaTest: 0.015,
+    blending: THREE.AdditiveBlending,
+    sizeAttenuation: true,
+  }));
+  racerGlow.renderOrder = 5;
+  scene.add(racerGlow);
+
   const racerLabels = count <= 18
     ? race.racers.map((racer) => {
-      const label = createLabelSprite(`${racer.number}  ${racer.participant.name}`, racer.accent, true);
+      const label = createLabelSprite(`${racer.previousWinner ? "♛  " : ""}${racer.number}  ${racer.participant.name}`, racer.accent, true);
       label.scale.multiplyScalar(0.62);
       scene.add(label);
       return label;
     })
     : [];
 
+  const winnerCrowns = new THREE.InstancedMesh(
+    new THREE.CylinderGeometry(0.19, 0.27, 0.25, 5, 1, true),
+    glowMaterial(0xffc52f, 1.7),
+    count,
+  );
+  winnerCrowns.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  winnerCrowns.frustumCulled = false;
+  scene.add(winnerCrowns);
+
   const selectedRing = addMesh(scene, new THREE.TorusGeometry(0.36, 0.055, 7, 28), glowMaterial(0xffec9b, 2), [0, -20, 0], [Math.PI / 2, 0, 0]);
   selectedRing.visible = false;
-  batchStaticMeshes(scene, animatedParts, glowMaterials, [racers, selectedRing]);
+  batchStaticMeshes(scene, animatedParts, glowMaterials, [racers, winnerCrowns, selectedRing]);
   renderer.shadowMap.enabled = count <= 96;
   renderer.shadowMap.autoUpdate = count <= 96;
   return {
@@ -866,8 +1089,28 @@ const buildScene = (renderer: THREE.WebGLRenderer, race: PreparedMarbleRace, key
     scene,
     camera,
     racers,
+    racerGlow,
     racerLabels,
+    winnerCrowns,
     selectedRing,
+    trackSamples: samples,
+    startPoint: samples[0],
+    motionPoint: createEmptyWorldPoint(),
+    matrix: new THREE.Matrix4(),
+    quaternion: new THREE.Quaternion(),
+    scaleVector: new THREE.Vector3(),
+    positionVector: new THREE.Vector3(),
+    stagingVector: new THREE.Vector3(),
+    labelVector: new THREE.Vector3(),
+    contentCenter,
+    overviewCameraPosition,
+    overviewCameraTarget,
+    stagingCameraPosition,
+    stagingCameraTarget,
+    cameraTarget: new THREE.Vector3(),
+    readyZoom: count > 150 ? 2 : count > 90 ? 2.05 : count > 48 ? 2.1 : count > 18 ? 2.15 : 1.9,
+    contentWidth: contentSize.x,
+    contentDepth: contentSize.z,
     animatedParts,
     glowMaterials,
     participantCount: count,
@@ -907,7 +1150,7 @@ const createRenderer = (canvas: HTMLCanvasElement) => {
   return renderer;
 };
 
-const sceneKey = (race: PreparedMarbleRace) => `${race.track.signature}:${race.racers.map((racer) => `${racer.id}-${racer.participant.name}`).join("|")}`;
+const sceneKey = (race: PreparedMarbleRace) => `${race.track.signature}:${race.racers.map((racer) => `${racer.id}-${racer.participant.name}-${racer.previousWinner ? "c" : "n"}`).join("|")}`;
 
 const ensureState = (canvas: HTMLCanvasElement, race: PreparedMarbleRace) => {
   const key = sceneKey(race);
@@ -931,7 +1174,9 @@ const resizeRenderer = (state: MarbleSceneState, canvas: HTMLCanvasElement) => {
   state.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, pixelRatioLimit));
   state.renderer.setSize(width, height, false);
   const aspect = width / height;
-  const viewHeight = Math.max(19.5, 30 / aspect);
+  const paddedWidth = state.contentWidth + 5.2;
+  const paddedDepth = state.contentDepth * 0.78 + 5.6;
+  const viewHeight = THREE.MathUtils.clamp(Math.max(12, paddedDepth, paddedWidth / aspect), 12, 21.5);
   state.camera.left = -(viewHeight * aspect) / 2;
   state.camera.right = (viewHeight * aspect) / 2;
   state.camera.top = viewHeight / 2;
@@ -949,48 +1194,65 @@ const updateRacers = (
   const baseRadius = count > 150 ? 0.085 : count > 90 ? 0.105 : count > 48 ? 0.13 : count > 22 ? 0.16 : 0.22;
   const columns = Math.max(2, Math.ceil(Math.sqrt(count * 1.15)));
   const spacing = count > 150 ? 0.17 : count > 90 ? 0.2 : count > 48 ? 0.24 : count > 20 ? 0.3 : 0.42;
-  const start = worldPointAt(race.track, 0);
-  const matrix = new THREE.Matrix4();
-  const quaternion = new THREE.Quaternion();
-  const scale = new THREE.Vector3();
-  const launchBlend = phase === "ready" ? 0 : Math.min(1, elapsedMs / 900);
+  const start = state.startPoint;
+  const matrix = state.matrix;
+  const quaternion = state.quaternion;
+  const scale = state.scaleVector;
+  const raceElapsed = phase === "ready" ? 0 : Math.max(0, elapsedMs - 1400);
+  const launchBlend = phase === "ready" ? 0 : Math.min(1, raceElapsed / 900);
   const smoothLaunch = launchBlend * launchBlend * (3 - 2 * launchBlend);
   const selectedIndex = race.racers.findIndex((racer) => racer.id === race.selected.id);
+  const glowPositions = state.racerGlow.geometry.getAttribute("position") as THREE.BufferAttribute;
 
   race.racers.forEach((racer, index) => {
-    const marbleState = getMarbleProgress(racer, phase === "ready" ? 0 : elapsedMs);
-    const trackPoint = worldPointAt(race.track, marbleState.progress);
-    const nearbyObstacle = race.track.obstacles.find((obstacle) => Math.abs(obstacle.progress - marbleState.progress) < 0.018);
-    const collisionWobble = nearbyObstacle
-      ? Math.sin(elapsedMs / 43 + racer.number * 1.71) * 0.24 * nearbyObstacle.scale * (1 - Math.abs(nearbyObstacle.progress - marbleState.progress) / 0.018)
-      : 0;
-    const laneOffset = racer.lane * trackWidthToWorld(race.track) * 0.29 + collisionWobble;
-    const racingPosition = trackPoint.position.clone().addScaledVector(trackPoint.normal, laneOffset);
+    const marbleState = getMarbleMotion(racer, race.track, raceElapsed);
+    const trackPoint = sampleWorldPoint(state.trackSamples, marbleState.progress, state.motionPoint);
+    const laneOffset = racer.lane * trackWidthToWorld(race.track) * 0.29 + marbleState.lateralImpulse * 0.22;
     const row = Math.floor(index / columns);
     const column = index % columns;
-    const stagingPosition = start.position.clone()
-      .addScaledVector(start.normal, (column - (columns - 1) / 2) * spacing)
-      .addScaledVector(start.tangent, -(row + 0.75) * spacing);
     const radius = baseRadius * marbleState.radiusScale;
-    const position = stagingPosition.lerp(racingPosition, smoothLaunch);
-    position.y += radius + 0.17;
-    quaternion.setFromEuler(new THREE.Euler(elapsedMs * 0.0018 + racer.number, 0, elapsedMs * 0.0024));
+    const racingPosition = state.positionVector.copy(trackPoint.position)
+      .addScaledVector(trackPoint.normal, laneOffset)
+      .addScaledVector(trackPoint.up, radius + 0.17 + marbleState.verticalOffset);
+    const stagingPosition = state.stagingVector.copy(start.position)
+      .addScaledVector(start.normal, (column - (columns - 1) / 2) * spacing)
+      .addScaledVector(start.tangent, -(row + 0.75) * spacing)
+      .addScaledVector(start.up, radius + 0.17)
+      .lerp(racingPosition, smoothLaunch);
+    quaternion.setFromAxisAngle(trackPoint.normal, marbleState.spinAngle);
     scale.setScalar(radius);
-    matrix.compose(position, quaternion, scale);
+    matrix.compose(stagingPosition, quaternion, scale);
     state.racers.setMatrixAt(index, matrix);
+    glowPositions.setXYZ(index, stagingPosition.x, stagingPosition.y, stagingPosition.z);
     if (state.racerLabels[index]) {
-      state.racerLabels[index].position.copy(position).add(new THREE.Vector3(0, radius + 0.42, 0));
+      state.racerLabels[index].position.copy(
+        state.labelVector.copy(stagingPosition).addScaledVector(trackPoint.up, radius + 0.42),
+      );
       state.racerLabels[index].visible = phase !== "finished" || index === selectedIndex;
+    }
+    if (racer.previousWinner) {
+      quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), trackPoint.up);
+      matrix.compose(
+        state.labelVector.copy(stagingPosition).addScaledVector(trackPoint.up, radius + 0.38),
+        quaternion,
+        scale.setScalar(Math.max(0.52, radius * 2.6)),
+      );
+      state.winnerCrowns.setMatrixAt(index, matrix);
+    } else {
+      matrix.compose(state.labelVector.set(0, -30, 0), quaternion.identity(), scale.setScalar(0.001));
+      state.winnerCrowns.setMatrixAt(index, matrix);
     }
     if (phase === "finished" && index === selectedIndex) {
       state.selectedRing.visible = true;
-      state.selectedRing.position.copy(position);
-      state.selectedRing.position.y -= radius + 0.11;
+      state.selectedRing.position.copy(stagingPosition).addScaledVector(trackPoint.up, -(radius + 0.11));
+      state.selectedRing.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), trackPoint.up);
       state.selectedRing.scale.setScalar(1 + Math.sin(elapsedMs / 180) * 0.12);
     }
   });
   if (phase !== "finished") state.selectedRing.visible = false;
   state.racers.instanceMatrix.needsUpdate = true;
+  state.winnerCrowns.instanceMatrix.needsUpdate = true;
+  glowPositions.needsUpdate = true;
 };
 
 export const drawMarbleRace3D = (
@@ -1007,6 +1269,13 @@ export const drawMarbleRace3D = (
     material.emissiveIntensity = 1.05 + Math.sin(elapsedSeconds * 2.25 + index * 0.7) * 0.3;
   });
   updateRacers(state, race, elapsedMs, phase);
+  const cameraBlendRaw = phase === "ready" ? 0 : phase === "finished" ? 1 : Math.min(1, elapsedMs / 1400);
+  const cameraBlend = cameraBlendRaw * cameraBlendRaw * (3 - 2 * cameraBlendRaw);
+  state.camera.position.lerpVectors(state.stagingCameraPosition, state.overviewCameraPosition, cameraBlend);
+  state.cameraTarget.lerpVectors(state.stagingCameraTarget, state.overviewCameraTarget, cameraBlend);
+  state.camera.zoom = THREE.MathUtils.lerp(state.readyZoom, 1, cameraBlend);
+  state.camera.lookAt(state.cameraTarget);
+  state.camera.updateProjectionMatrix();
   if (state.renderer.shadowMap.enabled && !state.shadowReady) state.renderer.shadowMap.needsUpdate = true;
   state.renderer.render(state.scene, state.camera);
   canvas.dataset.renderCalls = String(state.renderer.info.render.calls);

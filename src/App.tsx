@@ -8,12 +8,16 @@ import {
 } from "react";
 import {
   ArrowLeft,
+  Bird,
   CheckCircle2,
   CircleDot,
+  Crosshair,
   Crown,
   Dices,
   Expand,
+  Flag,
   Gamepad2,
+  Gem,
   Gift,
   Hash,
   History,
@@ -34,6 +38,7 @@ import "./App.css";
 import type {
   DrawMode,
   GameId,
+  MarbleDifficulty,
   Participant,
   Parity,
   PinballControlMode,
@@ -42,6 +47,16 @@ import type {
 } from "./core/types";
 import { CardGame } from "./games/cards/CardGame";
 import type { CardAssignment } from "./games/cards/cardDeck";
+import { DuckHunt } from "./games/ducks/DuckHunt";
+import type { DuckContestant } from "./games/ducks/duckHuntEngine";
+import { MarbleRace } from "./games/marbles/MarbleRace";
+import {
+  difficultyLabels,
+  powerLabels,
+  powersByDifficulty,
+  type MarbleRacer,
+  type MarbleTrack,
+} from "./games/marbles/marbleRaceEngine";
 import { PinballGame } from "./games/pinball/PinballGame";
 import type { PinballBallAssignment } from "./games/pinball/pinballEngine";
 import { RouletteWheel } from "./games/roulette/RouletteWheel";
@@ -75,13 +90,15 @@ const modeLabels: Record<DrawMode, string> = {
 const numberParity = (number: number): Parity =>
   number % 2 === 0 ? "even" : "odd";
 
-type ActiveScreen = "setup" | "roulette" | "cards" | "pinball";
+type ActiveScreen = "setup" | "roulette" | "cards" | "pinball" | "marbles" | "ducks";
 
 function App() {
   const [showSplash, setShowSplash] = useState(true);
   const [screen, setScreen] = useState<ActiveScreen>("setup");
   const [cardRoundKey, setCardRoundKey] = useState(0);
   const [pinballRoundKey, setPinballRoundKey] = useState(0);
+  const [marbleRoundKey, setMarbleRoundKey] = useState(0);
+  const [duckRoundKey, setDuckRoundKey] = useState(0);
   const [isSpinning, setIsSpinning] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(
     () => localStorage.getItem("fortuna-real-sound") !== "off",
@@ -100,15 +117,19 @@ function App() {
   const blockedWinnerIds = useDrawStore((state) => state.blockedWinnerIds);
   const eliminationParity = useDrawStore((state) => state.eliminationParity);
   const history = useDrawStore((state) => state.history);
+  const winnerRecords = useDrawStore((state) => state.winnerRecords);
   const game = useDrawStore((state) => state.game);
   const mode = useDrawStore((state) => state.mode);
   const prize = useDrawStore((state) => state.prize);
   const pinballControlMode = useDrawStore((state) => state.pinballControlMode);
+  const marbleDifficulty = useDrawStore((state) => state.marbleDifficulty);
   const roundNumber = useDrawStore((state) => state.roundNumber);
   const startDraw = useDrawStore((state) => state.startDraw);
   const recordSelection = useDrawStore((state) => state.recordSelection);
   const recordParitySelection = useDrawStore((state) => state.recordParitySelection);
+  const recordDuckSurvival = useDrawStore((state) => state.recordDuckSurvival);
   const reenableWinner = useDrawStore((state) => state.reenableWinner);
+  const setMarbleDifficulty = useDrawStore((state) => state.setMarbleDifficulty);
 
   const activeParticipants = useMemo(
     () =>
@@ -118,6 +139,10 @@ function App() {
           !blockedWinnerIds.includes(person.id),
       ),
     [blockedWinnerIds, eliminatedIds, participants],
+  );
+  const previousWinnerIds = useMemo(
+    () => new Set(winnerRecords.map((record) => record.participantId)),
+    [winnerRecords],
   );
 
   const wheelEntries = useMemo<RouletteEntry[]>(() => {
@@ -175,7 +200,9 @@ function App() {
     setSpinRequest(null);
     setCardRoundKey((key) => key + 1);
     setPinballRoundKey((key) => key + 1);
-    setScreen(game === "cards" ? "cards" : game === "pinball" ? "pinball" : "roulette");
+    setMarbleRoundKey((key) => key + 1);
+    setDuckRoundKey((key) => key + 1);
+    setScreen(game);
     fortunaAudio.playEnterGame();
   };
 
@@ -249,10 +276,36 @@ function App() {
     }, 170);
   }, [recordSelection]);
 
+  const finishMarbleSelection = useCallback((racer: MarbleRacer, label: string) => {
+    const result = recordSelection(racer.participant.id, racer.number, label);
+    setCurrentResult(result);
+    window.setTimeout(() => {
+      fortunaAudio.playResult(result.kind === "winner", result.parity);
+      fortunaAudio.announceResult(result);
+    }, 170);
+  }, [recordSelection]);
+
+  const finishDuckSurvival = useCallback((survivor: DuckContestant, knockoutOrder: DuckContestant[]) => {
+    const winnerResult = recordDuckSurvival(
+      survivor.participant.id,
+      knockoutOrder.map((contestant) => ({
+        participantId: contestant.participant.id,
+        number: contestant.number,
+      })),
+    );
+    setCurrentResult(winnerResult);
+    window.setTimeout(() => {
+      fortunaAudio.playResult(true, winnerResult.parity);
+      fortunaAudio.announceResult(winnerResult);
+    }, 220);
+  }, [recordDuckSurvival]);
+
   const closeCurrentResult = () => {
     setCurrentResult(null);
     if (screen === "cards") setCardRoundKey((key) => key + 1);
     if (screen === "pinball") setPinballRoundKey((key) => key + 1);
+    if (screen === "marbles") setMarbleRoundKey((key) => key + 1);
+    if (screen === "ducks") setDuckRoundKey((key) => key + 1);
   };
 
   const allowCurrentWinnerToReturn = () => {
@@ -263,6 +316,8 @@ function App() {
     setCurrentResult(null);
     setCardRoundKey((key) => key + 1);
     setPinballRoundKey((key) => key + 1);
+    setMarbleRoundKey((key) => key + 1);
+    setDuckRoundKey((key) => key + 1);
   };
 
   const restartSession = () => {
@@ -273,6 +328,8 @@ function App() {
     setSpinRequest(null);
     setCardRoundKey((key) => key + 1);
     setPinballRoundKey((key) => key + 1);
+    setMarbleRoundKey((key) => key + 1);
+    setDuckRoundKey((key) => key + 1);
   };
 
   const toggleSound = () => {
@@ -357,7 +414,7 @@ function App() {
             onSelect={finishCardSelection}
             onRestart={restartSession}
           />
-        ) : (
+        ) : screen === "pinball" ? (
           <PinballScreen
             key={pinballRoundKey}
             participants={participants}
@@ -371,7 +428,42 @@ function App() {
             prize={prize}
             roundNumber={roundNumber}
             sessionWinner={sessionWinner}
+            previousWinnerIds={previousWinnerIds}
             onFinish={finishPinballSelection}
+            onRestart={restartSession}
+          />
+        ) : screen === "marbles" ? (
+          <MarblesScreen
+            key={marbleRoundKey}
+            participants={participants}
+            activeParticipants={activeParticipants}
+            blockedWinnerIds={blockedWinnerIds}
+            eliminatedIds={eliminatedIds}
+            history={history}
+            latestResult={latestResult}
+            mode={mode}
+            difficulty={marbleDifficulty}
+            prize={prize}
+            roundNumber={roundNumber}
+            sessionWinner={sessionWinner}
+            previousWinnerIds={previousWinnerIds}
+            onFinish={finishMarbleSelection}
+            onDifficultyChange={setMarbleDifficulty}
+            onRestart={restartSession}
+          />
+        ) : (
+          <DucksScreen
+            key={duckRoundKey}
+            participants={participants}
+            activeParticipants={activeParticipants}
+            blockedWinnerIds={blockedWinnerIds}
+            eliminatedIds={eliminatedIds}
+            history={history}
+            latestResult={latestResult}
+            prize={prize}
+            sessionWinner={sessionWinner}
+            previousWinnerIds={previousWinnerIds}
+            onFinish={finishDuckSurvival}
             onRestart={restartSession}
           />
         )}
@@ -424,10 +516,14 @@ function Topbar({
 
       {screen !== "setup" ? (
         <div className="round-pill">
-          {screen === "roulette" ? <CircleDot size={19} /> : screen === "cards" ? <Layers3 size={19} /> : <Gamepad2 size={19} />}
+          {screen === "roulette" ? <CircleDot size={19} />
+            : screen === "cards" ? <Layers3 size={19} />
+              : screen === "pinball" ? <Gamepad2 size={19} />
+                : screen === "marbles" ? <Gem size={19} />
+                  : <Bird size={19} />}
           <div>
             <strong>Ronda {roundNumber}</strong>
-            <span>{activeCount} participantes · {screen === "roulette" ? "ruleta" : screen === "cards" ? "cartas" : "pinball 3D"}</span>
+            <span>{activeCount} participantes · {screen === "roulette" ? "ruleta" : screen === "cards" ? "cartas" : screen === "pinball" ? "pinball 3D" : screen === "marbles" ? "canicas 3D" : "patos 3D"}</span>
           </div>
         </div>
       ) : (
@@ -440,7 +536,11 @@ function Topbar({
                 ? "La ruleta se adapta a cada lista"
                 : game === "cards"
                   ? "Asignación visible y barajado por fases"
-                  : "Mesa 3D nueva en cada ingreso"}
+                  : game === "pinball"
+                    ? "Mesa 3D nueva en cada ingreso"
+                    : game === "marbles"
+                      ? "Pista 3D procedural y poderes automáticos"
+                      : "Tres vidas y supervivencia 3D"}
             </span>
           </div>
         </div>
@@ -502,7 +602,7 @@ function SetupScreen({
             disabled={eligibleCount < 2}
             title={eligibleCount < 2
               ? "Agrega al menos dos participantes"
-              : `Entrar a ${game === "roulette" ? "la ruleta" : game === "cards" ? "la mesa de cartas" : "Pinball 3D"}`}
+              : `Entrar a ${game === "roulette" ? "la ruleta" : game === "cards" ? "la mesa de cartas" : game === "pinball" ? "Pinball 3D" : game === "marbles" ? "Canicas 3D" : "Patos 3D"}`}
           >
             <Play size={21} fill="currentColor" /> Iniciar sorteo
           </button>
@@ -907,6 +1007,7 @@ function PinballScreen({
   prize,
   roundNumber,
   sessionWinner,
+  previousWinnerIds,
   onFinish,
   onRestart,
 }: {
@@ -921,6 +1022,7 @@ function PinballScreen({
   prize: string;
   roundNumber: number;
   sessionWinner: RoundResult | null;
+  previousWinnerIds: ReadonlySet<string>;
   onFinish: (assignment: PinballBallAssignment, label: string) => void;
   onRestart: () => void;
 }) {
@@ -943,7 +1045,7 @@ function PinballScreen({
               <div className={`roster-row ${isEliminated ? "is-eliminated" : ""} ${isWinner ? "is-winner" : ""}`} key={person.id}>
                 <span className="roster-number">{activeIndex >= 0 ? activeIndex + 1 : "—"}</span>
                 <i style={{ background: person.color }} />
-                <strong title={person.name}>{person.name}</strong>
+                <strong className="roster-champion-name" title={person.name}>{person.name}{activeIndex >= 0 && previousWinnerIds.has(person.id) && <Crown size={11} fill="currentColor" aria-label="Ganador anterior" />}</strong>
                 <em>{isWinner ? "Ganador" : isEliminated ? "Eliminado" : "En juego"}</em>
               </div>
             );
@@ -971,7 +1073,7 @@ function PinballScreen({
             <p>El historial conserva el premio y permite habilitarlo para otro sorteo.</p>
           </div>
         ) : (
-          <PinballGame participants={activeParticipants} mode={mode} controlMode={controlMode} disabled={cannotPlay} onFinish={onFinish} />
+          <PinballGame participants={activeParticipants} previousWinnerIds={previousWinnerIds} mode={mode} controlMode={controlMode} disabled={cannotPlay} onFinish={onFinish} />
         )}
       </section>
 
@@ -980,8 +1082,8 @@ function PinballScreen({
           <div className="panel-title"><Gamepad2 size={18} /> {modeLabels[mode]}</div>
           <p className="mode-description">
             {mode === "direct"
-              ? "La pelota sellada entra al jackpot y entrega el premio. Su ganador queda fuera hasta que lo habilites."
-              : "La pelota sellada cae al pozo y elimina a una persona. La próxima ronda genera otra mesa."}
+              ? "La primera pelota que atraviesa la meta entre los flippers gana el premio y queda fuera hasta que la habilites."
+              : "La primera pelota que atraviesa la meta queda eliminada. La próxima ronda genera otra distribución."}
           </p>
           <div className="pinball-mode-chip"><span>{controlMode === "automatic" ? "AUTO" : "MANUAL"}</span>{controlMode === "automatic" ? "La máquina controla la partida" : "Espacio lanza · A/D mueven flippers"}</div>
         </section>
@@ -1031,7 +1133,6 @@ function PinballScreen({
   );
 }
 
-/* El prototipo de Canicas se conserva fuera del bundle de esta versión.
 function MarblesScreen({
   participants,
   activeParticipants,
@@ -1044,6 +1145,7 @@ function MarblesScreen({
   prize,
   roundNumber,
   sessionWinner,
+  previousWinnerIds,
   onFinish,
   onDifficultyChange,
   onRestart,
@@ -1059,6 +1161,7 @@ function MarblesScreen({
   prize: string;
   roundNumber: number;
   sessionWinner: RoundResult | null;
+  previousWinnerIds: ReadonlySet<string>;
   onFinish: (racer: MarbleRacer, label: string) => void;
   onDifficultyChange: (difficulty: MarbleDifficulty) => void;
   onRestart: () => void;
@@ -1086,7 +1189,7 @@ function MarblesScreen({
               >
                 <span className="roster-number">{activeIndex >= 0 ? activeIndex + 1 : "—"}</span>
                 <i style={{ background: person.color }} />
-                <strong title={person.name}>{person.name}</strong>
+                <strong className="roster-champion-name" title={person.name}>{person.name}{activeIndex >= 0 && previousWinnerIds.has(person.id) && <Crown size={11} fill="currentColor" aria-label="Ganador anterior" />}</strong>
                 <em>{isWinner ? "Ganador" : isEliminated ? "Eliminado" : "En carrera"}</em>
               </div>
             );
@@ -1119,6 +1222,7 @@ function MarblesScreen({
             mode={mode}
             difficulty={difficulty}
             disabled={cannotPlay}
+            previousWinnerIds={previousWinnerIds}
             onDifficultyChange={onDifficultyChange}
             onTrackPrepared={setTrackInfo}
             onFinish={onFinish}
@@ -1216,7 +1320,123 @@ function MarblesScreen({
   );
 }
 
-*/
+function DucksScreen({
+  participants,
+  activeParticipants,
+  blockedWinnerIds,
+  eliminatedIds,
+  history,
+  latestResult,
+  prize,
+  sessionWinner,
+  previousWinnerIds,
+  onFinish,
+  onRestart,
+}: {
+  participants: Participant[];
+  activeParticipants: Participant[];
+  blockedWinnerIds: string[];
+  eliminatedIds: string[];
+  history: RoundResult[];
+  latestResult: RoundResult | null;
+  prize: string;
+  sessionWinner: RoundResult | null;
+  previousWinnerIds: ReadonlySet<string>;
+  onFinish: (survivor: DuckContestant, knockoutOrder: DuckContestant[]) => void;
+  onRestart: () => void;
+}) {
+  const cannotPlay = !!sessionWinner || activeParticipants.length < 2;
+
+  return (
+    <section className="ducks-workspace">
+      <section className="ducks-stage-column">
+        <div className="stage-heading casino-stage-heading ducks-stage-heading">
+          <div>
+            <span className="eyebrow">SUPERVIVENCIA · 3 VIDAS</span>
+            <h1>Patos de Fortuna</h1>
+          </div>
+          <div className="live-badge"><span /> {sessionWinner ? "PARTIDA FINALIZADA" : "CAMPO DE TIRO 3D"}</div>
+        </div>
+
+        {sessionWinner ? (
+          <div className="cards-final-state ducks-final-state">
+            <Bird size={64} />
+            <span>Último pato en pie</span>
+            <strong>{sessionWinner.participantName}</strong>
+            <p>Conservó al menos una vida. El premio ya está guardado en el salón de ganadores.</p>
+          </div>
+        ) : (
+          <DuckHunt
+            participants={activeParticipants}
+            previousWinnerIds={previousWinnerIds}
+            disabled={cannotPlay}
+            onFinish={onFinish}
+          />
+        )}
+      </section>
+
+      <aside className="casino-info-column ducks-info-column">
+        <section className="panel ducks-rule-card">
+          <div className="panel-title"><Crosshair size={18} /> Reglas de supervivencia</div>
+          <div className="duck-rule-steps">
+            <span><b>1</b><strong>Tres vidas</strong><small>Cada participante empieza completo.</small></span>
+            <span><b>2</b><strong>Impacto</strong><small>Revela el nombre y resta una vida.</small></span>
+            <span><b>3</b><strong>Reinicio</strong><small>Todos aterrizan y vuelven a despegar.</small></span>
+            <span><b>4</b><strong>Defensa adaptativa</strong><small>Un roce puede darle blindaje en el siguiente vuelo.</small></span>
+            <span><b>5</b><strong>Ruta impredecible</strong><small>Aprenden de tus disparos y cambian dirección.</small></span>
+          </div>
+        </section>
+
+        <section className="panel casino-prize-card ducks-prize-card">
+          <div className="panel-title"><Gift size={18} /> Premio actual</div>
+          <div className="compact-prize"><Trophy size={28} /><strong>{prize || "Premio sorpresa"}</strong></div>
+        </section>
+
+        <section className="panel casino-current-result ducks-current-result">
+          <div className="panel-title"><Target size={18} /> Resultado</div>
+          {latestResult ? (
+            <div className={`round-result-summary round-result-summary--${latestResult.kind}`}>
+              <span className="landed-number"><Bird size={16} /></span>
+              <strong>{latestResult.participantName}</strong>
+              <em>{latestResult.kind === "winner" ? "Superviviente" : "Sin vidas"}</em>
+              {latestResult.selectionLabel && <small>{latestResult.selectionLabel}</small>}
+            </div>
+          ) : (
+            <div className="empty-result"><Bird size={25} /><strong>Bandada intacta</strong><span>Los nombres se revelan al acertar.</span></div>
+          )}
+        </section>
+
+        <WinnerHistory compact />
+
+        <section className="panel history-panel casino-history-panel ducks-history-panel">
+          <div className="panel-title panel-title--spread"><span><History size={18} /> Bajas</span><small>{history.length}</small></div>
+          <div className="history-list">
+            {history.length === 0 ? (
+              <div className="history-empty">Aquí aparecerá el orden de eliminación.</div>
+            ) : history.map((result) => (
+              <div className="history-row casino-history-row" key={result.id}>
+                <span>Pato {result.landedNumber}</span>
+                <strong>{result.participantName}</strong>
+                <em className={result.kind}>{result.kind === "winner" ? "GANÓ" : "FUERA"}</em>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <button className="text-button cards-restart-button ducks-restart" type="button" onClick={onRestart}>
+          <RotateCcw size={15} /> Reiniciar supervivencia
+        </button>
+
+        <div className="casino-stats-row">
+          <StatCard icon={<Users />} tone="cyan" label="Cargados" value={participants.length} />
+          <StatCard icon={<Bird />} tone="gold" label="En partida" value={activeParticipants.length - eliminatedIds.filter((id) => activeParticipants.some((participant) => participant.id === id)).length} />
+        </div>
+        {blockedWinnerIds.length > 0 && <small className="ducks-winner-note">Los ganadores anteriores siguen fuera hasta que decidas volver a incluirlos.</small>}
+      </aside>
+    </section>
+  );
+}
+
 function StatCard({
   icon,
   label,

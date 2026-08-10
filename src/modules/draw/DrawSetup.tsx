@@ -1,4 +1,5 @@
 import {
+  Bird,
   Bot,
   CircleDot,
   Gem,
@@ -26,7 +27,7 @@ export function DrawSetup() {
           <span className="step-number">2</span>
           <div>
             <h2>Elegir juego</h2>
-            <p>Ruleta, cartas y Pinball 3D disponibles</p>
+            <p>Cinco juegos conectados al mismo sorteo e historial</p>
           </div>
         </div>
         <div className="game-options game-options--large">
@@ -59,13 +60,24 @@ export function DrawSetup() {
           </button>
           <button
             type="button"
-            className="game-option game-option--disabled"
-            disabled
-            aria-label="Canicas en reconstrucción"
+            className={`game-option ${game === "marbles" ? "is-active" : ""}`}
+            onClick={() => setGame("marbles")}
           >
             <Gem size={29} />
             <span>Canicas</span>
-            <small>En reconstrucción</small>
+            <small>3D procedural</small>
+          </button>
+          <button
+            type="button"
+            className={`game-option game-option--ducks ${game === "ducks" ? "is-active" : ""}`}
+            onClick={() => {
+              setGame("ducks");
+              setMode("elimination");
+            }}
+          >
+            <Bird size={29} />
+            <span>Patos 3D</span>
+            <small>Supervivencia</small>
           </button>
         </div>
       </section>
@@ -83,6 +95,8 @@ export function DrawSetup() {
             type="button"
             className={mode === "direct" ? "is-active" : ""}
             onClick={() => setMode("direct")}
+            disabled={game === "ducks"}
+            title={game === "ducks" ? "Patos 3D siempre se juega como supervivencia" : undefined}
           >
             <Trophy size={22} />
             <span>
@@ -98,7 +112,7 @@ export function DrawSetup() {
             <UsersRound size={22} />
             <span>
               <strong>Eliminación</strong>
-              <small>{game === "roulette" ? "Incluye las casillas PAR e IMPAR" : game === "pinball" ? "Una pelota cae al pozo por ronda" : "Una carta sale en cada ronda"}</small>
+              <small>{game === "roulette" ? "Incluye las casillas PAR e IMPAR" : game === "pinball" ? "La primera pelota que cruza la meta sale" : game === "marbles" ? "La última canica queda eliminada" : game === "ducks" ? "Tres vidas; gana el último en pie" : "Una carta sale en cada ronda"}</small>
             </span>
           </button>
         </div>
@@ -123,7 +137,7 @@ export function DrawSetup() {
           <div className="pinball-control-choice">
             <div className="pinball-control-choice__heading">
               <Gamepad2 size={17} />
-              <span><strong>Control de la mesa</strong><small>El control cambia la experiencia, nunca el resultado sellado.</small></span>
+              <span><strong>Control de la mesa</strong><small>En manual, tus flippers sí influyen en la carrera física.</small></span>
             </div>
             <div className="pinball-control-choice__options">
               <button type="button" className={pinballControlMode === "automatic" ? "is-active" : ""} onClick={() => setPinballControlMode("automatic")}>
@@ -139,11 +153,25 @@ export function DrawSetup() {
         {mode === "elimination" && game === "pinball" && (
           <div className="direct-rule-preview pinball-rule-preview">
             <Gamepad2 size={17} />
-            <p>Todas las pelotas representan a los participantes. La seleccionada cae al pozo, se elimina una sola persona y la siguiente ronda crea una mesa diferente.</p>
+            <p>Todas las pelotas representan a los participantes. La primera que cruza entre los flippers queda eliminada y la siguiente ronda crea otra distribución.</p>
           </div>
         )}
 
-        {mode === "direct" && (
+        {game === "marbles" && (
+          <div className="direct-rule-preview marbles-rule-preview">
+            <Gem size={17} />
+            <p>La pista 3D se genera por módulos. Trampas, poderes, elevaciones y curvas cambian con cada semilla.</p>
+          </div>
+        )}
+
+        {game === "ducks" && (
+          <div className="direct-rule-preview ducks-rule-preview">
+            <Bird size={17} />
+            <p>Cada pato tiene tres vidas. Al impactarlo se revela su nombre, toda la bandada aterriza y despega en otra formación. Con menos vidas volará más rápido.</p>
+          </div>
+        )}
+
+        {mode === "direct" && game !== "ducks" && (
           <div className="direct-rule-preview">
             <Trophy size={17} />
             <p>Cada ganador queda fuera de las siguientes rondas hasta que pulses “Volver a incluir”. Sus premios se guardan aunque cambies de juego o de modo.</p>

@@ -3,6 +3,7 @@ import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import {
   createPinballRandom,
   createPinballPhysicsBall,
+  getPinballFinishCrossing,
   launchPinballPhysicsBall,
   stepPinballPhysics,
   type PreparedPinballRound,
@@ -20,7 +21,7 @@ export interface PinballSceneStats {
 export interface PinballSceneEvents {
   onStats?: (stats: PinballSceneStats) => void;
   onImpact?: (strength: number) => void;
-  onFinish?: (label: string) => void;
+  onFinish?: (assignment: PreparedPinballRound["balls"][number], label: string) => void;
 }
 
 export interface PinballSceneController {
@@ -34,6 +35,13 @@ interface RuntimeBall {
   physics: PinballPhysicsBall;
   respawns: number;
 }
+
+const PINBALL_CAMERA_INTRO_MS = 1500;
+
+const smoothstep = (value: number) => {
+  const clamped = Math.max(0, Math.min(1, value));
+  return clamped * clamped * (3 - 2 * clamped);
+};
 
 const disposeObject = (object: THREE.Object3D) => {
   object.traverse((child) => {
@@ -315,7 +323,8 @@ export const createPinballScene = (
   renderer.toneMappingExposure = 1.16;
   renderer.shadowMap.enabled = count <= 80;
   renderer.shadowMap.type = THREE.PCFShadowMap;
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, count > 120 ? 1 : 1.35));
+  const maximumPixelRatio = Math.min(window.devicePixelRatio, count > 120 ? 1 : 1.35);
+  renderer.setPixelRatio(maximumPixelRatio);
 
   const environmentGenerator = new THREE.PMREMGenerator(renderer);
   const environmentTexture = environmentGenerator.fromScene(new RoomEnvironment(), 0.03).texture;
@@ -326,8 +335,17 @@ export const createPinballScene = (
   scene.environment = environmentTexture;
 
   const camera = new THREE.PerspectiveCamera(37, 1, 0.1, 90);
-  camera.position.set(0, 27.8, 29.5);
-  camera.lookAt(0, 1.05, -1.7);
+  const overviewCameraPosition = new THREE.Vector3(0, 27.8, 29.5);
+  const overviewCameraTarget = new THREE.Vector3(0, 1.05, -1.7);
+  const presentationCameraPosition = count > 120
+    ? new THREE.Vector3(0, 20.5, 21)
+    : count > 60
+      ? new THREE.Vector3(0, 18.5, 18.5)
+      : new THREE.Vector3(0, 15.8, 15.2);
+  const presentationCameraTarget = new THREE.Vector3(0, 0.76, 5.8);
+  const cameraTarget = new THREE.Vector3();
+  camera.position.copy(presentationCameraPosition);
+  camera.lookAt(presentationCameraTarget);
 
   scene.add(new THREE.HemisphereLight(0x80eaff, 0x120805, 1.8));
   const keyLight = new THREE.DirectionalLight(0xffd37b, 3.3);
@@ -638,12 +656,82 @@ export const createPinballScene = (
   jackpotGroup.add(jackpotRing);
   cabinet.add(jackpotGroup);
 
-  const drain = new THREE.Mesh(
-    new THREE.BoxGeometry(2.6, 0.15, 0.72),
-    new THREE.MeshStandardMaterial({ color: 0x050505, emissive: 0xe53627, emissiveIntensity: 0.8 }),
+  const finishGate = new THREE.Group();
+  finishGate.position.set(round.layout.finishGate.x, 0, round.layout.finishGate.z);
+  const finishPostMaterial = new THREE.MeshPhysicalMaterial({
+    color: 0xf3c65a,
+    emissive: 0xff7c00,
+    emissiveIntensity: 1.15,
+    metalness: 0.82,
+    roughness: 0.17,
+    clearcoat: 0.85,
+  });
+  [-1, 1].forEach((side) => {
+    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.2, 1.05, 14), finishPostMaterial);
+    post.position.set(side * (round.layout.finishGate.width / 2 + 0.18), 0.76, 0);
+    post.castShadow = renderer.shadowMap.enabled;
+    finishGate.add(post);
+    const crown = new THREE.Mesh(new THREE.SphereGeometry(0.24, 14, 9), finishPostMaterial);
+    crown.position.set(post.position.x, 1.34, 0);
+    finishGate.add(crown);
+  });
+  const finishBeam = new THREE.Mesh(
+    new THREE.BoxGeometry(round.layout.finishGate.width, 0.035, 0.09),
+    new THREE.MeshBasicMaterial({ color: 0x53ffff, transparent: true, opacity: 0.88 }),
   );
-  drain.position.set(round.layout.drain.x, 0.3, round.layout.drain.z);
+  finishBeam.position.set(0, 0.43, 0);
+  finishGate.add(finishBeam);
+  const finishHeader = new THREE.Mesh(
+    new THREE.BoxGeometry(round.layout.finishGate.width + 0.62, 0.16, 0.2),
+    finishPostMaterial,
+  );
+  finishHeader.position.set(0, 1.42, 0);
+  finishGate.add(finishHeader);
+  const finishLight = new THREE.PointLight(0xffbd35, 9, 5.5, 2);
+  finishLight.position.set(0, 1.1, 0.4);
+  finishGate.add(finishLight);
+  const finishInsert = new THREE.Mesh(
+    new THREE.PlaneGeometry(round.layout.finishGate.width + 0.55, 1.15),
+    new THREE.MeshBasicMaterial({ color: 0x09e0df, transparent: true, opacity: 0.16, side: THREE.DoubleSide }),
+  );
+  finishInsert.rotation.x = -Math.PI / 2;
+  finishInsert.position.set(0, 0.29, 0.48);
+  finishGate.add(finishInsert);
+  cabinet.add(finishGate);
+
+  const chuteRailMaterial = new THREE.MeshPhysicalMaterial({ color: 0x9beeed, metalness: 0.9, roughness: 0.16, clearcoat: 0.6 });
+  [-1, 1].forEach((side) => {
+    const chuteCurve = new THREE.CatmullRomCurve3([
+      new THREE.Vector3(side * 1.32, 0.52, round.layout.finishGate.z - 0.35),
+      new THREE.Vector3(side * 1.43, 0.48, 10.65),
+      new THREE.Vector3(side * 1.34, 0.42, 11.55),
+    ]);
+    const rail = new THREE.Mesh(new THREE.TubeGeometry(chuteCurve, 12, 0.075, 7, false), chuteRailMaterial);
+    cabinet.add(rail);
+  });
+  for (let index = 0; index < 6; index += 1) {
+    const marker = new THREE.Mesh(
+      new THREE.BoxGeometry(0.34, 0.045, 0.42),
+      new THREE.MeshBasicMaterial({ color: index % 2 === 0 ? 0x09e0df : 0xffbd35, transparent: true, opacity: 0.62 }),
+    );
+    marker.position.set((index % 2 === 0 ? -1 : 1) * 0.24, 0.32, 10.05 + index * 0.25);
+    cabinet.add(marker);
+  }
+
+  const drain = new THREE.Mesh(
+    new THREE.BoxGeometry(2.75, 0.28, 1.35),
+    new THREE.MeshPhysicalMaterial({ color: 0x030708, emissive: 0xe53627, emissiveIntensity: 0.38, metalness: 0.72, roughness: 0.2 }),
+  );
+  drain.position.set(round.layout.drain.x, 0.18, round.layout.drain.z);
   cabinet.add(drain);
+
+  const finishHalo = new THREE.Mesh(
+    new THREE.TorusGeometry(0.48, 0.075, 10, 28),
+    new THREE.MeshBasicMaterial({ color: 0xffd25a, transparent: true, opacity: 0 }),
+  );
+  finishHalo.rotation.x = Math.PI / 2;
+  finishHalo.visible = false;
+  cabinet.add(finishHalo);
 
   const createFlipper = (side: -1 | 1) => {
     const pivot = new THREE.Group();
@@ -737,13 +825,35 @@ export const createPinballScene = (
   if (ballsMesh.instanceColor) ballsMesh.instanceColor.needsUpdate = true;
   cabinet.add(ballsMesh);
 
+  const winnerCrowns = new THREE.InstancedMesh(
+    new THREE.CylinderGeometry(0.18, 0.25, 0.24, 5, 1, true),
+    new THREE.MeshStandardMaterial({ color: 0xffc52f, emissive: 0x8f4e00, emissiveIntensity: 1.35, metalness: 0.72, roughness: 0.2 }),
+    count,
+  );
+  winnerCrowns.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  winnerCrowns.frustumCulled = false;
+  cabinet.add(winnerCrowns);
+
   const runtime = round.balls.map((assignment) => ({
     physics: createPinballPhysicsBall(assignment, round.layout),
     respawns: 0,
   } satisfies RuntimeBall));
-  const selectedIndex = round.balls.findIndex((ball) => ball.id === round.selected.id);
   const matrix = new THREE.Matrix4();
+  const matrixPosition = new THREE.Vector3();
+  const matrixQuaternion = new THREE.Quaternion();
+  const matrixEuler = new THREE.Euler();
+  const matrixScale = new THREE.Vector3(1, 1, 1);
+  const crownMatrix = new THREE.Matrix4();
+  const crownPosition = new THREE.Vector3();
+  const crownQuaternion = new THREE.Quaternion();
+  const crownScale = new THREE.Vector3(0.72, 0.72, 0.72);
   const flippers: PinballFlipperState = { left: false, right: false };
+  const automaticFlippers: PinballFlipperState = { left: false, right: false };
+  const openFlippers: PinballFlipperState = { left: false, right: false };
+  const manualLaunchOrder = round.balls
+    .map((assignment, index) => ({ index, delay: assignment.launchDelayMs }))
+    .sort((left, right) => left.delay - right.delay)
+    .map(({ index }) => index);
   let running = false;
   let disposed = false;
   let finished = false;
@@ -752,13 +862,13 @@ export const createPinballScene = (
   let frameRequest = 0;
   let nextManualIndex = 0;
   let totalCollisions = 0;
-  let resolutionStartedAt = 0;
+  let finishStartedAt = 0;
+  let finishIndex = -1;
   let lastStatsAt = 0;
   let fpsFrames = 0;
   let fpsWindowAt = performance.now();
   let fps = 60;
-  let automaticLeft = false;
-  let automaticRight = false;
+  let reducedResolution = false;
 
   const launchAt = (index: number) => {
     const item = runtime[index];
@@ -769,11 +879,11 @@ export const createPinballScene = (
   };
 
   const launchBurst = () => {
-    if (!running || round.controlMode !== "manual") return 0;
+    if (!running || round.controlMode !== "manual" || performance.now() - startedAt < PINBALL_CAMERA_INTRO_MS) return 0;
     const burst = Math.min(20, Math.max(1, Math.ceil(count / 10)));
     let launched = 0;
     while (nextManualIndex < count && launched < burst) {
-      if (launchAt(nextManualIndex)) launched += 1;
+      if (launchAt(manualLaunchOrder[nextManualIndex])) launched += 1;
       nextManualIndex += 1;
     }
     return launched;
@@ -788,32 +898,60 @@ export const createPinballScene = (
       fps = Math.round((fpsFrames * 1000) / (now - fpsWindowAt));
       fpsFrames = 0;
       fpsWindowAt = now;
+      if (!reducedResolution && running && count > 80 && fps < 44 && now - startedAt > 1200) {
+        reducedResolution = true;
+        renderer.setPixelRatio(Math.max(0.72, maximumPixelRatio * 0.78));
+        resize();
+      }
     }
 
     const elapsed = running ? now - startedAt : 0;
-    if (running && round.controlMode === "automatic") {
+    const gameplayElapsed = Math.max(0, elapsed - PINBALL_CAMERA_INTRO_MS);
+    if (running && elapsed >= PINBALL_CAMERA_INTRO_MS && round.controlMode === "automatic") {
       round.balls.forEach((assignment, index) => {
-        if (elapsed >= assignment.launchDelayMs) launchAt(index);
+        if (gameplayElapsed >= assignment.launchDelayMs) launchAt(index);
       });
     }
 
     if (running && round.controlMode === "automatic") {
-      const approaching = runtime.filter(({ physics }) => physics.launched && !physics.drained && physics.z > 6.2);
-      automaticLeft = approaching.some(({ physics }) => physics.x <= 0);
-      automaticRight = approaching.some(({ physics }) => physics.x > 0);
+      let approachingLeft = false;
+      let approachingRight = false;
+      for (let index = 0; index < runtime.length; index += 1) {
+        const physics = runtime[index].physics;
+        if (!physics.launched || physics.drained || physics.z <= 6.2 || physics.z >= 9.45 || physics.vz <= 0) continue;
+        if (physics.x <= -0.62) approachingLeft = true;
+        if (physics.x >= 0.62) approachingRight = true;
+      }
+      const pulseOpen = Math.floor(gameplayElapsed / 145) % 4 === 0;
+      automaticFlippers.left = approachingLeft && !pulseOpen;
+      automaticFlippers.right = approachingRight && !pulseOpen;
     }
-    const effectiveFlippers = round.controlMode === "automatic"
-      ? { left: automaticLeft, right: automaticRight }
-      : flippers;
+    const overtimeActive = running && gameplayElapsed >= round.overtimeAfterMs;
+    const effectiveFlippers = overtimeActive
+      ? openFlippers
+      : round.controlMode === "automatic" ? automaticFlippers : flippers;
 
     let launchedCount = 0;
     let activeCount = 0;
+    let crossingIndex = -1;
+    let earliestCrossing = Number.POSITIVE_INFINITY;
     runtime.forEach((item, index) => {
       const physics = item.physics;
       if (physics.launched) launchedCount += 1;
-      if (running && physics.launched && !physics.drained) {
+      if (running && !finishStartedAt && physics.launched && !physics.drained) {
         activeCount += 1;
+        const previousX = physics.x;
+        const previousZ = physics.z;
+        if (overtimeActive) {
+          physics.vx += (round.layout.finishGate.x - physics.x) * delta * 10;
+          physics.vz += 12 * delta;
+        }
         const impacts = stepPinballPhysics(physics, round.layout, delta, effectiveFlippers);
+        const crossing = getPinballFinishCrossing(previousX, previousZ, physics.x, physics.z, round.layout.finishGate);
+        if (crossing !== null && (crossing < earliestCrossing || (crossing === earliestCrossing && index < crossingIndex))) {
+          earliestCrossing = crossing;
+          crossingIndex = index;
+        }
         if (impacts > 0) {
           totalCollisions += impacts;
           bumperGroups.forEach((bumper, bumperIndex) => {
@@ -823,7 +961,7 @@ export const createPinballScene = (
           if (totalCollisions % 3 === 0) events.onImpact?.(Math.min(1, Math.hypot(physics.vx, physics.vz) / 16));
         }
       }
-      if (running && physics.drained && index !== selectedIndex && !resolutionStartedAt) {
+      if (running && physics.drained && !finishStartedAt) {
         if (!physics.respawnAtMs) physics.respawnAtMs = now + 420 + (index % 7) * 35;
         if (now >= physics.respawnAtMs) {
           item.respawns += 1;
@@ -832,39 +970,72 @@ export const createPinballScene = (
       }
     });
 
-    const allLaunched = launchedCount === count;
-    if (running && !resolutionStartedAt) {
-      const automaticReady = round.controlMode === "automatic" && allLaunched && elapsed >= round.revealAfterMs - 1450;
-      const manualReady = round.controlMode === "manual" && allLaunched && elapsed >= Math.min(4200, round.revealAfterMs - 1450);
-      if (automaticReady || manualReady) resolutionStartedAt = now;
+    if (crossingIndex >= 0 && !finishStartedAt) {
+      finishIndex = crossingIndex;
+      finishStartedAt = now;
+      const finalist = runtime[finishIndex].physics;
+      finalist.x = round.layout.finishGate.x;
+      finalist.z = round.layout.finishGate.z + 0.18;
+      finalist.vx = 0;
+      finalist.vz = 1.7;
+      finishHalo.visible = true;
+      finishBeam.material.opacity = 1;
     }
-    if (resolutionStartedAt && !finished) {
-      const progress = Math.min(1, (now - resolutionStartedAt) / 1450);
-      const selected = runtime[selectedIndex].physics;
-      if (!selected.launched || selected.drained) launchPinballPhysicsBall(selected, round.selected, round.layout);
-      const destination = round.drawMode === "direct" ? round.layout.jackpot : round.layout.drain;
+    if (finishStartedAt && !finished) {
+      const progress = Math.min(1, (now - finishStartedAt) / 1150);
+      const finalist = runtime[finishIndex].physics;
       const ease = 1 - Math.pow(1 - progress, 3);
-      selected.x += (destination.x - selected.x) * Math.min(1, 0.035 + ease * 0.14);
-      selected.z += (destination.z - selected.z) * Math.min(1, 0.035 + ease * 0.14);
-      selected.vx *= 0.82;
-      selected.vz *= 0.82;
-      jackpotGroup.scale.setScalar(round.drawMode === "direct" ? 1 + Math.sin(now * 0.014) * 0.12 : 1);
+      finalist.x += (round.layout.drain.x - finalist.x) * (0.04 + ease * 0.12);
+      finalist.z += (round.layout.drain.z - finalist.z) * (0.035 + ease * 0.1);
+      finishHalo.position.set(finalist.x, 0.76, finalist.z);
+      finishHalo.scale.setScalar(1 + Math.sin(now * 0.018) * 0.2 + ease * 0.35);
+      finishHalo.material.opacity = 0.45 + Math.sin(now * 0.02) * 0.2;
+      jackpotGroup.scale.setScalar(1 + Math.sin(now * 0.014) * 0.08);
       if (progress >= 1) {
         finished = true;
-        events.onFinish?.(round.drawMode === "direct" ? "JACKPOT REAL" : "POZO DE ELIMINACIÓN");
+        events.onFinish?.(
+          round.balls[finishIndex],
+          round.drawMode === "direct" ? "PRIMERO EN LA META" : "PRIMERO EN CAER",
+        );
       }
     }
 
+    const presentationActive = !running || elapsed < PINBALL_CAMERA_INTRO_MS;
+    const presentationColumns = Math.max(2, Math.ceil(Math.sqrt(count * 1.18)));
+    const presentationRows = Math.ceil(count / presentationColumns);
+    const presentationSpacing = count > 150 ? 0.4 : count > 90 ? 0.45 : count > 48 ? 0.52 : 0.62;
     runtime.forEach(({ physics }, index) => {
-      const hidden = !physics.launched || (physics.drained && index !== selectedIndex);
+      const hidden = !presentationActive && (!physics.launched || (physics.drained && index !== finishIndex));
+      if (presentationActive) {
+        const column = index % presentationColumns;
+        const row = Math.floor(index / presentationColumns);
+        matrixPosition.set(
+          (column - (presentationColumns - 1) / 2) * presentationSpacing,
+          0.76,
+          5.9 + (row - (presentationRows - 1) / 2) * presentationSpacing,
+        );
+      } else {
+        matrixPosition.set(physics.x, hidden ? -4 : 0.72, physics.z);
+      }
+      matrixEuler.set(physics.z * 0.25, physics.x * 0.4, now * 0.0005);
+      matrixQuaternion.setFromEuler(matrixEuler);
       matrix.compose(
-        new THREE.Vector3(physics.x, hidden ? -4 : 0.72, physics.z),
-        new THREE.Quaternion().setFromEuler(new THREE.Euler(physics.z * 0.25, physics.x * 0.4, now * 0.0005)),
-        new THREE.Vector3(1, 1, 1),
+        matrixPosition,
+        matrixQuaternion,
+        matrixScale,
       );
       ballsMesh.setMatrixAt(index, matrix);
+      if (round.balls[index].previousWinner && !hidden) {
+        crownPosition.copy(matrixPosition).setY(matrixPosition.y + 0.48);
+        crownMatrix.compose(crownPosition, crownQuaternion, crownScale);
+      } else {
+        crownMatrix.compose(crownPosition.set(0, -20, 0), crownQuaternion, crownScale.setScalar(0.001));
+        crownScale.setScalar(0.72);
+      }
+      winnerCrowns.setMatrixAt(index, crownMatrix);
     });
     ballsMesh.instanceMatrix.needsUpdate = true;
+    winnerCrowns.instanceMatrix.needsUpdate = true;
 
     const leftTarget = effectiveFlippers.left ? 0.48 : -0.28;
     const rightTarget = effectiveFlippers.right ? -0.48 : 0.28;
@@ -883,11 +1054,19 @@ export const createPinballScene = (
     towerCrown.rotation.z += delta * 1.4;
     backbox.rotation.y = Math.sin(now * 0.00022) * 0.006;
     jackpotGroup.rotation.y += delta * 0.55;
+    finishGate.scale.setScalar(finishStartedAt ? 1 + Math.sin(now * 0.021) * 0.055 : 1);
+    finishBeam.material.opacity = finishStartedAt
+      ? 0.72 + Math.sin(now * 0.025) * 0.25
+      : 0.5 + Math.sin(now * 0.006) * 0.22;
 
     if (now - lastStatsAt > 260) {
       events.onStats?.({ launched: launchedCount, active: activeCount, collisions: totalCollisions, fps });
       lastStatsAt = now;
     }
+    const cameraBlend = running ? smoothstep(elapsed / PINBALL_CAMERA_INTRO_MS) : 0;
+    camera.position.lerpVectors(presentationCameraPosition, overviewCameraPosition, cameraBlend);
+    cameraTarget.lerpVectors(presentationCameraTarget, overviewCameraTarget, cameraBlend);
+    camera.lookAt(cameraTarget);
     renderer.render(scene, camera);
     frameRequest = requestAnimationFrame(renderFrame);
   };

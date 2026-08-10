@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Flag, Gauge, Gem, Play, RefreshCw, Sparkles, WandSparkles } from "lucide-react";
+import { Crown, Flag, Gauge, Gem, Play, RefreshCw, Sparkles, WandSparkles } from "lucide-react";
 import type { DrawMode, MarbleDifficulty, Participant } from "../../core/types";
 import { fortunaAudio } from "../../shared/audio/audioEngine";
 import {
@@ -20,6 +20,7 @@ import {
 import { disposeMarbleRace3D, drawMarbleRace3D } from "./marbleRace3d";
 
 type RacePhase = "ready" | "racing" | "finished";
+const MARBLE_CAMERA_INTRO_MS = 1400;
 
 const webglFallbackCanvases = new WeakSet<HTMLCanvasElement>();
 
@@ -644,8 +645,9 @@ const drawRace = (
   const baseRadius = count > 150 ? 3.2 : count > 90 ? 4 : count > 48 ? 5 : count > 22 ? 6.2 : 8.5;
   const drawDetailed = count <= 90;
   const selectedId = phase === "finished" ? race.selected.id : null;
+  const visualRaceElapsed = phase === "ready" ? 0 : Math.max(0, elapsedMs - MARBLE_CAMERA_INTRO_MS);
   const ordered = [...race.racers].sort((first, second) =>
-    getMarbleProgress(first, elapsedMs).progress - getMarbleProgress(second, elapsedMs).progress,
+    getMarbleProgress(first, visualRaceElapsed, race.track).progress - getMarbleProgress(second, visualRaceElapsed, race.track).progress,
   );
   const stagingColumns = Math.max(2, Math.ceil(Math.sqrt(count * 1.08)));
   const stagingRows = Math.ceil(count / stagingColumns);
@@ -664,7 +666,8 @@ const drawRace = (
   }
 
   ordered.forEach((racer) => {
-    const state = getMarbleProgress(racer, phase === "ready" ? 0 : elapsedMs);
+    const raceElapsed = phase === "ready" ? 0 : Math.max(0, elapsedMs - MARBLE_CAMERA_INTRO_MS);
+    const state = getMarbleProgress(racer, raceElapsed, race.track);
     const point = getTrackPosition(race.track.points, state.progress);
     const scaled = scalePoint(point);
     const nearbyObstacle = race.track.obstacles.find((obstacle) => Math.abs(obstacle.progress - state.progress) < 0.018);
@@ -706,6 +709,22 @@ const drawRace = (
     }
     context.beginPath(); context.arc(x, y, radius, 0, Math.PI * 2); context.fill();
     context.strokeStyle = "rgba(0,0,0,.8)"; context.lineWidth = 1; context.stroke();
+    if (racer.previousWinner) {
+      context.fillStyle = "#ffc52f";
+      context.strokeStyle = "#6e3a00";
+      context.lineWidth = 1;
+      context.beginPath();
+      context.moveTo(x - radius * 0.72, y - radius - 4);
+      context.lineTo(x - radius * 0.58, y - radius - 11);
+      context.lineTo(x - radius * 0.18, y - radius - 6);
+      context.lineTo(x, y - radius - 13);
+      context.lineTo(x + radius * 0.2, y - radius - 6);
+      context.lineTo(x + radius * 0.6, y - radius - 11);
+      context.lineTo(x + radius * 0.72, y - radius - 4);
+      context.closePath();
+      context.fill();
+      context.stroke();
+    }
     if (count <= 40 && radius >= 6) {
       context.fillStyle = "#031014";
       context.font = `900 ${Math.max(6, radius * 0.88)}px Arial`;
@@ -722,6 +741,8 @@ export function MarbleRace({
   mode,
   difficulty,
   disabled,
+  previousWinnerIds,
+  initialSeed,
   onDifficultyChange,
   onTrackPrepared,
   onFinish,
@@ -730,11 +751,13 @@ export function MarbleRace({
   mode: DrawMode;
   difficulty: MarbleDifficulty;
   disabled: boolean;
+  previousWinnerIds: ReadonlySet<string>;
+  initialSeed?: string;
   onDifficultyChange: (difficulty: MarbleDifficulty) => void;
   onTrackPrepared?: (track: MarbleTrack) => void;
   onFinish: (racer: MarbleRacer, label: string) => void;
 }) {
-  const [seed, setSeed] = useState(createMarbleSeed);
+  const [seed, setSeed] = useState(() => initialSeed?.trim() || createMarbleSeed());
   const [phase, setPhase] = useState<RacePhase>("ready");
   const [ranking, setRanking] = useState<RankingItem[]>([]);
   const [powerEvents, setPowerEvents] = useState<PowerEvent[]>([]);
@@ -745,8 +768,8 @@ export function MarbleRace({
   const mountedRef = useRef(true);
   const triggeredPowersRef = useRef(new Set<string>());
   const race = useMemo(
-    () => prepareMarbleRace(participants, mode, seed, difficulty),
-    [difficulty, mode, participants, seed],
+    () => prepareMarbleRace(participants, mode, seed, difficulty, previousWinnerIds),
+    [difficulty, mode, participants, previousWinnerIds, seed],
   );
 
   const paint = useCallback((elapsedMs: number, currentPhase: RacePhase) => {
@@ -819,14 +842,14 @@ export function MarbleRace({
       if (now - lastUiUpdate >= 180) {
         const orderedRacers = race.racers
           .map((racer) => {
-            const state = getMarbleProgress(racer, elapsed);
+            const state = getMarbleProgress(racer, Math.max(0, elapsed - MARBLE_CAMERA_INTRO_MS), race.track);
             return { racer, progress: state.progress, finished: state.finished };
           })
           .sort((first, second) => second.progress - first.progress);
         setRanking(orderedRacers.slice(0, 6));
         const newEvents = race.racers.flatMap((racer) => {
           if (!racer.power || triggeredPowersRef.current.has(racer.id)) return [];
-          const state = getMarbleProgress(racer, elapsed);
+          const state = getMarbleProgress(racer, Math.max(0, elapsed - MARBLE_CAMERA_INTRO_MS), race.track);
           if (!state.powerActive) return [];
           triggeredPowersRef.current.add(racer.id);
           return [{
@@ -848,9 +871,9 @@ export function MarbleRace({
         frameCount = 0;
       }
 
-      if (elapsed >= finishAt) {
+      if (elapsed >= finishAt + MARBLE_CAMERA_INTRO_MS) {
         setPhase("finished");
-        paint(finishAt, "finished");
+        paint(finishAt + MARBLE_CAMERA_INTRO_MS, "finished");
         fortunaAudio.playMarbleFinish();
         const resultLabel = mode === "direct"
           ? `Canica #${race.selected.number} · llegó primera`
@@ -867,7 +890,7 @@ export function MarbleRace({
     frameRef.current = window.requestAnimationFrame(tick);
   };
 
-  const status = phase === "ready" ? "Pista validada" : phase === "racing" ? "Carrera en vivo" : "Resultado confirmado";
+  const status = phase === "ready" ? "Participantes en cámara" : phase === "racing" ? "Carrera en vivo" : "Resultado confirmado";
 
   return (
     <div
@@ -877,6 +900,8 @@ export function MarbleRace({
       data-difficulty={difficulty}
       data-track-signature={race.track.signature}
       data-track-sections={race.track.sections.length}
+      data-track-points={race.track.points.length}
+      data-track-bridges={race.track.sections.filter((section) => section.bridgeLift > 0).length}
       data-track-zones={race.track.zones.length}
       data-track-width={race.track.trackWidth}
       data-obstacles={race.track.obstacles.length}
@@ -887,6 +912,7 @@ export function MarbleRace({
         <div><strong>{status}</strong><small>{race.track.name} · semilla {race.track.signature.toUpperCase()}</small></div>
         <div className="marble-race-status__metrics">
           <span>{race.track.sections.length} secciones</span>
+          <span>{race.track.sections.filter((section) => section.bridgeLift > 0).length} cruces elevados</span>
           <span>{race.track.zones.length} zonas</span>
           <span>{race.track.obstacles.length} trampas</span>
           <span>{race.track.powerZones.length} {race.track.powerZones.length === 1 ? "poder" : "poderes"}</span>
@@ -908,7 +934,7 @@ export function MarbleRace({
             {ranking.map((item, index) => (
               <span key={item.racer.id}>
                 <b>{index + 1}</b><i style={{ background: item.racer.accent }} />
-                <strong>{item.racer.participant.name}</strong><em>{item.finished ? "META" : `${Math.round(item.progress * 100)}%`}</em>
+                <strong>{item.racer.participant.name}{item.racer.previousWinner && <Crown size={10} fill="currentColor" aria-label="Ganador anterior" />}</strong><em>{item.finished ? "META" : `${Math.round(item.progress * 100)}%`}</em>
               </span>
             ))}
           </div>

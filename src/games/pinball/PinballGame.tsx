@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Bot, CircleGauge, Gamepad2, RefreshCw, Rocket, Sparkles, Zap } from "lucide-react";
+import { Bot, CircleGauge, Crown, Gamepad2, RefreshCw, Rocket, Sparkles, Zap } from "lucide-react";
 import type { DrawMode, Participant, PinballControlMode } from "../../core/types";
 import { fortunaAudio } from "../../shared/audio/audioEngine";
 import {
@@ -15,33 +15,23 @@ import {
 
 type PinballPhase = "ready" | "playing" | "finished" | "error";
 
-const secureIndex = (length: number) => {
-  if (length <= 1) return 0;
-  if (typeof crypto === "undefined" || !("getRandomValues" in crypto)) {
-    return Math.floor(Math.random() * length);
-  }
-  const maximum = Math.floor(0x100000000 / length) * length;
-  const value = new Uint32Array(1);
-  do crypto.getRandomValues(value); while (value[0] >= maximum);
-  return value[0] % length;
-};
-
 export function PinballGame({
   participants,
   mode,
   controlMode,
   disabled,
+  previousWinnerIds,
   onFinish,
 }: {
   participants: Participant[];
   mode: DrawMode;
   controlMode: PinballControlMode;
   disabled: boolean;
+  previousWinnerIds: ReadonlySet<string>;
   onFinish: (assignment: PinballBallAssignment, label: string) => void;
 }) {
   const [seed, setSeed] = useState(createPinballSeed);
   const [roundParticipants] = useState(() => participants);
-  const [selectedIndex, setSelectedIndex] = useState(() => secureIndex(roundParticipants.length));
   const [phase, setPhase] = useState<PinballPhase>("ready");
   const [stats, setStats] = useState<PinballSceneStats>({ launched: 0, active: 0, collisions: 0, fps: 60 });
   const [manualNotice, setManualNotice] = useState("Pulsa LANZAR o la barra espaciadora para soltar las pelotas.");
@@ -55,8 +45,8 @@ export function PinballGame({
   }, [onFinish]);
 
   const round = useMemo(
-    () => preparePinballRound(roundParticipants, mode, controlMode, seed, selectedIndex),
-    [controlMode, mode, roundParticipants, seed, selectedIndex],
+    () => preparePinballRound(roundParticipants, mode, controlMode, seed, previousWinnerIds),
+    [controlMode, mode, previousWinnerIds, roundParticipants, seed],
   );
 
   useEffect(() => {
@@ -73,10 +63,10 @@ export function PinballGame({
             lastImpactRef.current = now;
           }
         },
-        onFinish: (label) => {
+        onFinish: (assignment, label) => {
           setPhase("finished");
           fortunaAudio.playPinballFinish();
-          finishRef.current(round.selected, label);
+          finishRef.current(assignment, label);
         },
       });
       controllerRef.current = controller;
@@ -142,7 +132,6 @@ export function PinballGame({
   const regenerate = () => {
     if (phase !== "ready") return;
     setSeed(createPinballSeed());
-    setSelectedIndex(secureIndex(roundParticipants.length));
   };
 
   const launch = () => {
@@ -170,7 +159,8 @@ export function PinballGame({
           <strong>{controlMode === "automatic" ? "MESA AUTOMÁTICA" : "CONTROL MANUAL"}</strong>
           <small>{round.layout.name} · {round.layout.signature}</small>
         </div>
-        <span className="pinball-game__fair"><Sparkles size={14} /> Resultado sellado</span>
+        <span className="pinball-game__fair"><Sparkles size={14} /> Meta física real</span>
+        {round.balls.some((ball) => ball.previousWinner) && <span className="pinball-game__champions"><Crown size={12} fill="currentColor" /> Campeones en mesa</span>}
       </div>
 
       <div className="pinball-cabinet">
@@ -184,7 +174,7 @@ export function PinballGame({
         {phase === "ready" && (
           <div className="pinball-ready-panel">
             <strong>{roundParticipants.length} PELOTAS PREPARADAS</strong>
-            <small>Cada pelota representa un participante y conserva su número en la lista lateral.</small>
+            <small>La cámara presenta a todos; al iniciar se alejará para mostrar la mesa completa.</small>
           </div>
         )}
       </div>
@@ -209,7 +199,7 @@ export function PinballGame({
           <div className="pinball-running"><span /><strong>{phase === "finished" ? "RESULTADO CONFIRMADO" : "PINBALL REAL EN MARCHA"}</strong></div>
         )}
         <small className="pinball-instruction">{phase === "error" ? "Este equipo no pudo iniciar WebGL. Actualiza el controlador de video." : manualNotice}</small>
-        <small className="pinball-fairness">El resultado se fija con azar seguro antes de la animación. Los controles no pueden cambiarlo.</small>
+        <small className="pinball-fairness">El orden de salida se mezcla en cada mesa. El sensor confirma la primera pelota que atraviesa la meta.</small>
       </div>
     </div>
   );
