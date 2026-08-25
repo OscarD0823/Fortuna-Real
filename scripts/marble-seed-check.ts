@@ -1,13 +1,35 @@
 import type { MarbleDifficulty } from "../src/core/types.ts";
 import {
   generateMarbleTrack,
+  getMarbleMotion,
   marbleDifficultyConfig,
+  type MarblePower,
+  type MarbleRacer,
   validateMarbleTrack,
 } from "../src/games/marbles/marbleRaceEngine.ts";
+import { MARBLE_TRACK_PIECE_SPECS } from "../src/games/marbles/marbleTrackPieceKit.ts";
 
 const difficulties: MarbleDifficulty[] = ["easy", "medium", "hard"];
 const seedsPerDifficulty = 120;
 const allSignatures = new Set<string>();
+const motionPowers: readonly MarblePower[] = ["boost", "shield", "freeze", "reverse", "giant", "tiny", "restart"];
+const reversingPowers = new Set<MarblePower>(["reverse", "restart"]);
+const motionPowerPositions = [0.12, 0.48, 0.89] as const;
+const motionSamples = 5_000;
+const monotonicTolerance = 0.000001;
+const maximumContinuousStep = 0.015;
+const pieceSpecifications = Object.entries(MARBLE_TRACK_PIECE_SPECS);
+if (
+  pieceSpecifications.length !== 10
+  || pieceSpecifications.some(([, spec]) => (
+    spec.nominalLength < 1.8
+    || spec.maximumHeight <= 0
+    || spec.shoulder < 0.25
+    || spec.description.length < 12
+  ))
+) {
+  throw new Error("El kit visual de pista no contiene diez piezas modulares con dimensiones válidas.");
+}
 
 const round = (value: number, decimals = 3) => {
   const factor = 10 ** decimals;
@@ -22,6 +44,113 @@ const edgeForPoint = (x: number, y: number) => {
   if (Math.abs(y - 0.065) < 0.00001) return "top";
   if (Math.abs(y - 0.935) < 0.00001) return "bottom";
   return "invalid";
+};
+
+const verifyMotionContracts = () => {
+  const failures: string[] = [];
+  let checkedSamples = 0;
+  let checkedScenarios = 0;
+
+  difficulties.forEach((difficulty) => {
+    const track = generateMarbleTrack(`fortuna-motion-${difficulty}`, difficulty);
+
+    motionPowers.forEach((power, powerIndex) => {
+      motionPowerPositions.forEach((powerAt, positionIndex) => {
+        const durationMs = 20_000;
+        const racer: MarbleRacer = {
+          id: `motion-${difficulty}-${power}-${positionIndex}`,
+          number: powerIndex + 1,
+          participant: {
+            id: `participant-${powerIndex + 1}`,
+            name: `Prueba ${power}`,
+            color: "#ffffff",
+          },
+          color: "#ffffff",
+          accent: "#000000",
+          durationMs,
+          power,
+          powerAt,
+          lane: 0,
+          previousWinner: false,
+        };
+        let previous = getMarbleMotion(racer, track, 0);
+        let activeSamples = previous.powerActive ? 1 : 0;
+        let scenarioFailed = false;
+
+        for (let sample = 1; sample <= motionSamples; sample += 1) {
+          const elapsedMs = durationMs * sample / motionSamples;
+          const motion = getMarbleMotion(racer, track, elapsedMs);
+          checkedSamples += 1;
+          if (motion.powerActive) activeSamples += 1;
+
+          const numericValues = [
+            motion.raw,
+            motion.progress,
+            motion.velocity,
+            motion.lateralImpulse,
+            motion.verticalOffset,
+            motion.spinAngle,
+            motion.radiusScale,
+          ];
+          const progressDelta = motion.progress - previous.progress;
+          const reversalAllowed = reversingPowers.has(power);
+
+          let reason = "";
+          if (!numericValues.every(Number.isFinite)) {
+            reason = "produjo un valor no finito";
+          } else if (motion.raw < 0 || motion.raw > 1 || motion.progress < 0 || motion.progress > 1) {
+            reason = `sali\u00f3 del rango [0,1] (raw=${motion.raw}, progress=${motion.progress})`;
+          } else if (motion.raw + monotonicTolerance < previous.raw) {
+            reason = `retrocedi\u00f3 el tiempo normalizado (${previous.raw} -> ${motion.raw})`;
+          } else if (!reversalAllowed && progressDelta < -monotonicTolerance) {
+            reason = `retrocedi\u00f3 fuera del contrato (${previous.progress} -> ${motion.progress})`;
+          } else if (
+            reversalAllowed
+            && progressDelta < -monotonicTolerance
+            && !previous.powerActive
+            && !motion.powerActive
+          ) {
+            reason = `retrocedi\u00f3 fuera de la ventana del poder (${previous.progress} -> ${motion.progress})`;
+          } else if (Math.abs(progressDelta) > maximumContinuousStep) {
+            reason = `tuvo un salto discontinuo de ${progressDelta}`;
+          } else if (sample < motionSamples && motion.finished) {
+            reason = `termin\u00f3 antes de durationMs (${elapsedMs}ms)`;
+          } else if (motion.verticalOffset < 0 || motion.radiusScale <= 0) {
+            reason = `produjo geometr\u00eda inv\u00e1lida (vertical=${motion.verticalOffset}, radius=${motion.radiusScale})`;
+          }
+
+          if (reason && !scenarioFailed) {
+            failures.push(`${difficulty}/${power}@${powerAt}, muestra ${sample}/${motionSamples}: ${reason}.`);
+            scenarioFailed = true;
+          }
+          previous = motion;
+        }
+
+        const beforeFinish = getMarbleMotion(racer, track, durationMs - durationMs / motionSamples);
+        const atFinish = getMarbleMotion(racer, track, durationMs);
+        if (!scenarioFailed && activeSamples === 0) {
+          failures.push(`${difficulty}/${power}@${powerAt}: el poder nunca estuvo activo.`);
+        } else if (!scenarioFailed && beforeFinish.progress < 1 - maximumContinuousStep) {
+          failures.push(`${difficulty}/${power}@${powerAt}: lleg\u00f3 al \u00faltimo frame en ${beforeFinish.progress}, demasiado lejos de meta.`);
+        } else if (!scenarioFailed && (!atFinish.finished || atFinish.progress !== 1 || atFinish.raw !== 1)) {
+          failures.push(`${difficulty}/${power}@${powerAt}: no lleg\u00f3 exactamente al 100% en durationMs.`);
+        }
+        checkedScenarios += 1;
+      });
+    });
+  });
+
+  if (failures.length > 0) {
+    throw new Error(`Contrato de movimiento de canicas incumplido:\n- ${failures.slice(0, 24).join("\n- ")}`);
+  }
+
+  return {
+    scenarios: checkedScenarios,
+    samples: checkedSamples,
+    powers: motionPowers,
+    maximumContinuousStep,
+    finishAtDurationMs: true,
+  };
 };
 
 const reports = difficulties.map((difficulty) => {
@@ -53,7 +182,7 @@ const reports = difficulties.map((difficulty) => {
       return section.connectorGap <= 0.0001
         && (previous === null || previous.endPointIndex === section.startPointIndex)
         && (previous === null || Math.abs(previous.exitHeading - section.entryHeading) <= 0.0002)
-        && (section.clearance >= 0.055 ? section.bridgeLift === 0 : section.bridgeLift > 0);
+        && (section.bridgeLift > 0 ? section.clearance <= 0.071 : section.clearance >= 0.069);
     });
 
     if (
@@ -122,8 +251,12 @@ const reports = difficulties.map((difficulty) => {
   };
 });
 
+const motionContracts = verifyMotionContracts();
+
 console.log(JSON.stringify({
   totalSeeds: allSignatures.size,
   deterministicRepetitions: difficulties.length * 6,
+  modularPieceKit: pieceSpecifications.map(([type, spec]) => ({ type, ...spec })),
+  motionContracts,
   reports,
 }, null, 2));

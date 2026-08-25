@@ -30,6 +30,7 @@ function MarblePreview() {
         disabled={false}
         previousWinnerIds={new Set()}
         initialSeed={requestedSeed}
+        onCommit={() => undefined}
         onDifficultyChange={setDifficulty}
         onFinish={() => undefined}
       />

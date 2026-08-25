@@ -8,7 +8,11 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { useDrawStore } from "./drawStore";
+import {
+  MAX_PARTICIPANTS,
+  MAX_PARTICIPANT_NAME_LENGTH,
+  useDrawStore,
+} from "./drawStore";
 
 export function ParticipantPanel() {
   const [name, setName] = useState("");
@@ -20,12 +24,15 @@ export function ParticipantPanel() {
   const addNames = useDrawStore((state) => state.addNames);
   const removeParticipant = useDrawStore((state) => state.removeParticipant);
   const clearParticipants = useDrawStore((state) => state.clearParticipants);
+  const isFull = participants.length >= MAX_PARTICIPANTS;
 
   const addSingle = () => {
     const outcome = addNames([name]);
     if (outcome.added) {
       setName("");
       setNotice("Participante agregado");
+    } else if (outcome.rejectedCapacity) {
+      setNotice(`Límite alcanzado: máximo ${MAX_PARTICIPANTS} participantes`);
     } else if (name.trim()) {
       setNotice("Ese nombre ya está en la lista");
     }
@@ -37,6 +44,9 @@ export function ParticipantPanel() {
       `${outcome.added} agregado${outcome.added === 1 ? "" : "s"}` +
         (outcome.skipped
           ? ` · ${outcome.skipped} repetido${outcome.skipped === 1 ? "" : "s"}`
+          : "")
+        + (outcome.rejectedCapacity
+          ? ` · ${outcome.rejectedCapacity} no agregado${outcome.rejectedCapacity === 1 ? "" : "s"} por el límite de ${MAX_PARTICIPANTS}`
           : ""),
     );
     if (outcome.added) {
@@ -58,10 +68,14 @@ export function ParticipantPanel() {
                 ? "Cada nombre recibe una carta visible antes de barajar"
                 : game === "pinball"
                   ? "Cada nombre recibe una pelota numerada en la mesa 3D"
-                  : "Cada nombre recibe una canica identificada en la carrera"}
+                  : game === "marbles"
+                    ? "Cada nombre recibe una canica identificada en la carrera"
+                    : "Cada nombre recibe una ficha de pato con tres vidas"}
           </p>
         </div>
-        <span className="count-pill"><Users size={14} /> {participants.length}</span>
+        <span className="count-pill">
+          <Users size={14} /> {participants.length}/{MAX_PARTICIPANTS}
+        </span>
       </div>
 
       <form
@@ -76,28 +90,33 @@ export function ParticipantPanel() {
           value={name}
           onChange={(event) => setName(event.target.value)}
           placeholder="Escribe un nombre"
-          maxLength={42}
+          maxLength={MAX_PARTICIPANT_NAME_LENGTH}
           aria-label="Nombre del participante"
         />
         <button
           type="submit"
           aria-label="Agregar participante"
-          disabled={!name.trim()}
+          disabled={!name.trim() || isFull}
         >
           <Plus size={18} />
         </button>
       </form>
 
       <div className="participant-actions setup-participant-actions">
-        <button type="button" onClick={() => setShowBulk((visible) => !visible)}>
+        <button
+          type="button"
+          onClick={() => setShowBulk((visible) => !visible)}
+          disabled={isFull}
+        >
           <ClipboardPaste size={16} /> Pegar varios nombres
         </button>
         <button
           type="button"
           className="danger-link"
           onClick={() => {
+            if (!window.confirm("¿Vaciar la lista de participantes? El historial de ganadores se conservará.")) return;
             clearParticipants();
-            setNotice("Lista vacía");
+            setNotice("Lista vacía · historial de ganadores conservado");
           }}
           disabled={participants.length === 0}
         >
@@ -111,6 +130,7 @@ export function ParticipantPanel() {
             value={bulkText}
             onChange={(event) => setBulkText(event.target.value)}
             placeholder={'Pega nombres separados por comas o líneas:\nLaura\nSantiago\nMariana'}
+            maxLength={MAX_PARTICIPANTS * (MAX_PARTICIPANT_NAME_LENGTH + 1)}
             autoFocus
           />
           <div>
@@ -119,7 +139,7 @@ export function ParticipantPanel() {
               type="button"
               className="primary-small"
               onClick={addBulk}
-              disabled={!bulkText.trim()}
+              disabled={!bulkText.trim() || isFull}
             >
               Agregar nombres
             </button>

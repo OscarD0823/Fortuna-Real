@@ -1,6 +1,12 @@
 import {
   DUCK_STARTING_LIVES,
+  DUCK_SABOTAGE_POWERS,
+  getDuckCoverAmount,
+  getDuckCoverKind,
+  getDuckHitRadius,
+  getDuckResetDuration,
   getDuckSpeed,
+  getDuckVisualScale,
   hitDuckContestant,
   learnFromDuckShot,
   prepareDuckNextFlight,
@@ -19,12 +25,29 @@ let totalHits = 0;
 let maximumLogicMs = 0;
 let deterministicChecks = 0;
 
+const visualCounts = [2, 20, 21, 45, 46, 90, 91, 120, 121, 150, 151, 200];
+const visualScales = visualCounts.map(getDuckVisualScale);
+const hitRadii = visualCounts.map(getDuckHitRadius);
+const resetDurations = visualCounts.map(getDuckResetDuration);
+if (
+  visualScales.some((scale, index) => index > 0 && scale > visualScales[index - 1])
+  || hitRadii.some((radius, index) => index > 0 && radius > hitRadii[index - 1])
+  || getDuckVisualScale(8) < 1
+  || getDuckHitRadius(8) < 44
+  || getDuckVisualScale(200) > 0.52
+  || resetDurations.some((duration, index) => index > 0 && duration > resetDurations[index - 1])
+  || getDuckResetDuration(8) < 1_800
+  || getDuckResetDuration(200) > 700
+) {
+  throw new Error("El escalado visual o el área de impacto de Patos no se adapta correctamente a la bandada.");
+}
+
 for (let count = 2; count <= 200; count += 1) {
   const participants = makeParticipants(count);
   const seed = `duck-capacity-${count}`;
   let contestants = prepareDuckContestants(participants, seed);
   const repeated = prepareDuckContestants(participants, seed);
-  if (JSON.stringify(contestants.map((contestant) => contestant.profile)) !== JSON.stringify(repeated.map((contestant) => contestant.profile))) {
+  if (JSON.stringify(contestants.map(({ profile, power }) => ({ profile, power }))) !== JSON.stringify(repeated.map(({ profile, power }) => ({ profile, power })))) {
     throw new Error(`La formación de ${count} patos no es determinista.`);
   }
   deterministicChecks += 1;
@@ -61,6 +84,18 @@ const adaptivePrepared = prepareDuckContestants(
 );
 if (!adaptivePrepared[0].previousWinner || adaptivePrepared.slice(1).some((contestant) => contestant.previousWinner)) {
   throw new Error("La corona de ganador anterior no se asignó correctamente.");
+}
+const coverFlock = prepareDuckContestants(makeParticipants(60), "forest-cover-check");
+const coverSamples = coverFlock.flatMap((contestant) => [3, 6, 9, 12, 15, 18, 21]
+  .map((time) => getDuckCoverAmount(contestant, time)));
+if (
+  coverSamples.some((amount) => amount < 0 || amount > 1 || !Number.isFinite(amount))
+  || !coverSamples.some((amount) => amount > 0.9)
+  || !coverSamples.some((amount) => amount < 0.1)
+  || new Set(coverFlock.map(getDuckCoverKind)).size !== 2
+  || new Set(coverFlock.map((contestant) => contestant.power)).size !== DUCK_SABOTAGE_POWERS.length
+) {
+  throw new Error("Los refugios aleatorios o los poderes de la bandada no cubren todas sus variantes.");
 }
 const learnedFlock = learnFromDuckShot(adaptivePrepared, 0.35, -0.22, adaptivePrepared[1].id);
 if (!learnedFlock[1].grazed || learnedFlock.some((contestant) => contestant.threatLevel <= 0)) {
@@ -103,6 +138,12 @@ useDrawStore.getState().setGame("ducks");
 useDrawStore.getState().setMode("elimination");
 useDrawStore.getState().setPrize("Premio de prueba");
 const storeParticipants = useDrawStore.getState().participants;
+useDrawStore.getState().beginSession();
+useDrawStore.getState().commitRound({
+  commitmentId: "DUCK-TEST-SHA256",
+  seed: "duck-store-seed-256",
+  expectedParticipantId: storeParticipants[3].id,
+});
 const storeWinner = useDrawStore.getState().recordDuckSurvival(
   storeParticipants[3].id,
   storeParticipants.slice(0, 3).map((participant, index) => ({ participantId: participant.id, number: index + 1 })),
@@ -117,6 +158,9 @@ if (storedState.winnerRecords[0]?.participantId !== storeParticipants[3].id || s
 if (!storedState.blockedWinnerIds.includes(storeParticipants[3].id) || storedState.eliminatedIds.length !== 3) {
   throw new Error("El bloqueo del ganador o las eliminaciones de Patos 3D son incorrectos.");
 }
+if (storeWinner.commitmentId !== "DUCK-TEST-SHA256" || !storeWinner.auditHash || storedState.roundAudits.length !== 1) {
+  throw new Error("El resultado de Patos no conservó su prueba criptográfica.");
+}
 
 console.log(JSON.stringify({
   participantCounts: "2..200",
@@ -125,6 +169,9 @@ console.log(JSON.stringify({
   totalHits,
   storeIntegration: "passed",
   adaptiveFlight: "passed",
+  adaptiveTargets: "passed",
+  forestCover: "passed",
+  sabotagePowers: DUCK_SABOTAGE_POWERS,
   maximumLogicMs: Number(maximumLogicMs.toFixed(2)),
   totalMs: Number((performance.now() - startedAt).toFixed(2)),
 }, null, 2));

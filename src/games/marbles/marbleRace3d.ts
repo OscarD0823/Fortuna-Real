@@ -7,8 +7,10 @@ import {
   type MarbleTrack,
   type PreparedMarbleRace,
   type TrackObstacleType,
+  type TrackSectionType,
   type TrackZone,
 } from "./marbleRaceEngine";
+import { createMarbleTrackPiece3D } from "./marbleTrackPieceKit";
 
 export type MarbleRaceVisualPhase = "ready" | "racing" | "finished";
 
@@ -26,14 +28,21 @@ interface AnimatedPart {
 
 interface MarbleSceneState {
   key: string;
+  raceIdentity: PreparedMarbleRace;
   renderer: THREE.WebGLRenderer;
   scene: THREE.Scene;
   camera: THREE.OrthographicCamera;
+  followCamera: THREE.PerspectiveCamera;
   racers: THREE.InstancedMesh;
+  racerCores: THREE.InstancedMesh | null;
+  racerRings: THREE.InstancedMesh;
+  racerShadows: THREE.InstancedMesh;
   racerGlow: THREE.Points;
   racerLabels: THREE.Sprite[];
+  winnerLabel: THREE.Sprite | null;
   winnerCrowns: THREE.InstancedMesh;
   selectedRing: THREE.Mesh;
+  followBeacon: THREE.Mesh;
   trackSamples: TrackWorldPoint[];
   startPoint: TrackWorldPoint;
   motionPoint: TrackWorldPoint;
@@ -49,22 +58,40 @@ interface MarbleSceneState {
   stagingCameraPosition: THREE.Vector3;
   stagingCameraTarget: THREE.Vector3;
   cameraTarget: THREE.Vector3;
+  followCameraTarget: THREE.Vector3;
+  followCameraUp: THREE.Vector3;
+  racerPositions: THREE.Vector3[];
+  activeFollowRacerId: string | null;
   readyZoom: number;
   contentWidth: number;
   contentDepth: number;
+  projectedContentWidth: number;
+  projectedContentHeight: number;
   animatedParts: AnimatedPart[];
   glowMaterials: THREE.MeshStandardMaterial[];
   participantCount: number;
+  reducedMotion: boolean;
   shadowReady: boolean;
+  resolutionScale: number;
+  lastRenderAt: number;
+  averageFrameMs: number;
+  slowFrames: number;
+  fastFrames: number;
+  lastEffectsAt: number;
+  lastMetricsAt: number;
   width: number;
   height: number;
 }
 
 const sceneStates = new WeakMap<HTMLCanvasElement, MarbleSceneState>();
-const WORLD_WIDTH = 26;
-const WORLD_DEPTH = 19;
+const WORLD_WIDTH = 28;
+const WORLD_DEPTH = 21;
+const BOARD_WIDTH = 30;
+const BOARD_DEPTH = 22.5;
 const GOLD = 0xd49a38;
 const FLOOR = 0x02070a;
+const Z_AXIS = new THREE.Vector3(0, 0, 1);
+const Y_AXIS = new THREE.Vector3(0, 1, 0);
 
 const hashText = (value: string) => {
   let hash = 2166136261;
@@ -75,7 +102,7 @@ const hashText = (value: string) => {
   return hash >>> 0;
 };
 
-const trackWidthToWorld = (track: MarbleTrack) => track.trackWidth / 35.5;
+const trackWidthToWorld = (track: MarbleTrack) => track.trackWidth / 33;
 
 const trackElevation = (track: MarbleTrack, progress: number) => {
   const phase = (hashText(track.signature) % 628) / 100;
@@ -187,7 +214,7 @@ const addMesh = <T extends THREE.BufferGeometry, M extends THREE.Material>(
   mesh.position.set(...position);
   mesh.rotation.set(...rotation);
   mesh.scale.set(...scale);
-  mesh.castShadow = true;
+  mesh.castShadow = false;
   mesh.receiveShadow = true;
   parent.add(mesh);
   return mesh;
@@ -236,8 +263,12 @@ const createLabelSprite = (text: string, color: string, compact = false, depthTe
   return sprite;
 };
 
-const createTrackSamples = (track: MarbleTrack) => {
-  const count = Math.max(180, track.sections.length * 7);
+const createTrackSamples = (track: MarbleTrack, participantCount: number) => {
+  const count = participantCount > 150
+    ? Math.max(120, track.sections.length * 4)
+    : participantCount > 96
+      ? Math.max(150, track.sections.length * 5)
+      : Math.max(180, track.sections.length * 7);
   return Array.from({ length: count }, (_, index) => worldPointAt(track, index / (count - 1)));
 };
 
@@ -247,11 +278,11 @@ const createBrushedMetalTexture = () => {
   canvas.height = 256;
   const context = canvas.getContext("2d");
   if (!context) return new THREE.CanvasTexture(canvas);
-  context.fillStyle = "#657075";
+  context.fillStyle = "#273236";
   context.fillRect(0, 0, 256, 256);
   for (let y = 0; y < 256; y += 2) {
-    const shade = 72 + ((y * 37) % 42);
-    context.strokeStyle = `rgba(${shade},${shade + 7},${shade + 9},${0.12 + (y % 7) * 0.012})`;
+    const shade = 28 + ((y * 37) % 34);
+    context.strokeStyle = `rgba(${shade},${shade + 8},${shade + 10},${0.16 + (y % 7) * 0.012})`;
     context.beginPath();
     context.moveTo(0, y + ((y * 13) % 3));
     context.lineTo(256, y);
@@ -274,6 +305,21 @@ const createBrushedMetalTexture = () => {
   texture.repeat.set(1.4, 28);
   texture.anisotropy = 4;
   return texture;
+};
+
+const createTrackArrowGeometry = () => {
+  const shape = new THREE.Shape();
+  shape.moveTo(-0.36, 0.02);
+  shape.lineTo(-0.13, 0.02);
+  shape.lineTo(-0.13, 0.5);
+  shape.lineTo(0.13, 0.5);
+  shape.lineTo(0.13, 0.02);
+  shape.lineTo(0.36, 0.02);
+  shape.lineTo(0, -0.52);
+  shape.closePath();
+  const geometry = new THREE.ShapeGeometry(shape);
+  geometry.rotateX(-Math.PI / 2);
+  return geometry;
 };
 
 const createRibbonGeometry = (
@@ -316,48 +362,124 @@ const createRibbonGeometry = (
   return geometry;
 };
 
-const addTrackBody = (scene: THREE.Scene, track: MarbleTrack, samples: readonly TrackWorldPoint[]) => {
+const addTrackBody = (
+  scene: THREE.Scene,
+  track: MarbleTrack,
+  samples: readonly TrackWorldPoint[],
+  lowDetail: boolean,
+) => {
   const trackGroup = new THREE.Group();
   const width = trackWidthToWorld(track);
   scene.add(trackGroup);
 
   const deckTexture = createBrushedMetalTexture();
   const deckMaterial = new THREE.MeshStandardMaterial({
-    color: 0x778184,
+    color: 0x526064,
+    emissive: 0x07191c,
+    emissiveIntensity: 0.32,
     map: deckTexture,
     bumpMap: deckTexture,
-    bumpScale: 0.045,
-    metalness: 0.9,
-    roughness: 0.24,
+    bumpScale: 0.07,
+    metalness: 0.68,
+    roughness: 0.42,
   });
   const deck = addMesh(trackGroup, createRibbonGeometry(samples, width + 0.58, 0, 0.64), deckMaterial);
+  deck.castShadow = true;
   deck.receiveShadow = true;
-  addMesh(trackGroup, createRibbonGeometry(samples, width, 0.07, 0.1), metalMaterial(0x192b30, 0.28));
+  const laneMaterial = new THREE.MeshStandardMaterial({
+    color: 0x34464b,
+    emissive: 0x06262a,
+    emissiveIntensity: 0.48,
+    metalness: 0.62,
+    roughness: 0.36,
+  });
+  const lane = addMesh(trackGroup, createRibbonGeometry(samples, width, 0.07, 0.1), laneMaterial);
+  lane.receiveShadow = true;
 
   const centerCurve = new THREE.CatmullRomCurve3(samples.map((sample) => sample.position.clone().add(new THREE.Vector3(0, 0.105, 0))));
-  addMesh(trackGroup, new THREE.TubeGeometry(centerCurve, samples.length, 0.026, 5, false), glowMaterial(0x00cfd5, 0.85));
+  const centerLine = addMesh(trackGroup, new THREE.TubeGeometry(centerCurve, samples.length, 0.03, lowDetail ? 3 : 5, false), glowMaterial(0x00cfd5, 1.15));
+  centerLine.castShadow = false;
 
   [-1, 1].forEach((side) => {
-    const railPoints = samples.map((sample) => sample.position.clone()
-      .addScaledVector(sample.normal, side * (width / 2 + 0.18))
-      .addScaledVector(sample.up, 0.25));
-    const railCurve = new THREE.CatmullRomCurve3(railPoints);
-    addMesh(trackGroup, new THREE.TubeGeometry(railCurve, samples.length, 0.13, 7, false), metalMaterial(0x090c0d, 0.2));
-    addMesh(trackGroup, new THREE.TubeGeometry(railCurve, samples.length, 0.075, 7, false), metalMaterial(0xe2a63e, 0.18));
+    const outerRailPoints = samples.map((sample) => sample.position.clone()
+      .addScaledVector(sample.normal, side * (width / 2 + 0.24))
+      .addScaledVector(sample.up, 0.37));
+    const innerRailPoints = samples.map((sample) => sample.position.clone()
+      .addScaledVector(sample.normal, side * (width / 2 + 0.06))
+      .addScaledVector(sample.up, 0.19));
+    const outerRailCurve = new THREE.CatmullRomCurve3(outerRailPoints);
+    const innerRailCurve = new THREE.CatmullRomCurve3(innerRailPoints);
+    addMesh(trackGroup, new THREE.TubeGeometry(outerRailCurve, samples.length, 0.135, lowDetail ? 5 : 7, false), metalMaterial(0x080b0c, 0.22));
+    const outerAccent = addMesh(
+      trackGroup,
+      new THREE.TubeGeometry(outerRailCurve, samples.length, 0.055, lowDetail ? 4 : 6, false),
+      glowMaterial(0xe5a13a, 1.02),
+    );
+    addMesh(trackGroup, new THREE.TubeGeometry(innerRailCurve, samples.length, 0.09, lowDetail ? 4 : 6, false), metalMaterial(0x10181a, 0.24));
+    const innerAccent = addMesh(
+      trackGroup,
+      new THREE.TubeGeometry(innerRailCurve, samples.length, 0.034, lowDetail ? 3 : 5, false),
+      glowMaterial(side < 0 ? 0x0bdce1 : 0xf0a72e, 1.28),
+    );
+    outerAccent.castShadow = false;
+    innerAccent.castShadow = false;
+  });
+
+  const seamSamples = samples.filter((_, index) => index > 3 && index < samples.length - 4 && index % 9 === 4);
+  const seamGeometry = new THREE.BoxGeometry(width * 0.94, 0.032, 0.075);
+  const seams = new THREE.InstancedMesh(seamGeometry, metalMaterial(0x070c0e, 0.48), seamSamples.length);
+  seams.name = "SM_TrackModuleSeams";
+  const signalColors = [0x09e0df, 0xf6bd35, 0xe95b45, 0xd97cff] as const;
+  const signalSamples = samples.filter((_, index) => index > 9 && index < samples.length - 9 && index % 16 === 8);
+  const signalGeometry = createTrackArrowGeometry();
+  const signalGroups = signalColors.map((color, colorIndex) => ({
+    color,
+    samples: signalSamples.filter((_, index) => index % signalColors.length === colorIndex),
+  }));
+  const matrix = new THREE.Matrix4();
+  const basis = new THREE.Matrix4();
+  const quaternion = new THREE.Quaternion();
+  const signalScale = new THREE.Vector3(width * 0.54, 1, width * 0.54);
+  seamSamples.forEach((sample, index) => {
+    quaternion.setFromRotationMatrix(basis.makeBasis(sample.normal, sample.up, sample.tangent));
+    matrix.compose(
+      sample.position.clone().addScaledVector(sample.up, 0.126),
+      quaternion,
+      new THREE.Vector3(1, 1, 1),
+    );
+    seams.setMatrixAt(index, matrix);
+  });
+  seams.receiveShadow = true;
+  trackGroup.add(seams);
+  signalGroups.forEach(({ color, samples: colorSamples }, groupIndex) => {
+    const material = new THREE.MeshBasicMaterial({
+      color,
+      transparent: true,
+      opacity: 0.9,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      side: THREE.DoubleSide,
+    });
+    const signals = new THREE.InstancedMesh(signalGeometry, material, colorSamples.length);
+    signals.name = `FX_TrackSignals_${groupIndex}`;
+    colorSamples.forEach((sample, index) => {
+      quaternion.setFromRotationMatrix(basis.makeBasis(sample.normal, sample.up, sample.tangent));
+      matrix.compose(sample.position.clone().addScaledVector(sample.up, 0.145), quaternion, signalScale);
+      signals.setMatrixAt(index, matrix);
+    });
+    signals.renderOrder = 4;
+    trackGroup.add(signals);
   });
 
   const tieSamples = samples.filter((_, index) => index % 5 === 0);
   const tieGeometry = new THREE.BoxGeometry(width + 0.72, 0.12, 0.2);
   const ties = new THREE.InstancedMesh(tieGeometry, metalMaterial(0x342c22, 0.34), tieSamples.length);
-  const matrix = new THREE.Matrix4();
-  const basis = new THREE.Matrix4();
-  const quaternion = new THREE.Quaternion();
   tieSamples.forEach((sample, index) => {
     quaternion.setFromRotationMatrix(basis.makeBasis(sample.normal, sample.up, sample.tangent));
     matrix.compose(sample.position.clone().addScaledVector(sample.up, 0.095), quaternion, new THREE.Vector3(1, 1, 1));
     ties.setMatrixAt(index, matrix);
   });
-  ties.castShadow = true;
+  ties.castShadow = false;
   ties.receiveShadow = true;
   trackGroup.add(ties);
 
@@ -373,7 +495,7 @@ const addTrackBody = (scene: THREE.Scene, track: MarbleTrack, samples: readonly 
       bolts.setMatrixAt(index * 2 + sideIndex, matrix);
     });
   });
-  bolts.castShadow = true;
+  bolts.castShadow = false;
   trackGroup.add(bolts);
 
   const wallSamples = samples.filter((_, index) => index % 7 === 0);
@@ -389,7 +511,7 @@ const addTrackBody = (scene: THREE.Scene, track: MarbleTrack, samples: readonly 
       walls.setMatrixAt(index * 2 + sideIndex, matrix);
     });
   });
-  walls.castShadow = true;
+  walls.castShadow = false;
   walls.receiveShadow = true;
   trackGroup.add(walls);
 
@@ -546,6 +668,23 @@ const addZoneFeature = (
     }
     animatedParts.push({ object: fan, update: (object, time) => { object.rotation.y = time * 1.85; } });
   } else if (zone.type === "ice") {
+    const iceDeck = addMesh(
+      group,
+      new THREE.CylinderGeometry(width * 0.56 * scale, width * 0.62 * scale, 0.075, 14),
+      glassMaterial("#8fe9ff"),
+      [0, 0.13, 0],
+    );
+    iceDeck.castShadow = false;
+    [-0.42, 0, 0.42].forEach((offset, index) => {
+      const crack = addMesh(
+        group,
+        new THREE.BoxGeometry(0.025, 0.018, width * (index === 1 ? 0.78 : 0.54)),
+        glowMaterial(index === 1 ? 0xc8f7ff : 0x58cce9, 0.72),
+        [offset * scale, 0.185, 0],
+        [0, (index - 1) * 0.48, 0],
+      );
+      crack.castShadow = false;
+    });
     [[-0.72, 0.8, -0.25], [0, 1.35, 0.05], [0.7, 0.95, 0.3], [-0.35, 0.6, 0.55]].forEach(([x, height, z]) => {
       addMesh(group, new THREE.ConeGeometry(0.25 * scale, height * scale, 5), glassMaterial(zone.color), [x * scale, height * scale * 0.5, z * scale]);
     });
@@ -582,7 +721,7 @@ const addZoneFeature = (
     [-0.55, 0, 0.55].forEach((x, index) => addMesh(group, new THREE.ConeGeometry(0.18, index === 1 ? 0.72 : 0.52, 4), glowMaterial(0xf6bd35, 1.25), [x, 1.96 + (index === 1 ? 0.1 : 0), 0]));
   }
 
-  if (zone.type !== "royal") {
+  if (zone.type === "launch" && labelIndex === 0) {
     const label = createLabelSprite(zone.label, zone.color, true, true);
     label.position.set(
       -factorySide * width * (0.72 + (labelIndex % 2) * 0.18),
@@ -596,6 +735,7 @@ const addZoneFeature = (
 
 const addSectionArchitecture = (scene: THREE.Scene, track: MarbleTrack) => {
   const width = trackWidthToWorld(track);
+  const featuredPieceTypes = new Set<TrackSectionType>();
   track.sections.forEach((section, index) => {
     const progress = (section.startProgress + section.endProgress) / 2;
     const connector = new THREE.Group();
@@ -658,17 +798,10 @@ const addSectionArchitecture = (scene: THREE.Scene, track: MarbleTrack) => {
         ));
       }
     }
-    if (section.type === "tunnel") {
-      [-0.42, 0, 0.42].forEach((z) => addMesh(group, new THREE.TorusGeometry(width * 0.56, 0.07, 6, 16, Math.PI), metalMaterial(GOLD, 0.2), [0, 0.08, z], [0, 0, Math.PI]));
-    } else if (section.type === "split") {
-      addMesh(group, new THREE.CylinderGeometry(width * 0.68, width * 0.8, 0.26, 8), metalMaterial(0x273033, 0.25), [0, -0.12, 0]);
-      [-1, 1].forEach((side) => addMesh(group, new THREE.BoxGeometry(0.16, 0.13, 1.2), glowMaterial(side > 0 ? 0x09e0df : 0xf6bd35, 0.8), [side * width * 0.25, 0.14, 0]));
-    } else if (section.type === "funnel") {
-      addMesh(group, new THREE.CylinderGeometry(width * 0.54, width * 0.27, 0.38, 20, 1, true), metalMaterial(0x4b3055, 0.24), [0, 0.08, 0]);
-    } else if (section.type === "speed-zone") {
-      [-0.35, 0, 0.35].forEach((z) => addArrow(group, "#09e0df", z, 0.62));
-    } else if (index % 2 === 0) {
-      [-0.45, 0.45].forEach((x) => addMesh(group, new THREE.ConeGeometry(0.12, 0.52, 5), glassMaterial("#8fe9ff"), [x, 0.28, 0]));
+    const isFirstOfType = !featuredPieceTypes.has(section.type);
+    if (isFirstOfType) {
+      group.add(createMarbleTrackPiece3D(section, width));
+      featuredPieceTypes.add(section.type);
     }
   });
 };
@@ -811,23 +944,130 @@ const addStartFinishAndBay = (scene: THREE.Scene, race: PreparedMarbleRace) => {
   finishGroup.add(finishLabel);
 };
 
+const addFactoryBoard = (scene: THREE.Scene) => {
+  const board = new THREE.Group();
+  board.name = "GRP_FactoryBoard";
+  scene.add(board);
+  const structuralSteel = metalMaterial(0x11191c, 0.34);
+  const panelSteel = metalMaterial(0x202a2d, 0.42);
+  const copper = metalMaterial(0xb66f27, 0.2);
+
+  const outerFloor = addMesh(
+    board,
+    new THREE.PlaneGeometry(44, 35),
+    new THREE.MeshStandardMaterial({ color: FLOOR, roughness: 0.82, metalness: 0.28 }),
+    [0, -1.7, 0],
+    [-Math.PI / 2, 0, 0],
+  );
+  outerFloor.castShadow = false;
+  outerFloor.receiveShadow = true;
+  addMesh(
+    board,
+    new THREE.BoxGeometry(BOARD_WIDTH, 0.76, BOARD_DEPTH),
+    structuralSteel,
+    [0, -1.28, 0],
+  );
+
+  const panelColumns = 4;
+  const panelRows = 3;
+  const panelWidth = BOARD_WIDTH / panelColumns - 0.18;
+  const panelDepth = BOARD_DEPTH / panelRows - 0.18;
+  const panels = new THREE.InstancedMesh(
+    new THREE.BoxGeometry(panelWidth, 0.055, panelDepth),
+    panelSteel,
+    panelColumns * panelRows,
+  );
+  panels.name = "SM_FactoryDeckPanels";
+  const matrix = new THREE.Matrix4();
+  let panelIndex = 0;
+  for (let row = 0; row < panelRows; row += 1) {
+    for (let column = 0; column < panelColumns; column += 1) {
+      matrix.makeTranslation(
+        -BOARD_WIDTH / 2 + BOARD_WIDTH / panelColumns * (column + 0.5),
+        -0.872,
+        -BOARD_DEPTH / 2 + BOARD_DEPTH / panelRows * (row + 0.5),
+      );
+      panels.setMatrixAt(panelIndex, matrix);
+      panelIndex += 1;
+    }
+  }
+  panels.receiveShadow = true;
+  board.add(panels);
+
+  const amberEdge = glowMaterial(0xf2a62b, 1.25);
+  const cyanEdge = glowMaterial(0x0ad7dd, 1.1);
+  [-1, 1].forEach((side) => {
+    const amber = addMesh(
+      board,
+      new THREE.BoxGeometry(BOARD_WIDTH - 0.8, 0.1, 0.12),
+      amberEdge,
+      [0, -0.78, side * (BOARD_DEPTH / 2 - 0.18)],
+    );
+    amber.castShadow = false;
+    const cyan = addMesh(
+      board,
+      new THREE.BoxGeometry(0.12, 0.1, BOARD_DEPTH - 0.8),
+      cyanEdge,
+      [side * (BOARD_WIDTH / 2 - 0.18), -0.78, 0],
+    );
+    cyan.castShadow = false;
+  });
+
+  const rivetPositions: THREE.Vector3[] = [];
+  for (let x = -BOARD_WIDTH / 2 + 0.55; x <= BOARD_WIDTH / 2 - 0.5; x += 1.05) {
+    rivetPositions.push(new THREE.Vector3(x, -0.765, -BOARD_DEPTH / 2 + 0.28));
+    rivetPositions.push(new THREE.Vector3(x, -0.765, BOARD_DEPTH / 2 - 0.28));
+  }
+  for (let z = -BOARD_DEPTH / 2 + 1.1; z <= BOARD_DEPTH / 2 - 1; z += 1.05) {
+    rivetPositions.push(new THREE.Vector3(-BOARD_WIDTH / 2 + 0.28, -0.765, z));
+    rivetPositions.push(new THREE.Vector3(BOARD_WIDTH / 2 - 0.28, -0.765, z));
+  }
+  const rivets = new THREE.InstancedMesh(
+    new THREE.CylinderGeometry(0.055, 0.07, 0.08, 7),
+    copper,
+    rivetPositions.length,
+  );
+  rivets.name = "SM_FactoryDeckRivets";
+  rivetPositions.forEach((position, index) => {
+    matrix.makeTranslation(position.x, position.y, position.z);
+    rivets.setMatrixAt(index, matrix);
+  });
+  board.add(rivets);
+
+  [-1, 1].forEach((side) => {
+    const pipeCurve = new THREE.CatmullRomCurve3([
+      new THREE.Vector3(side * 13.9, -0.58, -8.7),
+      new THREE.Vector3(side * 13.9, -0.25, -5.1),
+      new THREE.Vector3(side * 14.15, -0.25, 4.8),
+      new THREE.Vector3(side * 13.55, -0.58, 8.8),
+    ]);
+    addMesh(board, new THREE.TubeGeometry(pipeCurve, 42, 0.12, 7, false), copper);
+    [-7.3, 7.3].forEach((z) => {
+      addMesh(board, new THREE.CylinderGeometry(0.48, 0.58, 1.35, 10), structuralSteel, [side * 13.25, -0.18, z]);
+      addMesh(board, new THREE.TorusGeometry(0.49, 0.07, 7, 16), copper, [side * 13.25, 0.34, z], [Math.PI / 2, 0, 0]);
+      addMesh(board, new THREE.CylinderGeometry(0.12, 0.18, 0.72, 8), copper, [side * 13.25, 0.8, z]);
+    });
+  });
+
+  const grid = new THREE.GridHelper(BOARD_WIDTH - 0.7, 30, 0x22535b, 0x101f22);
+  grid.scale.z = (BOARD_DEPTH - 0.7) / (BOARD_WIDTH - 0.7);
+  grid.position.y = -0.838;
+  const gridMaterials = Array.isArray(grid.material) ? grid.material : [grid.material];
+  gridMaterials.forEach((material) => {
+    material.transparent = true;
+    material.opacity = 0.25;
+  });
+  board.add(grid);
+};
+
 const addEnvironment = (scene: THREE.Scene, difficulty: MarbleTrack["difficulty"]) => {
   scene.background = new THREE.Color(0x02080b);
-  scene.fog = new THREE.FogExp2(0x02080b, 0.016);
-  const floorMaterial = new THREE.MeshStandardMaterial({ color: FLOOR, roughness: 0.74, metalness: 0.38 });
-  const floor = addMesh(scene, new THREE.PlaneGeometry(42, 34), floorMaterial, [0, -0.86, 0], [-Math.PI / 2, 0, 0]);
-  floor.receiveShadow = true;
-  floor.castShadow = false;
+  scene.fog = new THREE.FogExp2(0x02080b, 0.0135);
+  addFactoryBoard(scene);
 
-  const grid = new THREE.GridHelper(42, 44, 0x17434b, 0x0b2025);
-  grid.position.y = -0.84;
-  const materials = Array.isArray(grid.material) ? grid.material : [grid.material];
-  materials.forEach((material) => { material.transparent = true; material.opacity = 0.24; });
-  scene.add(grid);
-
-  scene.add(new THREE.AmbientLight(0x8ac3ca, difficulty === "hard" ? 1.05 : 1.2));
-  scene.add(new THREE.HemisphereLight(0xb8f8ff, 0x1c0c04, difficulty === "hard" ? 2.3 : 2.6));
-  const key = new THREE.DirectionalLight(0xffdca0, 5.2);
+  scene.add(new THREE.AmbientLight(0x72a4ab, difficulty === "hard" ? 0.34 : 0.42));
+  scene.add(new THREE.HemisphereLight(0x75c9d1, 0x090301, difficulty === "hard" ? 0.86 : 1));
+  const key = new THREE.DirectionalLight(0xffd39a, 2.5);
   key.position.set(-8, 18, 10);
   key.castShadow = true;
   key.shadow.mapSize.set(1024, 1024);
@@ -837,13 +1077,13 @@ const addEnvironment = (scene: THREE.Scene, difficulty: MarbleTrack["difficulty"
   key.shadow.camera.bottom = -14;
   key.shadow.bias = -0.0004;
   scene.add(key);
-  const fill = new THREE.DirectionalLight(0x6feeff, 2.2);
+  const fill = new THREE.DirectionalLight(0x6feeff, 0.9);
   fill.position.set(10, 10, -12);
   scene.add(fill);
-  const cyan = new THREE.PointLight(0x00e8f0, 115, 30, 1.7);
+  const cyan = new THREE.PointLight(0x00e8f0, 45, 30, 1.7);
   cyan.position.set(8, 7, -5);
   scene.add(cyan);
-  const gold = new THREE.PointLight(0xffa928, 105, 28, 1.7);
+  const gold = new THREE.PointLight(0xffa928, 40, 28, 1.7);
   gold.position.set(-9, 6, 5);
   scene.add(gold);
 };
@@ -888,7 +1128,34 @@ const addAtmosphere = (
   });
 };
 
+const staticPaletteBucket = (material: THREE.Material) => {
+  if (
+    !(material instanceof THREE.MeshStandardMaterial) ||
+    material instanceof THREE.MeshPhysicalMaterial ||
+    material.transparent ||
+    material.blending !== THREE.NormalBlending ||
+    material.vertexColors ||
+    material.map ||
+    material.normalMap ||
+    material.bumpMap ||
+    material.roughnessMap ||
+    material.metalnessMap ||
+    material.alphaMap
+  ) return null;
+  const emissive = material.emissive.getHex() !== 0;
+  const metalness = Math.round(material.metalness * 4) / 4;
+  const roughness = Math.round(material.roughness * 4) / 4;
+  return {
+    kind: emissive ? "emissive" as const : "metal" as const,
+    key: `${emissive ? "emissive" : "palette"}:${emissive ? Math.round(material.emissiveIntensity * 4) / 4 : `${metalness}:${roughness}`}:${material.side}:${material.depthWrite ? 1 : 0}`,
+    metalness,
+    roughness,
+  };
+};
+
 const materialBatchKey = (material: THREE.Material) => {
+  const palette = staticPaletteBucket(material);
+  if (palette) return palette.key;
   const value = material as THREE.MeshStandardMaterial;
   return [
     material.type,
@@ -909,11 +1176,12 @@ const materialBatchKey = (material: THREE.Material) => {
 const batchStaticMeshes = (
   scene: THREE.Scene,
   animatedParts: readonly AnimatedPart[],
-  _animatedMaterials: readonly THREE.Material[],
+  animatedMaterials: readonly THREE.Material[],
   preservedObjects: readonly THREE.Object3D[],
 ) => {
   scene.updateMatrixWorld(true);
   const dynamicObjects = new Set<THREE.Object3D>(preservedObjects);
+  const dynamicMaterials = new Set(animatedMaterials);
   animatedParts.forEach(({ object }) => object.traverse((child) => dynamicObjects.add(child)));
   const groups = new Map<string, THREE.Mesh[]>();
 
@@ -921,7 +1189,7 @@ const batchStaticMeshes = (
     if (!(object instanceof THREE.Mesh) || object instanceof THREE.InstancedMesh) return;
     if (dynamicObjects.has(object)) return;
     const material = Array.isArray(object.material) ? null : object.material;
-    if (!material) return;
+    if (!material || dynamicMaterials.has(material)) return;
     const attributes = Object.keys(object.geometry.attributes).sort().join(",");
     const key = `${materialBatchKey(material)}:${object.geometry.index ? "indexed" : "plain"}:${attributes}:${object.castShadow ? 1 : 0}:${object.receiveShadow ? 1 : 0}`;
     const list = groups.get(key) ?? [];
@@ -932,11 +1200,42 @@ const batchStaticMeshes = (
   const orphanMaterials = new Set<THREE.Material>();
   groups.forEach((meshes) => {
     if (meshes.length < 2) return;
-    const geometries = meshes.map((mesh) => mesh.geometry.clone().applyMatrix4(mesh.matrixWorld));
+    const palette = staticPaletteBucket(meshes[0].material as THREE.Material);
+    const geometries = meshes.map((mesh) => {
+      const geometry = mesh.geometry.clone().applyMatrix4(mesh.matrixWorld);
+      if (palette) {
+        const sourceMaterial = mesh.material as THREE.MeshStandardMaterial;
+        const vertexCount = geometry.getAttribute("position").count;
+        const colors = new Float32Array(vertexCount * 3);
+        for (let index = 0; index < vertexCount; index += 1) {
+          colors[index * 3] = sourceMaterial.color.r;
+          colors[index * 3 + 1] = sourceMaterial.color.g;
+          colors[index * 3 + 2] = sourceMaterial.color.b;
+        }
+        geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+      }
+      return geometry;
+    });
     const mergedGeometry = mergeGeometries(geometries, false);
     geometries.forEach((geometry) => geometry.dispose());
     if (!mergedGeometry) return;
-    const material = meshes[0].material as THREE.Material;
+    const material = palette?.kind === "emissive"
+      ? new THREE.MeshBasicMaterial({
+        color: 0xffffff,
+        vertexColors: true,
+        side: (meshes[0].material as THREE.Material).side,
+        depthWrite: (meshes[0].material as THREE.Material).depthWrite,
+      })
+      : palette
+      ? new THREE.MeshStandardMaterial({
+        color: 0xffffff,
+        vertexColors: true,
+        metalness: palette.metalness,
+        roughness: palette.roughness,
+        side: (meshes[0].material as THREE.Material).side,
+        depthWrite: (meshes[0].material as THREE.Material).depthWrite,
+      })
+      : meshes[0].material as THREE.Material;
     const merged = new THREE.Mesh(mergedGeometry, material);
     merged.castShadow = meshes[0].castShadow;
     merged.receiveShadow = meshes[0].receiveShadow;
@@ -944,7 +1243,7 @@ const batchStaticMeshes = (
     meshes.forEach((mesh, index) => {
       mesh.parent?.remove(mesh);
       mesh.geometry.dispose();
-      if (index > 0 && !Array.isArray(mesh.material)) orphanMaterials.add(mesh.material);
+      if ((palette || index > 0) && !Array.isArray(mesh.material)) orphanMaterials.add(mesh.material);
     });
   });
   scene.userData.orphanMaterials = orphanMaterials;
@@ -952,13 +1251,20 @@ const batchStaticMeshes = (
 
 const buildScene = (renderer: THREE.WebGLRenderer, race: PreparedMarbleRace, key: string): MarbleSceneState => {
   const scene = new THREE.Scene();
+  scene.name = "SC_MarbleRace";
+  try {
   const camera = new THREE.OrthographicCamera(-16, 16, 11, -11, 0.1, 90);
+  camera.name = "CAM_MarbleRace";
+  const followCamera = new THREE.PerspectiveCamera(62, 1, 0.12, 70);
+  followCamera.name = "CAM_MarblePOV";
   addEnvironment(scene, race.track.difficulty);
   const animatedParts: AnimatedPart[] = [];
   const glowMaterials: THREE.MeshStandardMaterial[] = [];
-  addAtmosphere(scene, race.track, animatedParts);
-  const samples = createTrackSamples(race.track);
   const count = race.racers.length;
+  const animateDecorations = count <= 96;
+  addAtmosphere(scene, race.track, animatedParts);
+  const samples = createTrackSamples(race.track, count);
+  const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
   const trackBounds = new THREE.Box3().setFromPoints(samples.map((sample) => sample.position));
   const bayColumns = Math.max(2, Math.ceil(Math.sqrt(count * 1.15)));
   const baySpacing = count > 150 ? 0.17 : count > 90 ? 0.2 : count > 48 ? 0.24 : count > 20 ? 0.3 : 0.42;
@@ -975,16 +1281,56 @@ const buildScene = (renderer: THREE.WebGLRenderer, race: PreparedMarbleRace, key
       );
     });
   });
+  trackBounds.expandByScalar(1.4);
   const contentCenter = trackBounds.getCenter(new THREE.Vector3());
   const contentSize = trackBounds.getSize(new THREE.Vector3());
   const cameraDepthDirection = bayStart.position.z < contentCenter.z ? -1 : 1;
-  const overviewCameraPosition = new THREE.Vector3(contentCenter.x, 24, contentCenter.z + 20 * cameraDepthDirection);
+  const cameraSide = hashText(race.track.signature) % 2 === 0 ? 1 : -1;
   const overviewCameraTarget = new THREE.Vector3(contentCenter.x, Math.max(0.2, contentCenter.y * 0.42), contentCenter.z);
-  const stagingCameraPosition = new THREE.Vector3(bayStart.position.x, 22, bayStart.position.z + 8 * cameraDepthDirection);
-  const stagingCameraTarget = bayStart.position.clone().addScaledVector(bayStart.up, 0.35);
+  const overviewCameraPosition = new THREE.Vector3(
+    contentCenter.x + 11.5 * cameraSide,
+    22,
+    contentCenter.z + 16.5 * cameraDepthDirection,
+  );
+  const cameraForward = overviewCameraTarget.clone().sub(overviewCameraPosition).normalize();
+  const cameraRight = cameraForward.clone().cross(Y_AXIS).normalize();
+  const overlayClearance = Math.min(2.35, contentSize.x * 0.085);
+  overviewCameraPosition.addScaledVector(cameraRight, overlayClearance);
+  overviewCameraTarget.addScaledVector(cameraRight, overlayClearance);
+  const bayCameraPosition = new THREE.Vector3(
+    bayStart.position.x + 5.5 * cameraSide,
+    21.5,
+    bayStart.position.z + 8.5 * cameraDepthDirection,
+  ).addScaledVector(cameraRight, overlayClearance);
+  const bayCameraTarget = bayStart.position.clone()
+    .addScaledVector(bayStart.up, 0.35)
+    .addScaledVector(cameraRight, overlayClearance);
+  const stagingCameraPosition = overviewCameraPosition.clone().lerp(bayCameraPosition, 0.08);
+  const stagingCameraTarget = overviewCameraTarget.clone().lerp(bayCameraTarget, 0.08);
+  const cameraUp = cameraRight.clone().cross(cameraForward).normalize();
+  let projectedMinX = Number.POSITIVE_INFINITY;
+  let projectedMaxX = Number.NEGATIVE_INFINITY;
+  let projectedMinY = Number.POSITIVE_INFINITY;
+  let projectedMaxY = Number.NEGATIVE_INFINITY;
+  const projectedCorner = new THREE.Vector3();
+  [trackBounds.min.x, trackBounds.max.x].forEach((x) => {
+    [trackBounds.min.y, trackBounds.max.y].forEach((y) => {
+      [trackBounds.min.z, trackBounds.max.z].forEach((z) => {
+        projectedCorner.set(x, y, z).sub(overviewCameraTarget);
+        const projectedX = projectedCorner.dot(cameraRight);
+        const projectedY = projectedCorner.dot(cameraUp);
+        projectedMinX = Math.min(projectedMinX, projectedX);
+        projectedMaxX = Math.max(projectedMaxX, projectedX);
+        projectedMinY = Math.min(projectedMinY, projectedY);
+        projectedMaxY = Math.max(projectedMaxY, projectedY);
+      });
+    });
+  });
+  const projectedContentWidth = projectedMaxX - projectedMinX;
+  const projectedContentHeight = projectedMaxY - projectedMinY;
   camera.position.copy(stagingCameraPosition);
   camera.lookAt(stagingCameraTarget);
-  addTrackBody(scene, race.track, samples);
+  addTrackBody(scene, race.track, samples, count > 96);
   race.track.zones.forEach((zone, zoneIndex) => addZoneFeature(
     scene,
     race.track,
@@ -1012,30 +1358,96 @@ const buildScene = (renderer: THREE.WebGLRenderer, race: PreparedMarbleRace, key
     zone.scale * (race.track.powerZones.length > 6 ? 0.54 : 0.84),
     animatedParts,
     glowMaterials,
-    race.track.powerZones.length <= 5 && race.racers.length <= 96,
+    false,
   ));
   addStartFinishAndBay(scene, race);
 
-  const sphereDetail = count > 150 ? [9, 6] : count > 100 ? [11, 7] : count > 40 ? [16, 10] : [22, 14];
-  const marbleMaterial = count > 100
-    ? new THREE.MeshBasicMaterial({ color: 0xffffff, vertexColors: true })
-    : count > 48
-      ? new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, metalness: 0.12, roughness: 0.1 })
+  const sphereDetail = count > 150 ? [9, 6] : count > 100 ? [11, 7] : count > 40 ? [16, 10] : [18, 10];
+  const marbleMaterial = count > 72
+    ? new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, metalness: 0.42, roughness: 0.16 })
     : new THREE.MeshPhysicalMaterial({
       color: 0xffffff,
       vertexColors: true,
-      metalness: 0.08,
-      roughness: 0.1,
+      metalness: 0.2,
+      roughness: 0.08,
       clearcoat: 1,
-      clearcoatRoughness: 0.04,
+      clearcoatRoughness: 0.025,
+      transmission: 0.14,
+      thickness: 0.42,
+      ior: 1.38,
+      transparent: true,
+      opacity: 0.9,
     });
   const racers = new THREE.InstancedMesh(new THREE.SphereGeometry(1, sphereDetail[0], sphereDetail[1]), marbleMaterial, count);
+  racers.name = "SM_MarbleRacers";
   racers.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-  racers.castShadow = count <= 72;
+  racers.castShadow = false;
   racers.receiveShadow = true;
   race.racers.forEach((racer, index) => racers.setColorAt(index, new THREE.Color(racer.accent)));
   if (racers.instanceColor) racers.instanceColor.needsUpdate = true;
   scene.add(racers);
+
+  const racerCores = count <= 72
+    ? new THREE.InstancedMesh(
+      new THREE.SphereGeometry(1, count > 40 ? 8 : 10, count > 40 ? 5 : 7),
+      new THREE.MeshBasicMaterial({
+        color: 0xffffff,
+        vertexColors: true,
+        transparent: true,
+        opacity: 0.82,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+      }),
+      count,
+    )
+    : null;
+  if (racerCores) {
+    racerCores.name = "FX_MarbleLuminousCores";
+    racerCores.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    race.racers.forEach((racer, index) => racerCores.setColorAt(index, new THREE.Color(racer.accent)));
+    if (racerCores.instanceColor) racerCores.instanceColor.needsUpdate = true;
+    racerCores.renderOrder = 6;
+    racerCores.frustumCulled = false;
+    scene.add(racerCores);
+  }
+
+  const racerShadows = new THREE.InstancedMesh(
+    new THREE.CircleGeometry(1, 18),
+    new THREE.MeshBasicMaterial({
+      color: 0x000000,
+      transparent: true,
+      opacity: count > 100 ? 0.2 : 0.3,
+      depthWrite: false,
+      polygonOffset: true,
+      polygonOffsetFactor: -1,
+    }),
+    count,
+  );
+  racerShadows.name = "FX_MarbleBlobShadows";
+  racerShadows.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  racerShadows.frustumCulled = false;
+  racerShadows.renderOrder = 3;
+  scene.add(racerShadows);
+
+  const racerRings = new THREE.InstancedMesh(
+    new THREE.TorusGeometry(1, 0.09, 5, 18),
+    new THREE.MeshBasicMaterial({
+      color: 0xffffff,
+      vertexColors: true,
+      transparent: true,
+      opacity: count > 100 ? 0.5 : 0.72,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    }),
+    count,
+  );
+  racerRings.name = "FX_MarbleFloorRings";
+  racerRings.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  race.racers.forEach((racer, index) => racerRings.setColorAt(index, new THREE.Color(racer.accent)));
+  if (racerRings.instanceColor) racerRings.instanceColor.needsUpdate = true;
+  racerRings.frustumCulled = false;
+  racerRings.renderOrder = 4;
+  scene.add(racerRings);
 
   const glowGeometry = new THREE.BufferGeometry();
   glowGeometry.setAttribute("position", new THREE.Float32BufferAttribute(new Float32Array(count * 3), 3));
@@ -1063,11 +1475,20 @@ const buildScene = (renderer: THREE.WebGLRenderer, race: PreparedMarbleRace, key
   const racerLabels = count <= 18
     ? race.racers.map((racer) => {
       const label = createLabelSprite(`${racer.previousWinner ? "♛  " : ""}${racer.number}  ${racer.participant.name}`, racer.accent, true);
-      label.scale.multiplyScalar(0.62);
+      label.scale.multiplyScalar(0.88);
       scene.add(label);
       return label;
     })
     : [];
+
+  const winnerLabel = count > 18
+    ? createLabelSprite(`♛  ${race.selected.number}  ${race.selected.participant.name}`, race.selected.accent, false)
+    : null;
+  if (winnerLabel) {
+    winnerLabel.visible = false;
+    winnerLabel.scale.multiplyScalar(0.76);
+    scene.add(winnerLabel);
+  }
 
   const winnerCrowns = new THREE.InstancedMesh(
     new THREE.CylinderGeometry(0.19, 0.27, 0.25, 5, 1, true),
@@ -1080,19 +1501,47 @@ const buildScene = (renderer: THREE.WebGLRenderer, race: PreparedMarbleRace, key
 
   const selectedRing = addMesh(scene, new THREE.TorusGeometry(0.36, 0.055, 7, 28), glowMaterial(0xffec9b, 2), [0, -20, 0], [Math.PI / 2, 0, 0]);
   selectedRing.visible = false;
-  batchStaticMeshes(scene, animatedParts, glowMaterials, [racers, winnerCrowns, selectedRing]);
-  renderer.shadowMap.enabled = count <= 96;
-  renderer.shadowMap.autoUpdate = count <= 96;
+  const followBeacon = addMesh(
+    scene,
+    new THREE.SphereGeometry(1, 10, 7),
+    new THREE.MeshBasicMaterial({ color: 0x5ffff7, transparent: true, opacity: 0.76, wireframe: true, depthTest: false }),
+    [0, -20, 0],
+  );
+  followBeacon.visible = false;
+  followBeacon.renderOrder = 24;
+  animatedParts.forEach(({ object }) => object.traverse((child) => {
+    if (child instanceof THREE.Mesh) child.castShadow = false;
+  }));
+  const activeAnimatedParts = animateDecorations ? animatedParts : [];
+  const activeGlowMaterials = animateDecorations ? glowMaterials : [];
+  batchStaticMeshes(scene, activeAnimatedParts, activeGlowMaterials, [
+    racers,
+    ...(racerCores ? [racerCores] : []),
+    racerRings,
+    racerShadows,
+    winnerCrowns,
+    selectedRing,
+    followBeacon,
+  ]);
+  renderer.shadowMap.enabled = count <= 48;
+  renderer.shadowMap.autoUpdate = count <= 48;
   return {
     key,
+    raceIdentity: race,
     renderer,
     scene,
     camera,
+    followCamera,
     racers,
+    racerCores,
+    racerRings,
+    racerShadows,
     racerGlow,
     racerLabels,
+    winnerLabel,
     winnerCrowns,
     selectedRing,
+    followBeacon,
     trackSamples: samples,
     startPoint: samples[0],
     motionPoint: createEmptyWorldPoint(),
@@ -1108,80 +1557,139 @@ const buildScene = (renderer: THREE.WebGLRenderer, race: PreparedMarbleRace, key
     stagingCameraPosition,
     stagingCameraTarget,
     cameraTarget: new THREE.Vector3(),
-    readyZoom: count > 150 ? 2 : count > 90 ? 2.05 : count > 48 ? 2.1 : count > 18 ? 2.15 : 1.9,
+    followCameraTarget: new THREE.Vector3(),
+    followCameraUp: new THREE.Vector3(0, 1, 0),
+    racerPositions: race.racers.map(() => new THREE.Vector3()),
+    activeFollowRacerId: null,
+    readyZoom: 1.16,
     contentWidth: contentSize.x,
     contentDepth: contentSize.z,
-    animatedParts,
-    glowMaterials,
+    projectedContentWidth,
+    projectedContentHeight,
+    animatedParts: activeAnimatedParts,
+    glowMaterials: activeGlowMaterials,
     participantCount: count,
+    reducedMotion,
     shadowReady: false,
+    resolutionScale: 1,
+    lastRenderAt: 0,
+    averageFrameMs: 16.7,
+    slowFrames: 0,
+    fastFrames: 0,
+    lastEffectsAt: Number.NEGATIVE_INFINITY,
+    lastMetricsAt: Number.NEGATIVE_INFINITY,
     width: 0,
     height: 0,
   };
-};
-
-const disposeMaterial = (material: THREE.Material) => {
-  const withMaps = material as THREE.Material & { map?: THREE.Texture | null; emissiveMap?: THREE.Texture | null };
-  withMaps.map?.dispose();
-  withMaps.emissiveMap?.dispose();
-  material.dispose();
+  } catch (error) {
+    try {
+      disposeScene(scene);
+    } catch {
+      // El error original de construcción debe llegar al componente para activar fallback.
+    }
+    throw error;
+  }
 };
 
 const disposeScene = (scene: THREE.Scene) => {
+  const geometries = new Set<THREE.BufferGeometry>();
+  const materials = new Set<THREE.Material>();
+  const textures = new Set<THREE.Texture>();
   scene.traverse((object) => {
     if (object instanceof THREE.Mesh || object instanceof THREE.Line || object instanceof THREE.Sprite || object instanceof THREE.Points) {
-      object.geometry?.dispose();
+      if ("geometry" in object && object.geometry instanceof THREE.BufferGeometry) geometries.add(object.geometry);
       const material = object.material;
-      if (Array.isArray(material)) material.forEach(disposeMaterial);
-      else if (material) disposeMaterial(material);
+      const objectMaterials = Array.isArray(material) ? material : [material];
+      objectMaterials.forEach((entry) => {
+        if (entry) materials.add(entry);
+      });
     }
   });
   const orphanMaterials = scene.userData.orphanMaterials as Set<THREE.Material> | undefined;
-  orphanMaterials?.forEach(disposeMaterial);
+  orphanMaterials?.forEach((material) => materials.add(material));
+  materials.forEach((material) => {
+    Object.values(material).forEach((value) => {
+      if (value instanceof THREE.Texture) textures.add(value);
+    });
+  });
+  textures.forEach((texture) => texture.dispose());
+  materials.forEach((material) => material.dispose());
+  geometries.forEach((geometry) => geometry.dispose());
 };
 
-const createRenderer = (canvas: HTMLCanvasElement) => {
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false, powerPreference: "high-performance" });
+const releaseSceneState = (canvas: HTMLCanvasElement, state: MarbleSceneState) => {
+  if (sceneStates.get(canvas) === state) sceneStates.delete(canvas);
+  try {
+    disposeScene(state.scene);
+  } catch {
+    // El contexto también debe liberarse si un recurso de terceros falla al desecharse.
+  }
+  try {
+    state.renderer.dispose();
+  } catch {
+    // La API pública de dispose es deliberadamente idempotente y segura tras fallo parcial.
+  }
+};
+
+const createRenderer = (canvas: HTMLCanvasElement, participantCount: number) => {
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: participantCount <= 96, alpha: false, powerPreference: "high-performance" });
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.52;
+  renderer.toneMappingExposure = 1.12;
   renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.shadowMap.type = THREE.PCFShadowMap;
   return renderer;
 };
 
 const sceneKey = (race: PreparedMarbleRace) => `${race.track.signature}:${race.racers.map((racer) => `${racer.id}-${racer.participant.name}-${racer.previousWinner ? "c" : "n"}`).join("|")}`;
 
 const ensureState = (canvas: HTMLCanvasElement, race: PreparedMarbleRace) => {
-  const key = sceneKey(race);
   const current = sceneStates.get(canvas);
-  if (current?.key === key) return current;
-  const renderer = current?.renderer ?? createRenderer(canvas);
-  if (current) disposeScene(current.scene);
-  const next = buildScene(renderer, race, key);
-  sceneStates.set(canvas, next);
-  return next;
+  if (current?.raceIdentity === race) return current;
+  const key = sceneKey(race);
+  let renderer: THREE.WebGLRenderer | undefined;
+  try {
+    renderer = current?.renderer ?? createRenderer(canvas, race.racers.length);
+    if (current) {
+      sceneStates.delete(canvas);
+      disposeScene(current.scene);
+    }
+    const next = buildScene(renderer, race, key);
+    canvas.dataset.renderQuality = "high";
+    sceneStates.set(canvas, next);
+    return next;
+  } catch (error) {
+    sceneStates.delete(canvas);
+    try {
+      renderer?.dispose();
+    } catch {
+      // El error original de construcción conserva prioridad para activar el fallback.
+    }
+    throw error;
+  }
 };
 
 const resizeRenderer = (state: MarbleSceneState, canvas: HTMLCanvasElement) => {
   const bounds = canvas.getBoundingClientRect();
-  const width = Math.max(520, Math.round(bounds.width));
-  const height = Math.max(480, Math.round(bounds.height));
+  const width = Math.max(1, Math.round(bounds.width));
+  const height = Math.max(1, Math.round(bounds.height));
   if (state.width === width && state.height === height) return;
   state.width = width;
   state.height = height;
-  const pixelRatioLimit = state.participantCount > 150 ? 1.15 : state.participantCount > 96 ? 1.35 : 1.65;
-  state.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, pixelRatioLimit));
+  const pixelRatioLimit = state.participantCount > 150 ? 0.95 : state.participantCount > 96 ? 1.1 : state.participantCount > 48 ? 1.3 : 1.55;
+  state.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, pixelRatioLimit) * state.resolutionScale);
   state.renderer.setSize(width, height, false);
   const aspect = width / height;
-  const paddedWidth = state.contentWidth + 5.2;
-  const paddedDepth = state.contentDepth * 0.78 + 5.6;
-  const viewHeight = THREE.MathUtils.clamp(Math.max(12, paddedDepth, paddedWidth / aspect), 12, 21.5);
+  const paddedWidth = state.projectedContentWidth * 0.96;
+  const paddedHeight = state.projectedContentHeight;
+  const viewHeight = THREE.MathUtils.clamp(Math.max(paddedHeight, paddedWidth / aspect), 11, 30);
   state.camera.left = -(viewHeight * aspect) / 2;
   state.camera.right = (viewHeight * aspect) / 2;
   state.camera.top = viewHeight / 2;
   state.camera.bottom = -viewHeight / 2;
   state.camera.updateProjectionMatrix();
+  state.followCamera.aspect = aspect;
+  state.followCamera.updateProjectionMatrix();
 };
 
 const updateRacers = (
@@ -1198,7 +1706,8 @@ const updateRacers = (
   const matrix = state.matrix;
   const quaternion = state.quaternion;
   const scale = state.scaleVector;
-  const raceElapsed = phase === "ready" ? 0 : Math.max(0, elapsedMs - 1400);
+  const introMs = state.reducedMotion ? 0 : 1400;
+  const raceElapsed = phase === "ready" ? 0 : Math.max(0, elapsedMs - introMs);
   const launchBlend = phase === "ready" ? 0 : Math.min(1, raceElapsed / 900);
   const smoothLaunch = launchBlend * launchBlend * (3 - 2 * launchBlend);
   const selectedIndex = race.racers.findIndex((racer) => racer.id === race.selected.id);
@@ -1219,10 +1728,33 @@ const updateRacers = (
       .addScaledVector(start.tangent, -(row + 0.75) * spacing)
       .addScaledVector(start.up, radius + 0.17)
       .lerp(racingPosition, smoothLaunch);
-    quaternion.setFromAxisAngle(trackPoint.normal, marbleState.spinAngle);
+    state.racerPositions[index].copy(stagingPosition);
+    quaternion.setFromAxisAngle(trackPoint.normal, state.reducedMotion ? 0 : marbleState.spinAngle);
     scale.setScalar(radius);
     matrix.compose(stagingPosition, quaternion, scale);
     state.racers.setMatrixAt(index, matrix);
+    if (state.racerCores) {
+      matrix.compose(stagingPosition, quaternion, scale.setScalar(radius * 0.42));
+      state.racerCores.setMatrixAt(index, matrix);
+    }
+    const shadowScale = radius * 1.38 * THREE.MathUtils.clamp(1 - marbleState.verticalOffset * 1.8, 0.42, 1);
+    quaternion.setFromUnitVectors(Z_AXIS, trackPoint.up);
+    const contactPosition = state.labelVector.copy(stagingPosition).addScaledVector(
+      trackPoint.up,
+      -(radius + 0.158 + marbleState.verticalOffset * smoothLaunch),
+    );
+    matrix.compose(
+      contactPosition,
+      quaternion,
+      scale.set(shadowScale, shadowScale, 1),
+    );
+    state.racerShadows.setMatrixAt(index, matrix);
+    matrix.compose(
+      contactPosition.addScaledVector(trackPoint.up, 0.012),
+      quaternion,
+      scale.setScalar(radius * (count > 100 ? 1.42 : 1.62)),
+    );
+    state.racerRings.setMatrixAt(index, matrix);
     glowPositions.setXYZ(index, stagingPosition.x, stagingPosition.y, stagingPosition.z);
     if (state.racerLabels[index]) {
       state.racerLabels[index].position.copy(
@@ -1231,7 +1763,7 @@ const updateRacers = (
       state.racerLabels[index].visible = phase !== "finished" || index === selectedIndex;
     }
     if (racer.previousWinner) {
-      quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), trackPoint.up);
+      quaternion.setFromUnitVectors(Y_AXIS, trackPoint.up);
       matrix.compose(
         state.labelVector.copy(stagingPosition).addScaledVector(trackPoint.up, radius + 0.38),
         quaternion,
@@ -1245,12 +1777,22 @@ const updateRacers = (
     if (phase === "finished" && index === selectedIndex) {
       state.selectedRing.visible = true;
       state.selectedRing.position.copy(stagingPosition).addScaledVector(trackPoint.up, -(radius + 0.11));
-      state.selectedRing.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), trackPoint.up);
-      state.selectedRing.scale.setScalar(1 + Math.sin(elapsedMs / 180) * 0.12);
+      state.selectedRing.quaternion.setFromUnitVectors(Z_AXIS, trackPoint.up);
+      state.selectedRing.scale.setScalar(state.reducedMotion ? 1.08 : 1 + Math.sin(elapsedMs / 180) * 0.12);
+      if (state.winnerLabel) {
+        state.winnerLabel.visible = true;
+        state.winnerLabel.position.copy(stagingPosition).addScaledVector(trackPoint.up, radius + 0.72);
+      }
     }
   });
-  if (phase !== "finished") state.selectedRing.visible = false;
+  if (phase !== "finished") {
+    state.selectedRing.visible = false;
+    if (state.winnerLabel) state.winnerLabel.visible = false;
+  }
   state.racers.instanceMatrix.needsUpdate = true;
+  if (state.racerCores) state.racerCores.instanceMatrix.needsUpdate = true;
+  state.racerRings.instanceMatrix.needsUpdate = true;
+  state.racerShadows.instanceMatrix.needsUpdate = true;
   state.winnerCrowns.instanceMatrix.needsUpdate = true;
   glowPositions.needsUpdate = true;
 };
@@ -1260,36 +1802,146 @@ export const drawMarbleRace3D = (
   race: PreparedMarbleRace,
   elapsedMs: number,
   phase: MarbleRaceVisualPhase,
+  followRacerId: string | null = null,
 ) => {
-  const state = ensureState(canvas, race);
-  resizeRenderer(state, canvas);
-  const elapsedSeconds = elapsedMs / 1000;
-  state.animatedParts.forEach(({ object, update }) => update(object, elapsedSeconds));
-  state.glowMaterials.forEach((material, index) => {
-    material.emissiveIntensity = 1.05 + Math.sin(elapsedSeconds * 2.25 + index * 0.7) * 0.3;
-  });
-  updateRacers(state, race, elapsedMs, phase);
-  const cameraBlendRaw = phase === "ready" ? 0 : phase === "finished" ? 1 : Math.min(1, elapsedMs / 1400);
-  const cameraBlend = cameraBlendRaw * cameraBlendRaw * (3 - 2 * cameraBlendRaw);
-  state.camera.position.lerpVectors(state.stagingCameraPosition, state.overviewCameraPosition, cameraBlend);
-  state.cameraTarget.lerpVectors(state.stagingCameraTarget, state.overviewCameraTarget, cameraBlend);
-  state.camera.zoom = THREE.MathUtils.lerp(state.readyZoom, 1, cameraBlend);
-  state.camera.lookAt(state.cameraTarget);
-  state.camera.updateProjectionMatrix();
-  if (state.renderer.shadowMap.enabled && !state.shadowReady) state.renderer.shadowMap.needsUpdate = true;
-  state.renderer.render(state.scene, state.camera);
-  canvas.dataset.renderCalls = String(state.renderer.info.render.calls);
-  canvas.dataset.renderTriangles = String(state.renderer.info.render.triangles);
-  if (state.renderer.shadowMap.enabled && !state.shadowReady) {
-    state.renderer.shadowMap.autoUpdate = false;
-    state.shadowReady = true;
+  let state: MarbleSceneState | undefined;
+  try {
+    state = ensureState(canvas, race);
+    const renderAt = performance.now();
+    if (phase === "racing" && state.lastRenderAt > 0) {
+      const frameInterval = renderAt - state.lastRenderAt;
+      state.averageFrameMs = state.averageFrameMs * 0.9 + Math.min(50, frameInterval) * 0.1;
+      if (state.averageFrameMs > 19 || frameInterval > 24) {
+        state.slowFrames = Math.min(24, state.slowFrames + 2);
+        state.fastFrames = 0;
+      } else {
+        state.slowFrames = Math.max(0, state.slowFrames - 1);
+        state.fastFrames = frameInterval < 18.5 ? Math.min(300, state.fastFrames + 1) : 0;
+      }
+      if (state.slowFrames >= 12 && state.resolutionScale > 0.68) {
+        state.resolutionScale = state.resolutionScale > 0.9 ? 0.82 : 0.68;
+        state.width = 0;
+        canvas.dataset.renderQuality = state.resolutionScale < 0.75 ? "performance" : "balanced";
+        state.slowFrames = 0;
+        state.fastFrames = 0;
+      } else if (state.fastFrames >= 240 && state.resolutionScale < 1) {
+        state.resolutionScale = state.resolutionScale < 0.8 ? 0.82 : 1;
+        state.width = 0;
+        canvas.dataset.renderQuality = state.resolutionScale === 1 ? "high" : "balanced";
+        state.slowFrames = 0;
+        state.fastFrames = 0;
+      }
+    }
+    state.lastRenderAt = renderAt;
+    resizeRenderer(state, canvas);
+    const elapsedSeconds = elapsedMs / 1000;
+    const reducedMotion = state.reducedMotion;
+    const effectsIntervalMs = state.participantCount > 120 ? 33 : state.participantCount > 72 ? 22 : 0;
+    if (elapsedMs < state.lastEffectsAt || effectsIntervalMs === 0 || elapsedMs - state.lastEffectsAt >= effectsIntervalMs) {
+      if (!reducedMotion) state.animatedParts.forEach(({ object, update }) => update(object, elapsedSeconds));
+      state.glowMaterials.forEach((material, index) => {
+        material.emissiveIntensity = reducedMotion ? 1.12 : 1.05 + Math.sin(elapsedSeconds * 2.25 + index * 0.7) * 0.3;
+      });
+      state.lastEffectsAt = elapsedMs;
+    }
+    updateRacers(state, race, elapsedMs, phase);
+    const introMs = state.reducedMotion ? 0 : 1400;
+    const followIndex = followRacerId
+      ? race.racers.findIndex((racer) => racer.id === followRacerId)
+      : -1;
+    const followActive = phase === "racing" && elapsedMs >= introMs && followIndex >= 0;
+    let renderCamera: THREE.Camera = state.camera;
+    if (followActive) {
+      const followedRacer = race.racers[followIndex];
+      const raceElapsed = Math.max(0, elapsedMs - introMs);
+      const motion = getMarbleMotion(followedRacer, race.track, raceElapsed);
+      const trackPoint = sampleWorldPoint(state.trackSamples, motion.progress, state.motionPoint);
+      const baseRadius = race.racers.length > 150 ? 0.085 : race.racers.length > 90 ? 0.105 : race.racers.length > 48 ? 0.13 : race.racers.length > 22 ? 0.16 : 0.22;
+      const followedRadius = baseRadius * motion.radiusScale;
+      const speedBlend = THREE.MathUtils.clamp(motion.velocity * 8, 0, 1);
+      const cameraSide = hashText(followedRacer.id) % 2 === 0 ? 1 : -1;
+      const cameraDistance = 3.75 + speedBlend * 1.05;
+      const cameraHeight = 1.9 + followedRadius * 1.25 + speedBlend * 0.42;
+      const cameraShoulder = cameraSide * (0.34 + speedBlend * 0.18);
+      const desiredPosition = state.positionVector.copy(state.racerPositions[followIndex])
+        .addScaledVector(trackPoint.up, cameraHeight)
+        .addScaledVector(trackPoint.tangent, -cameraDistance)
+        .addScaledVector(trackPoint.normal, cameraShoulder);
+      const desiredTarget = state.stagingVector.copy(state.racerPositions[followIndex])
+        .addScaledVector(trackPoint.tangent, 2.05 + speedBlend * 0.9)
+        .addScaledVector(trackPoint.up, followedRadius * 0.45 + 0.2);
+      state.followCameraUp.copy(Y_AXIS).lerp(trackPoint.up, 0.2).normalize();
+      if (state.activeFollowRacerId !== followRacerId) {
+        state.followCamera.position.copy(desiredPosition);
+        state.followCameraTarget.copy(desiredTarget);
+        state.followCamera.up.copy(state.followCameraUp);
+        state.racerLabels.forEach((label) => { label.visible = false; });
+      } else {
+        const cameraResponse = state.reducedMotion
+          ? 1
+          : 1 - Math.exp(-THREE.MathUtils.clamp(state.averageFrameMs, 8, 34) / 88);
+        state.followCamera.position.lerp(desiredPosition, cameraResponse);
+        state.followCameraTarget.lerp(desiredTarget, Math.min(1, cameraResponse * 1.28));
+        state.followCamera.up.lerp(state.followCameraUp, cameraResponse * 0.7).normalize();
+      }
+      const desiredFov = 60 + speedBlend * 4;
+      if (Math.abs(state.followCamera.fov - desiredFov) > 0.05) {
+        state.followCamera.fov = desiredFov;
+        state.followCamera.updateProjectionMatrix();
+      }
+      state.followCamera.lookAt(state.followCameraTarget);
+      state.racerRings.visible = false;
+      state.racerShadows.visible = false;
+      state.racerGlow.visible = false;
+      state.selectedRing.visible = true;
+      state.selectedRing.position.copy(state.racerPositions[followIndex]).addScaledVector(trackPoint.up, -(followedRadius + 0.1));
+      state.selectedRing.quaternion.setFromUnitVectors(Z_AXIS, trackPoint.up);
+      state.selectedRing.scale.setScalar(0.82 + speedBlend * 0.12);
+      state.followBeacon.visible = true;
+      state.followBeacon.position.copy(state.racerPositions[followIndex]);
+      state.followBeacon.scale.setScalar(Math.max(0.22, followedRadius * 2.5));
+      state.followBeacon.rotation.y = elapsedSeconds * 1.4;
+      state.activeFollowRacerId = followRacerId;
+      renderCamera = state.followCamera;
+      if (canvas.dataset.cameraStyle !== "cinematic-chase") canvas.dataset.cameraStyle = "cinematic-chase";
+      const cameraMode = `marble-${followedRacer.participant.id}`;
+      if (canvas.dataset.cameraMode !== cameraMode) canvas.dataset.cameraMode = cameraMode;
+    } else {
+      const cameraBlendRaw = phase === "ready" ? 0 : state.reducedMotion || phase === "finished" ? 1 : Math.min(1, elapsedMs / 1400);
+      const cameraBlend = cameraBlendRaw * cameraBlendRaw * (3 - 2 * cameraBlendRaw);
+      state.camera.position.lerpVectors(state.stagingCameraPosition, state.overviewCameraPosition, cameraBlend);
+      state.cameraTarget.lerpVectors(state.stagingCameraTarget, state.overviewCameraTarget, cameraBlend);
+      state.camera.zoom = THREE.MathUtils.lerp(state.readyZoom, 1, cameraBlend);
+      state.camera.lookAt(state.cameraTarget);
+      state.camera.updateProjectionMatrix();
+      state.racerRings.visible = true;
+      state.racerShadows.visible = true;
+      state.racerGlow.visible = true;
+      state.followBeacon.visible = false;
+      if (phase !== "finished") state.selectedRing.visible = false;
+      state.activeFollowRacerId = null;
+      if (canvas.dataset.cameraStyle !== "overview") canvas.dataset.cameraStyle = "overview";
+      if (canvas.dataset.cameraMode !== "overview") canvas.dataset.cameraMode = "overview";
+    }
+    if (state.renderer.shadowMap.enabled && !state.shadowReady) state.renderer.shadowMap.needsUpdate = true;
+    state.renderer.render(state.scene, renderCamera);
+    if (renderAt < state.lastMetricsAt || renderAt - state.lastMetricsAt >= 500 || phase !== "racing") {
+      canvas.dataset.renderCalls = String(state.renderer.info.render.calls);
+      canvas.dataset.renderTriangles = String(state.renderer.info.render.triangles);
+      state.lastMetricsAt = renderAt;
+    }
+    if (state.renderer.shadowMap.enabled && !state.shadowReady) {
+      state.renderer.shadowMap.autoUpdate = false;
+      state.shadowReady = true;
+    }
+  } catch (error) {
+    if (state) releaseSceneState(canvas, state);
+    throw error;
   }
 };
 
 export const disposeMarbleRace3D = (canvas: HTMLCanvasElement) => {
   const state = sceneStates.get(canvas);
   if (!state) return;
-  disposeScene(state.scene);
-  state.renderer.dispose();
-  sceneStates.delete(canvas);
+  releaseSceneState(canvas, state);
 };

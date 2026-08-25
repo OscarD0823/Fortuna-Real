@@ -2,9 +2,13 @@ import { buildCardAssignments, shuffleCards } from "../src/games/cards/cardDeck.
 import { arrangeEliminationEntries } from "../src/games/roulette/rouletteEntries.ts";
 import { calculateSpinRotations } from "../src/games/roulette/rouletteMath.ts";
 import {
+  canConfirmPinballFinish,
   createPinballPhysicsBall,
+  createPinballPhysicsFrame,
   generatePinballLayout,
+  getPinballFlipperCollider,
   getPinballFinishCrossing,
+  getPinballTargetColliders,
   launchPinballPhysicsBall,
   preparePinballRound,
   stepPinballPhysics,
@@ -112,7 +116,7 @@ for (let count = 2; count <= 200; count += 1) {
       if (
         round.balls.length !== count ||
         new Set(round.balls.map((ball) => ball.participant.id)).size !== count ||
-        new Set(round.balls.map((ball) => ball.launchDelayMs)).size !== count ||
+        round.balls.some((ball) => ball.launchDelayMs !== 0) ||
         round.controlMode !== controlMode ||
         round.drawMode !== drawMode ||
         round.layout.finishGate.width <= 0
@@ -124,6 +128,21 @@ for (let count = 2; count <= 200; count += 1) {
 
   const simulation = preparePinballRound(participants, "direct", "automatic", seeds[0]);
   const gate = simulation.layout.finishGate;
+  if (
+    canConfirmPinballFinish(count - 1, count) ||
+    !canConfirmPinballFinish(count, count) ||
+    getPinballTargetColliders().length !== 7
+  ) {
+    throw new Error(`Contrato visual/físico de pinball inválido para ${count} pelotas.`);
+  }
+  const leftFlipper = getPinballFlipperCollider("left", 0.48);
+  const rightFlipper = getPinballFlipperCollider("right", -0.48);
+  if (![leftFlipper, rightFlipper].every((collider) =>
+    [collider.start.x, collider.start.z, collider.end.x, collider.end.z, collider.radius].every(Number.isFinite) &&
+    Math.hypot(collider.end.x - collider.start.x, collider.end.z - collider.start.z) > 2
+  )) {
+    throw new Error(`Colliders de flipper inválidos para ${count} pelotas.`);
+  }
   const crossing = getPinballFinishCrossing(gate.x, gate.z - 0.5, gate.x, gate.z + 0.5, gate);
   const outsideCrossing = getPinballFinishCrossing(gate.x + gate.width, gate.z - 0.5, gate.x + gate.width, gate.z + 0.5, gate);
   const reverseCrossing = getPinballFinishCrossing(gate.x, gate.z + 0.5, gate.x, gate.z - 0.5, gate);
@@ -135,6 +154,55 @@ for (let count = 2; count <= 200; count += 1) {
     launchPinballPhysicsBall(ball, assignment, simulation.layout);
     return ball;
   });
+  const physicalStarts = new Set(physicsBalls.map((ball) =>
+    [ball.x, ball.z, ball.vx, ball.vz, ball.radius].map((value) => value.toFixed(6)).join("|"),
+  ));
+  if (
+    physicalStarts.size !== count
+    || simulation.balls.some((ball) => ball.launchDelayMs !== 0)
+    || !simulation.balls.some((ball) => ball.id === simulation.selected.id)
+    || !/^PIN-[0-9A-F]{64}$/u.test(simulation.commitmentId)
+  ) {
+    throw new Error(`Pinball no conservó salida simultánea, dispersión visible y resultado sellado para ${count} pelotas.`);
+  }
+  const baselineBall = createPinballPhysicsBall(simulation.balls[0], simulation.layout);
+  launchPinballPhysicsBall(baselineBall, simulation.balls[0], simulation.layout);
+  const preparedBall = { ...baselineBall };
+  const equivalenceFlippers = { left: true, right: false, leftAngle: 0.31, rightAngle: 0.16 };
+  const equivalenceSpinnerAngles = simulation.layout.spinners.map((spinner, index) => spinner.rotation + index * 0.07);
+  const preparedFrame = createPinballPhysicsFrame(
+    simulation.layout,
+    1 / 60,
+    equivalenceFlippers,
+    equivalenceSpinnerAngles,
+  );
+  stepPinballPhysics(
+    baselineBall,
+    simulation.layout,
+    1 / 60,
+    equivalenceFlippers,
+    equivalenceSpinnerAngles,
+  );
+  stepPinballPhysics(
+    preparedBall,
+    simulation.layout,
+    1 / 60,
+    equivalenceFlippers,
+    equivalenceSpinnerAngles,
+    preparedFrame,
+  );
+  if (
+    ["x", "z", "vx", "vz", "radius", "respawnAtMs", "collisions"].some((key) =>
+      Math.abs(
+        baselineBall[key as keyof typeof baselineBall] as number
+        - (preparedBall[key as keyof typeof preparedBall] as number),
+      ) > 1e-10,
+    )
+    || baselineBall.launched !== preparedBall.launched
+    || baselineBall.drained !== preparedBall.drained
+  ) {
+    throw new Error(`El frame físico compartido alteró la simulación para ${count} pelotas.`);
+  }
   for (let step = 0; step < 12; step += 1) {
     physicsBalls.forEach((ball, index) => {
       stepPinballPhysics(ball, simulation.layout, 1 / 60, {

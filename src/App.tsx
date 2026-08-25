@@ -22,6 +22,8 @@ import {
   Hash,
   History,
   Layers3,
+  Mic,
+  MicOff,
   Play,
   RotateCcw,
   Settings2,
@@ -46,35 +48,36 @@ import type {
   RoundResult,
 } from "./core/types";
 import { CardGame } from "./games/cards/CardGame";
-import type { CardAssignment } from "./games/cards/cardDeck";
+import { prepareCardRound, type CardAssignment } from "./games/cards/cardDeck";
 import { DuckHunt } from "./games/ducks/DuckHunt";
 import type { DuckContestant } from "./games/ducks/duckHuntEngine";
 import { MarbleRace } from "./games/marbles/MarbleRace";
 import {
   difficultyLabels,
+  prepareMarbleRace,
   powerLabels,
   powersByDifficulty,
   type MarbleRacer,
   type MarbleTrack,
 } from "./games/marbles/marbleRaceEngine";
 import { PinballGame } from "./games/pinball/PinballGame";
-import type { PinballBallAssignment } from "./games/pinball/pinballEngine";
+import {
+  preparePinballRound,
+  type PinballBallAssignment,
+} from "./games/pinball/pinballEngine";
 import { RouletteWheel } from "./games/roulette/RouletteWheel";
+import { createRouletteCommitment } from "./games/roulette/rouletteCommitment";
 import { arrangeEliminationEntries } from "./games/roulette/rouletteEntries";
 import { DrawSetup } from "./modules/draw/DrawSetup";
 import { ParticipantPanel } from "./modules/participants/ParticipantPanel";
 import { useDrawStore } from "./modules/participants/drawStore";
 import { ResultReveal } from "./modules/results/ResultReveal";
+import { resolveFinalWinner } from "./modules/results/finalWinner";
 import { WinnerHistory } from "./modules/winners/WinnerHistory";
 import { fortunaAudio } from "./shared/audio/audioEngine";
+import { sha256Hex } from "./shared/crypto/sha256";
 import { SplashScreen } from "./shared/components/SplashScreen";
 import { AppUpdater } from "./shared/components/AppUpdater";
-
-const securePick = <T,>(items: T[]): T => {
-  const values = new Uint32Array(1);
-  crypto.getRandomValues(values);
-  return items[Math.floor((values[0] / 2 ** 32) * items.length)];
-};
 
 const secureRandomDegrees = () => {
   const values = new Uint32Array(1);
@@ -85,6 +88,37 @@ const secureRandomDegrees = () => {
 const modeLabels: Record<DrawMode, string> = {
   direct: "Ganador directo",
   elimination: "Eliminación",
+};
+
+const estimatedEliminationSeconds: Record<GameId, number> = {
+  roulette: 7,
+  cards: 5,
+  pinball: 12,
+  marbles: 17,
+  ducks: 8,
+};
+
+const formatEstimatedDuration = (
+  game: GameId,
+  participantCount: number,
+  marbleDifficulty: MarbleDifficulty,
+) => {
+  if (participantCount < 2) return "Agrega al menos dos participantes";
+  const marbleSeconds = marbleDifficulty === "easy" ? 12 : marbleDifficulty === "hard" ? 22 : 17;
+  const duckSeconds = participantCount > 100
+    ? 0.78
+    : participantCount > 50
+      ? 1.56
+      : participantCount > 20
+        ? 2.94
+        : 6.24;
+  const secondsPerElimination = game === "marbles"
+    ? marbleSeconds
+    : game === "ducks"
+      ? duckSeconds
+      : estimatedEliminationSeconds[game];
+  const totalMinutes = Math.max(1, Math.ceil(((participantCount - 1) * secondsPerElimination) / 60));
+  return totalMinutes === 1 ? "≈ 1 minuto" : `≈ ${totalMinutes} minutos`;
 };
 
 const numberParity = (number: number): Parity =>
@@ -100,9 +134,17 @@ function App() {
   const [marbleRoundKey, setMarbleRoundKey] = useState(0);
   const [duckRoundKey, setDuckRoundKey] = useState(0);
   const [isSpinning, setIsSpinning] = useState(false);
+  const [roundAnimating, setRoundAnimating] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(
     () => localStorage.getItem("fortuna-real-sound") !== "off",
   );
+  const [voiceEnabled, setVoiceEnabled] = useState(
+    () => localStorage.getItem("fortuna-real-voice") !== "off",
+  );
+  const [audioVolume, setAudioVolume] = useState(() => {
+    const stored = Number(localStorage.getItem("fortuna-real-volume"));
+    return Number.isFinite(stored) && stored >= 0 && stored <= 1 ? stored : 0.8;
+  });
   const [spinRequest, setSpinRequest] = useState<{
     entryId: string;
     nonce: number;
@@ -124,21 +166,29 @@ function App() {
   const pinballControlMode = useDrawStore((state) => state.pinballControlMode);
   const marbleDifficulty = useDrawStore((state) => state.marbleDifficulty);
   const roundNumber = useDrawStore((state) => state.roundNumber);
+  const activeSession = useDrawStore((state) => state.activeSession);
+  const beginSession = useDrawStore((state) => state.beginSession);
+  const commitRound = useDrawStore((state) => state.commitRound);
+  const cancelSession = useDrawStore((state) => state.cancelSession);
   const startDraw = useDrawStore((state) => state.startDraw);
   const recordSelection = useDrawStore((state) => state.recordSelection);
-  const recordParitySelection = useDrawStore((state) => state.recordParitySelection);
   const recordDuckSurvival = useDrawStore((state) => state.recordDuckSurvival);
   const reenableWinner = useDrawStore((state) => state.reenableWinner);
   const setMarbleDifficulty = useDrawStore((state) => state.setMarbleDifficulty);
 
   const activeParticipants = useMemo(
-    () =>
-      participants.filter(
+    () => {
+      const committedIds = activeSession?.status === "committed"
+        ? new Set(activeSession.participantIds)
+        : null;
+      return participants.filter(
         (person) =>
-          !eliminatedIds.includes(person.id) &&
-          !blockedWinnerIds.includes(person.id),
-      ),
-    [blockedWinnerIds, eliminatedIds, participants],
+          (!committedIds || committedIds.has(person.id))
+          && !eliminatedIds.includes(person.id)
+          && (committedIds ? true : !blockedWinnerIds.includes(person.id)),
+      );
+    },
+    [activeSession, blockedWinnerIds, eliminatedIds, participants],
   );
   const previousWinnerIds = useMemo(
     () => new Set(winnerRecords.map((record) => record.participantId)),
@@ -157,20 +207,15 @@ function App() {
         number,
         participantId: person.id,
         parity,
-        disabled:
-          mode === "elimination" &&
-          eliminationParity !== null &&
-          parity !== eliminationParity,
+        disabled: false,
       };
     });
 
     if (mode !== "elimination") return participantEntries;
     return arrangeEliminationEntries(participantEntries).map((entry) =>
-      entry.kind === "parity"
-        ? { ...entry, disabled: eliminationParity !== null }
-        : entry,
+      entry.kind === "parity" ? { ...entry, disabled: true } : entry,
     );
-  }, [activeParticipants, eliminationParity, mode]);
+  }, [activeParticipants, mode]);
 
   const selectableEntries = useMemo(
     () => wheelEntries.filter((entry) => !entry.disabled),
@@ -179,11 +224,23 @@ function App() {
   const latestResult = currentResult ?? history[0] ?? null;
   const sessionWinner =
     mode === "direct" ? null : history.find((result) => result.kind === "winner") ?? null;
+  const sessionCommitted = activeSession?.status === "committed";
+  const roundLocked = roundAnimating || sessionCommitted;
 
   useEffect(() => {
-    fortunaAudio.setEnabled(soundEnabled);
+    fortunaAudio.setEffectsEnabled(soundEnabled);
     localStorage.setItem("fortuna-real-sound", soundEnabled ? "on" : "off");
   }, [soundEnabled]);
+
+  useEffect(() => {
+    fortunaAudio.setVoiceEnabled(voiceEnabled);
+    localStorage.setItem("fortuna-real-voice", voiceEnabled ? "on" : "off");
+  }, [voiceEnabled]);
+
+  useEffect(() => {
+    fortunaAudio.setVolume(audioVolume);
+    localStorage.setItem("fortuna-real-volume", audioVolume.toFixed(2));
+  }, [audioVolume]);
 
   useEffect(
     () => () => {
@@ -192,9 +249,41 @@ function App() {
     [],
   );
 
+  useEffect(() => {
+    if (activeSession?.status === "committed" && screen === "setup") {
+      setScreen(activeSession.game);
+    }
+  }, [activeSession, screen]);
+
+  const ensureSession = useCallback((options?: { seed?: string; commitmentId?: string }) => {
+    const existing = useDrawStore.getState().activeSession;
+    if (existing?.status === "committed") return existing;
+    return beginSession(options);
+  }, [beginSession]);
+
+  const requestCommittedCancellation = useCallback((destination: string) => {
+    const current = useDrawStore.getState().activeSession;
+    if (current?.status !== "committed") return true;
+    const confirmed = window.confirm(
+      `La sesión ${current.sessionId.slice(-8).toUpperCase()} ya está comprometida. `
+      + `Si continúas, se anulará el resultado pendiente y se registrará la cancelación. ¿Quieres ${destination}?`,
+    );
+    if (!confirmed) return false;
+    const reason = window.prompt(
+      "Indica el motivo de cancelación para el registro de auditoría:",
+      `Operador solicitó ${destination}`,
+    )?.trim();
+    if (!reason) {
+      window.alert("La sesión sigue activa: el motivo de cancelación es obligatorio.");
+      return false;
+    }
+    cancelSession(reason);
+    return true;
+  }, [cancelSession]);
+
   const enterSelectedGame = () => {
     if (activeParticipants.length < 2) return;
-    startDraw();
+    setRoundAnimating(false);
     setIsSpinning(false);
     setCurrentResult(null);
     setSpinRequest(null);
@@ -202,18 +291,22 @@ function App() {
     setPinballRoundKey((key) => key + 1);
     setMarbleRoundKey((key) => key + 1);
     setDuckRoundKey((key) => key + 1);
-    setScreen(game);
+    setScreen(activeSession?.status === "committed" ? activeSession.game : game);
     fortunaAudio.playEnterGame();
   };
 
   const returnToSetup = () => {
-    if (screen === "roulette" && isSpinning) return;
+    if (!requestCommittedCancellation("volver a la configuración")) return;
     fortunaAudio.playClick();
+    stopSpinSound.current?.();
+    stopSpinSound.current = null;
+    pendingSelection.current = null;
+    setRoundAnimating(false);
     setScreen("setup");
     setCurrentResult(null);
     setSpinRequest(null);
     setIsSpinning(false);
-    startDraw();
+    if (useDrawStore.getState().activeSession?.status !== "committed") startDraw();
   };
 
   const startSpin = () => {
@@ -224,7 +317,25 @@ function App() {
       (mode === "elimination" && activeParticipants.length < 2)
     ) return;
 
-    const selected = securePick(selectableEntries);
+    const pendingCommitment = useDrawStore.getState().activeSession?.roundCommitment;
+    const freshCommitment = pendingCommitment ? null : createRouletteCommitment(selectableEntries);
+    const selected = pendingCommitment
+      ? selectableEntries.find((entry) => entry.participantId === pendingCommitment.expectedParticipantId)
+      : freshCommitment?.selected;
+    if (!selected) {
+      window.alert("El compromiso pendiente no coincide con los participantes elegibles. Cancela la sesión para continuar.");
+      return;
+    }
+    ensureSession();
+    if (!pendingCommitment && freshCommitment) {
+      commitRound({
+        commitmentId: freshCommitment.commitmentId,
+        seed: freshCommitment.seed,
+        expectedParticipantId: selected.participantId ?? undefined,
+        expectedLandedNumber: selected.number,
+      });
+    }
+    setRoundAnimating(true);
     pendingSelection.current = selected;
     setCurrentResult(null);
     setIsSpinning(true);
@@ -244,10 +355,10 @@ function App() {
     stopSpinSound.current?.();
     stopSpinSound.current = null;
     fortunaAudio.playBallDrop();
-    const result = selection.kind === "parity"
-      ? recordParitySelection(selection.parity, selection.number)
-      : recordSelection(selection.participantId as string, selection.number, `Número ${selection.number}`);
+    if (selection.kind !== "participant" || !selection.participantId) return;
+    const result = recordSelection(selection.participantId, selection.number, `Número ${selection.number}`);
     setIsSpinning(false);
+    setRoundAnimating(false);
     setCurrentResult(result);
     pendingSelection.current = null;
 
@@ -255,10 +366,11 @@ function App() {
       fortunaAudio.playResult(result.kind === "winner", result.parity);
       fortunaAudio.announceResult(result);
     }, 170);
-  }, [recordParitySelection, recordSelection]);
+  }, [recordSelection]);
 
   const finishCardSelection = useCallback((assignment: CardAssignment, position: number) => {
     const result = recordSelection(assignment.participant.id, position, assignment.label);
+    setRoundAnimating(false);
     setCurrentResult(result);
 
     window.setTimeout(() => {
@@ -269,6 +381,7 @@ function App() {
 
   const finishPinballSelection = useCallback((assignment: PinballBallAssignment, label: string) => {
     const result = recordSelection(assignment.participant.id, assignment.number, `${label} · Pelota ${assignment.number}`);
+    setRoundAnimating(false);
     setCurrentResult(result);
     window.setTimeout(() => {
       fortunaAudio.playResult(result.kind === "winner", result.parity);
@@ -278,6 +391,7 @@ function App() {
 
   const finishMarbleSelection = useCallback((racer: MarbleRacer, label: string) => {
     const result = recordSelection(racer.participant.id, racer.number, label);
+    setRoundAnimating(false);
     setCurrentResult(result);
     window.setTimeout(() => {
       fortunaAudio.playResult(result.kind === "winner", result.parity);
@@ -293,6 +407,7 @@ function App() {
         number: contestant.number,
       })),
     );
+    setRoundAnimating(false);
     setCurrentResult(winnerResult);
     window.setTimeout(() => {
       fortunaAudio.playResult(true, winnerResult.parity);
@@ -311,7 +426,7 @@ function App() {
   const allowCurrentWinnerToReturn = () => {
     if (currentResult?.kind !== "winner" || !currentResult.participantId) return;
     reenableWinner(currentResult.participantId);
-    if (currentResult.mode === "elimination") startDraw();
+    if (useDrawStore.getState().activeSession?.status !== "committed") startDraw();
     fortunaAudio.playClick();
     setCurrentResult(null);
     setCardRoundKey((key) => key + 1);
@@ -321,7 +436,7 @@ function App() {
   };
 
   const restartSession = () => {
-    if (screen === "roulette" && isSpinning) return;
+    if (roundLocked || (screen === "roulette" && isSpinning)) return;
     fortunaAudio.playClick();
     startDraw();
     setCurrentResult(null);
@@ -332,10 +447,97 @@ function App() {
     setDuckRoundKey((key) => key + 1);
   };
 
+  const commitSeededSession = useCallback((
+    seed: string,
+    commitmentId: string,
+    expectedParticipantId: string,
+    expectedLandedNumber?: number,
+  ) => {
+    ensureSession();
+    const currentRound = useDrawStore.getState().activeSession?.roundCommitment;
+    if (currentRound) {
+      if (
+        currentRound.seed !== seed
+        || currentRound.commitmentId !== commitmentId
+        || currentRound.expectedParticipantId !== expectedParticipantId
+        || currentRound.expectedLandedNumber !== expectedLandedNumber
+      ) {
+        throw new Error("La semilla no coincide con el compromiso persistido.");
+      }
+    } else {
+      commitRound({ seed, commitmentId, expectedParticipantId, expectedLandedNumber });
+    }
+    setRoundAnimating(true);
+  }, [commitRound, ensureSession]);
+
+  const commitCardSession = useCallback((seed: string) => {
+    const prepared = prepareCardRound(activeParticipants, seed);
+    commitSeededSession(seed, prepared.commitmentId, prepared.selected.participant.id);
+  }, [activeParticipants, commitSeededSession]);
+
+  const commitPinballSession = useCallback((seed: string) => {
+    const prepared = preparePinballRound(
+      activeParticipants,
+      mode,
+      pinballControlMode,
+      seed,
+      previousWinnerIds,
+    );
+    commitSeededSession(
+      seed,
+      prepared.commitmentId,
+      prepared.selected.participant.id,
+      prepared.selected.number,
+    );
+  }, [activeParticipants, commitSeededSession, mode, pinballControlMode, previousWinnerIds]);
+
+  const commitMarbleSession = useCallback((seed: string) => {
+    const prepared = prepareMarbleRace(
+      activeParticipants,
+      mode,
+      seed,
+      marbleDifficulty,
+      previousWinnerIds,
+    );
+    const proof = JSON.stringify({
+      version: 2,
+      track: prepared.track.signature,
+      participants: activeParticipants.map((participant) => participant.id),
+      selectedParticipantId: prepared.selected.participant.id,
+      selectedNumber: prepared.selected.number,
+      selectedDurationMs: prepared.selected.durationMs,
+      mode,
+      difficulty: marbleDifficulty,
+    });
+    commitSeededSession(
+      seed,
+      `MAR-${sha256Hex(proof).toUpperCase()}`,
+      prepared.selected.participant.id,
+      prepared.selected.number,
+    );
+  }, [activeParticipants, commitSeededSession, marbleDifficulty, mode, previousWinnerIds]);
+
+  const commitDuckSession = useCallback((commitmentId: string, seed: string, survivorId: string) => {
+    ensureSession();
+    const currentRound = useDrawStore.getState().activeSession?.roundCommitment;
+    if (currentRound) {
+      if (
+        currentRound.commitmentId !== commitmentId
+        || currentRound.seed !== seed
+        || currentRound.expectedParticipantId !== survivorId
+      ) {
+        throw new Error("El compromiso de Patos no coincide con la ronda persistida.");
+      }
+    } else {
+      commitRound({ commitmentId, seed, expectedParticipantId: survivorId });
+    }
+    setRoundAnimating(true);
+  }, [commitRound, ensureSession]);
+
   const toggleSound = () => {
     setSoundEnabled((enabled) => {
       const nextValue = !enabled;
-      fortunaAudio.setEnabled(nextValue);
+      fortunaAudio.setEffectsEnabled(nextValue);
       if (nextValue) fortunaAudio.playClick();
       return nextValue;
     });
@@ -364,8 +566,13 @@ function App() {
           game={game}
           soundEnabled={soundEnabled}
           onToggleSound={toggleSound}
+          voiceEnabled={voiceEnabled}
+          onToggleVoice={() => setVoiceEnabled((enabled) => !enabled)}
+          audioVolume={audioVolume}
+          onVolumeChange={setAudioVolume}
           onToggleFullscreen={toggleFullscreen}
           onBack={returnToSetup}
+          roundCommitted={roundLocked}
           roundNumber={roundNumber}
           activeCount={activeParticipants.length}
         />
@@ -376,6 +583,8 @@ function App() {
             game={game}
             participantCount={participants.length}
             eligibleCount={activeParticipants.length}
+            mode={mode}
+            marbleDifficulty={marbleDifficulty}
           />
         ) : screen === "roulette" ? (
           <RouletteScreen
@@ -397,6 +606,7 @@ function App() {
             onSpin={startSpin}
             onSpinEnd={finishSpin}
             onRestart={restartSession}
+            restartDisabled={roundLocked}
           />
         ) : screen === "cards" ? (
           <CardsScreen
@@ -411,8 +621,11 @@ function App() {
             prize={prize}
             roundNumber={roundNumber}
             sessionWinner={sessionWinner}
+            onCommit={commitCardSession}
+            initialSeed={activeSession?.game === "cards" ? activeSession.roundCommitment?.seed : undefined}
             onSelect={finishCardSelection}
             onRestart={restartSession}
+            restartDisabled={roundLocked}
           />
         ) : screen === "pinball" ? (
           <PinballScreen
@@ -429,8 +642,11 @@ function App() {
             roundNumber={roundNumber}
             sessionWinner={sessionWinner}
             previousWinnerIds={previousWinnerIds}
+            onCommit={commitPinballSession}
+            initialSeed={activeSession?.game === "pinball" ? activeSession.roundCommitment?.seed : undefined}
             onFinish={finishPinballSelection}
             onRestart={restartSession}
+            restartDisabled={roundLocked}
           />
         ) : screen === "marbles" ? (
           <MarblesScreen
@@ -447,9 +663,14 @@ function App() {
             roundNumber={roundNumber}
             sessionWinner={sessionWinner}
             previousWinnerIds={previousWinnerIds}
+            onCommit={commitMarbleSession}
+            initialSeed={activeSession?.game === "marbles" ? activeSession.roundCommitment?.seed : undefined}
             onFinish={finishMarbleSelection}
-            onDifficultyChange={setMarbleDifficulty}
+            onDifficultyChange={(difficulty) => {
+              if (!roundLocked) setMarbleDifficulty(difficulty);
+            }}
             onRestart={restartSession}
+            restartDisabled={roundLocked}
           />
         ) : (
           <DucksScreen
@@ -464,7 +685,15 @@ function App() {
             sessionWinner={sessionWinner}
             previousWinnerIds={previousWinnerIds}
             onFinish={finishDuckSurvival}
+            onCommit={commitDuckSession}
+            resumedCommitment={activeSession?.game === "ducks" && activeSession.roundCommitment?.seed
+              ? {
+                  commitmentId: activeSession.roundCommitment.commitmentId,
+                  seed: activeSession.roundCommitment.seed,
+                }
+              : null}
             onRestart={restartSession}
+            restartDisabled={roundLocked}
           />
         )}
       </main>
@@ -474,7 +703,7 @@ function App() {
           result={currentResult}
           onClose={closeCurrentResult}
           onReenableWinner={allowCurrentWinnerToReturn}
-          soundEnabled={soundEnabled}
+          soundEnabled={soundEnabled || voiceEnabled}
         />
       )}
       <AppUpdater />
@@ -487,8 +716,13 @@ function Topbar({
   game,
   soundEnabled,
   onToggleSound,
+  voiceEnabled,
+  onToggleVoice,
+  audioVolume,
+  onVolumeChange,
   onToggleFullscreen,
   onBack,
+  roundCommitted,
   roundNumber,
   activeCount,
 }: {
@@ -496,8 +730,13 @@ function Topbar({
   game: GameId;
   soundEnabled: boolean;
   onToggleSound: () => void;
+  voiceEnabled: boolean;
+  onToggleVoice: () => void;
+  audioVolume: number;
+  onVolumeChange: (volume: number) => void;
   onToggleFullscreen: () => void;
   onBack: () => void;
+  roundCommitted: boolean;
   roundNumber: number;
   activeCount: number;
 }) {
@@ -548,22 +787,52 @@ function Topbar({
 
       <div className="topbar-actions">
         {screen !== "setup" && (
-          <button className="back-button" type="button" onClick={onBack}>
-            <ArrowLeft size={17} /> Inicio
+          <button
+            className="back-button"
+            type="button"
+            onClick={onBack}
+            aria-label={roundCommitted ? "Cancelar la ronda comprometida y volver al inicio" : "Volver al inicio"}
+            title={roundCommitted ? "Solicita confirmación antes de cancelar la ronda" : undefined}
+          >
+            <ArrowLeft size={17} /> {roundCommitted ? "Cancelar ronda" : "Inicio"}
           </button>
         )}
         <button
           className={`icon-button ${soundEnabled ? "is-active" : ""}`}
+          type="button"
+          aria-pressed={soundEnabled}
           aria-label={soundEnabled ? "Desactivar sonidos" : "Activar sonidos"}
           title={soundEnabled ? "Desactivar sonidos" : "Activar sonidos"}
           onClick={onToggleSound}
         >
           {soundEnabled ? <Volume2 size={19} /> : <VolumeX size={19} />}
         </button>
-        <button className="icon-button" aria-label="Configuración próximamente" disabled>
+        <button
+          className={`icon-button ${voiceEnabled ? "is-active" : ""}`}
+          type="button"
+          aria-pressed={voiceEnabled}
+          aria-label={voiceEnabled ? "Desactivar locución" : "Activar locución"}
+          title={voiceEnabled ? "Desactivar locución" : "Activar locución"}
+          onClick={onToggleVoice}
+        >
+          {voiceEnabled ? <Mic size={19} /> : <MicOff size={19} />}
+        </button>
+        <label className="topbar-volume" title={`Volumen ${Math.round(audioVolume * 100)} %`}>
+          <span className="sr-only">Volumen general</span>
+          <input
+            type="range"
+            min="0"
+            max="1"
+            step="0.05"
+            value={audioVolume}
+            onChange={(event) => onVolumeChange(Number(event.target.value))}
+            aria-label="Volumen general"
+          />
+        </label>
+        <button className="icon-button" type="button" aria-label="Configuración de audio aplicada" disabled>
           <Settings2 size={19} />
         </button>
-        <button className="icon-button" aria-label="Pantalla completa" onClick={onToggleFullscreen}>
+        <button className="icon-button" type="button" aria-label="Pantalla completa" onClick={onToggleFullscreen}>
           <Expand size={19} />
         </button>
       </div>
@@ -576,12 +845,17 @@ function SetupScreen({
   game,
   participantCount,
   eligibleCount,
+  mode,
+  marbleDifficulty,
 }: {
   onStart: () => void;
   game: GameId;
   participantCount: number;
   eligibleCount: number;
+  mode: DrawMode;
+  marbleDifficulty: MarbleDifficulty;
 }) {
+  const estimatedDuration = formatEstimatedDuration(game, eligibleCount, marbleDifficulty);
   return (
     <section className="setup-page">
       <div className="setup-hero">
@@ -593,7 +867,10 @@ function SetupScreen({
         <div className="setup-hero-actions">
           <div className="setup-summary">
             <Users size={19} />
-            <span><strong>{participantCount}</strong> cargados · {eligibleCount} habilitados</span>
+            <span>
+              <strong>{participantCount}</strong> cargados · {eligibleCount} habilitados
+              {mode === "elimination" && <> · Tiempo mínimo visual: <strong>{estimatedDuration}</strong></>}
+            </span>
           </div>
           <button
             type="button"
@@ -639,6 +916,7 @@ function RouletteScreen({
   onSpin,
   onSpinEnd,
   onRestart,
+  restartDisabled,
 }: {
   participants: Participant[];
   activeParticipants: Participant[];
@@ -658,6 +936,7 @@ function RouletteScreen({
   onSpin: () => void;
   onSpinEnd: () => void;
   onRestart: () => void;
+  restartDisabled: boolean;
 }) {
   const cannotSpin =
     isSpinning ||
@@ -679,24 +958,16 @@ function RouletteScreen({
             const isEliminated = eliminatedIds.includes(person.id);
             const isWinner = blockedWinnerIds.includes(person.id);
             const parity = activeIndex >= 0 ? numberParity(activeIndex + 1) : null;
-            const isPaused =
-              mode === "elimination" &&
-              eliminationParity !== null &&
-              parity !== null &&
-              parity !== eliminationParity;
             const rowClasses = [
               "roster-row",
               isEliminated ? "is-eliminated" : "",
               isWinner ? "is-winner" : "",
-              isPaused ? "is-paused" : "",
             ].filter(Boolean).join(" ");
             const status = isWinner
               ? "Ganador"
               : isEliminated
                 ? "Eliminado"
-                : isPaused
-                  ? "No juega"
-                  : parity === "even"
+                : parity === "even"
                     ? "Par"
                     : "Impar";
             return (
@@ -759,7 +1030,7 @@ function RouletteScreen({
               <><Play size={20} fill="currentColor" /> Lanzar pelota</>
             )}
           </button>
-          <button className="text-button" type="button" onClick={onRestart} disabled={isSpinning}>
+          <button className="text-button" type="button" onClick={onRestart} disabled={isSpinning || restartDisabled}>
             <RotateCcw size={15} /> Reiniciar ronda con los habilitados
           </button>
         </div>
@@ -770,13 +1041,14 @@ function RouletteScreen({
           <div className="panel-title"><Dices size={18} /> {modeLabels[mode]}</div>
           {mode === "elimination" ? (
             <div className="compact-rule">
-              <div><span className="parity-token parity-token--even">PAR</span><p>La próxima eliminación será entre los pares</p></div>
-              <div><span className="parity-token parity-token--odd">IMPAR</span><p>La próxima eliminación será entre los impares</p></div>
+              <div><span className="parity-token parity-token--even">PAR</span><p>Referencia visual de números pares</p></div>
+              <div><span className="parity-token parity-token--odd">IMPAR</span><p>Referencia visual de números impares</p></div>
               {eliminationParity && (
                 <div className="active-filter-note">
-                  Una eliminación entre <strong>{eliminationParity === "even" ? "PARES" : "IMPARES"}</strong>; después vuelven todos.
+                  Filtro heredado <strong>{eliminationParity === "even" ? "PAR" : "IMPAR"}</strong>; la selección oficial sigue siendo uniforme.
                 </div>
               )}
+              <div className="active-filter-note">PAR e IMPAR no compiten: antes de girar se compromete uniformemente a una persona habilitada.</div>
             </div>
           ) : (
             <p className="mode-description">Cada ganador queda fuera hasta que lo habilites de nuevo.</p>
@@ -798,9 +1070,9 @@ function RouletteScreen({
               <strong>{latestResult.participantName}</strong>
               <em>
                 {latestResult.kind === "qualified"
-                  ? latestResult.parity === "even" ? "Pasan pares" : "Pasan impares"
+                  ? `Referencia ${latestResult.parity === "even" ? "PAR" : "IMPAR"}`
                   : latestResult.kind === "parity-selected"
-                    ? `Filtro ${latestResult.participantName}`
+                    ? `Referencia ${latestResult.participantName}`
                     : latestResult.kind === "winner"
                       ? "Ganador"
                       : "Eliminado"}
@@ -860,8 +1132,11 @@ function CardsScreen({
   prize,
   roundNumber,
   sessionWinner,
+  onCommit,
+  initialSeed,
   onSelect,
   onRestart,
+  restartDisabled,
 }: {
   participants: Participant[];
   activeParticipants: Participant[];
@@ -873,10 +1148,14 @@ function CardsScreen({
   prize: string;
   roundNumber: number;
   sessionWinner: RoundResult | null;
+  onCommit: (seed: string) => void;
+  initialSeed?: string;
   onSelect: (assignment: CardAssignment, position: number) => void;
   onRestart: () => void;
+  restartDisabled: boolean;
 }) {
-  const cannotPlay = !!sessionWinner || activeParticipants.length < 2;
+  const finalWinner = resolveFinalWinner(sessionWinner, latestResult, activeParticipants.length);
+  const cannotPlay = !!finalWinner || activeParticipants.length < 2;
 
   return (
     <section className="cards-workspace">
@@ -904,7 +1183,7 @@ function CardsScreen({
             );
           })}
         </div>
-        <button className="text-button cards-restart-button" type="button" onClick={onRestart}>
+        <button className="text-button cards-restart-button" type="button" onClick={onRestart} disabled={restartDisabled}>
           <RotateCcw size={15} /> Reiniciar con los habilitados
         </button>
       </aside>
@@ -915,14 +1194,14 @@ function CardsScreen({
             <span className="eyebrow">{modeLabels[mode]} · RONDA {roundNumber}</span>
             <h1>Mesa de cartas</h1>
           </div>
-          <div className="live-badge"><span /> {sessionWinner ? "RONDA FINALIZADA" : "MAZO VERIFICABLE"}</div>
+          <div className="live-badge"><span /> {finalWinner ? "RONDA FINALIZADA" : "MAZO VERIFICABLE"}</div>
         </div>
 
-        {sessionWinner ? (
+        {finalWinner ? (
           <div className="cards-final-state">
             <Crown size={58} />
             <span>Ganador final</span>
-            <strong>{sessionWinner.participantName}</strong>
+            <strong>{finalWinner.participantName}</strong>
             <p>El historial conserva el premio y permite habilitarlo para otro sorteo.</p>
           </div>
         ) : (
@@ -930,6 +1209,8 @@ function CardsScreen({
             participants={activeParticipants}
             mode={mode}
             disabled={cannotPlay}
+            initialSeed={initialSeed}
+            onCommit={onCommit}
             onSelect={onSelect}
           />
         )}
@@ -940,8 +1221,8 @@ function CardsScreen({
           <div className="panel-title"><Layers3 size={18} /> {modeLabels[mode]}</div>
           <p className="mode-description">
             {mode === "direct"
-              ? "La carta elegida entrega el premio. Su ganador queda fuera hasta que lo habilites nuevamente."
-              : "La carta elegida elimina una sola persona. Después se crea un nuevo mazo con quienes siguen."}
+              ? "La carta sellada antes de elegir entrega el premio. Su ganador queda fuera hasta que lo habilites nuevamente."
+              : "La carta sellada elimina una sola persona. Después se crea un nuevo mazo verificable con quienes siguen."}
           </p>
           <div className="cards-process-mini">
             <span>1 · Ver</span><span>2 · Reunir</span><span>3 · Barajar</span><span>4 · Elegir</span>
@@ -1008,8 +1289,11 @@ function PinballScreen({
   roundNumber,
   sessionWinner,
   previousWinnerIds,
+  onCommit,
+  initialSeed,
   onFinish,
   onRestart,
+  restartDisabled,
 }: {
   participants: Participant[];
   activeParticipants: Participant[];
@@ -1023,10 +1307,14 @@ function PinballScreen({
   roundNumber: number;
   sessionWinner: RoundResult | null;
   previousWinnerIds: ReadonlySet<string>;
+  onCommit: (seed: string) => void;
+  initialSeed?: string;
   onFinish: (assignment: PinballBallAssignment, label: string) => void;
   onRestart: () => void;
+  restartDisabled: boolean;
 }) {
-  const cannotPlay = !!sessionWinner || activeParticipants.length < 2;
+  const finalWinner = resolveFinalWinner(sessionWinner, latestResult, activeParticipants.length);
+  const cannotPlay = !!finalWinner || activeParticipants.length < 2;
 
   return (
     <section className="pinball-workspace">
@@ -1051,7 +1339,7 @@ function PinballScreen({
             );
           })}
         </div>
-        <button className="text-button cards-restart-button" type="button" onClick={onRestart}>
+        <button className="text-button cards-restart-button" type="button" onClick={onRestart} disabled={restartDisabled}>
           <RotateCcw size={15} /> Reiniciar con los habilitados
         </button>
       </aside>
@@ -1062,18 +1350,27 @@ function PinballScreen({
             <span className="eyebrow">{modeLabels[mode]} · RONDA {roundNumber}</span>
             <h1>Pinball Real 3D</h1>
           </div>
-          <div className="live-badge"><span /> {sessionWinner ? "RONDA FINALIZADA" : controlMode === "automatic" ? "CONTROL AUTOMÁTICO" : "CONTROL MANUAL"}</div>
+          <div className="live-badge"><span /> {finalWinner ? "RONDA FINALIZADA" : controlMode === "automatic" ? "CONTROL AUTOMÁTICO" : "CONTROL MANUAL"}</div>
         </div>
 
-        {sessionWinner ? (
+        {finalWinner ? (
           <div className="cards-final-state pinball-final-state">
             <Crown size={58} />
             <span>Ganador final</span>
-            <strong>{sessionWinner.participantName}</strong>
+            <strong>{finalWinner.participantName}</strong>
             <p>El historial conserva el premio y permite habilitarlo para otro sorteo.</p>
           </div>
         ) : (
-          <PinballGame participants={activeParticipants} previousWinnerIds={previousWinnerIds} mode={mode} controlMode={controlMode} disabled={cannotPlay} onFinish={onFinish} />
+          <PinballGame
+            participants={activeParticipants}
+            previousWinnerIds={previousWinnerIds}
+            mode={mode}
+            controlMode={controlMode}
+            disabled={cannotPlay}
+            initialSeed={initialSeed}
+            onCommit={onCommit}
+            onFinish={onFinish}
+          />
         )}
       </section>
 
@@ -1082,8 +1379,8 @@ function PinballScreen({
           <div className="panel-title"><Gamepad2 size={18} /> {modeLabels[mode]}</div>
           <p className="mode-description">
             {mode === "direct"
-              ? "La primera pelota que atraviesa la meta entre los flippers gana el premio y queda fuera hasta que la habilites."
-              : "La primera pelota que atraviesa la meta queda eliminada. La próxima ronda genera otra distribución."}
+              ? "La pelota sellada antes de iniciar recibe el premio y queda fuera hasta que la habilites. La mesa representa el compromiso."
+              : "La pelota sellada antes de iniciar queda eliminada. La próxima ronda genera otra distribución verificable."}
           </p>
           <div className="pinball-mode-chip"><span>{controlMode === "automatic" ? "AUTO" : "MANUAL"}</span>{controlMode === "automatic" ? "La máquina controla la partida" : "Espacio lanza · A/D mueven flippers"}</div>
         </section>
@@ -1146,9 +1443,12 @@ function MarblesScreen({
   roundNumber,
   sessionWinner,
   previousWinnerIds,
+  onCommit,
+  initialSeed,
   onFinish,
   onDifficultyChange,
   onRestart,
+  restartDisabled,
 }: {
   participants: Participant[];
   activeParticipants: Participant[];
@@ -1162,11 +1462,15 @@ function MarblesScreen({
   roundNumber: number;
   sessionWinner: RoundResult | null;
   previousWinnerIds: ReadonlySet<string>;
+  onCommit: (seed: string) => void;
+  initialSeed?: string;
   onFinish: (racer: MarbleRacer, label: string) => void;
   onDifficultyChange: (difficulty: MarbleDifficulty) => void;
   onRestart: () => void;
+  restartDisabled: boolean;
 }) {
-  const cannotPlay = !!sessionWinner || activeParticipants.length < 2;
+  const finalWinner = resolveFinalWinner(sessionWinner, latestResult, activeParticipants.length);
+  const cannotPlay = !!finalWinner || activeParticipants.length < 2;
   const [trackInfo, setTrackInfo] = useState<MarbleTrack | null>(null);
 
   return (
@@ -1195,7 +1499,7 @@ function MarblesScreen({
             );
           })}
         </div>
-        <button className="text-button cards-restart-button" type="button" onClick={onRestart}>
+        <button className="text-button cards-restart-button" type="button" onClick={onRestart} disabled={restartDisabled}>
           <RotateCcw size={15} /> Reiniciar con los habilitados
         </button>
       </aside>
@@ -1206,14 +1510,14 @@ function MarblesScreen({
             <span className="eyebrow">{modeLabels[mode]} · RONDA {roundNumber}</span>
             <h1>Carrera de canicas</h1>
           </div>
-          <div className="live-badge"><span /> {sessionWinner ? "CARRERA FINALIZADA" : "PISTA PROCEDURAL"}</div>
+          <div className="live-badge"><span /> {finalWinner ? "CARRERA FINALIZADA" : "PISTA PROCEDURAL"}</div>
         </div>
 
-        {sessionWinner ? (
+        {finalWinner ? (
           <div className="cards-final-state marbles-final-state">
             <Crown size={58} />
             <span>Ganador final</span>
-            <strong>{sessionWinner.participantName}</strong>
+            <strong>{finalWinner.participantName}</strong>
             <p>El historial conserva el premio y permite habilitarlo para otra carrera.</p>
           </div>
         ) : (
@@ -1223,6 +1527,8 @@ function MarblesScreen({
             difficulty={difficulty}
             disabled={cannotPlay}
             previousWinnerIds={previousWinnerIds}
+            initialSeed={initialSeed}
+            onCommit={onCommit}
             onDifficultyChange={onDifficultyChange}
             onTrackPrepared={setTrackInfo}
             onFinish={onFinish}
@@ -1258,7 +1564,7 @@ function MarblesScreen({
               <span><small>Poderes</small><strong>{trackInfo.powerZones.length}</strong></span>
             </div>
           ) : (
-            <div className="history-empty">{sessionWinner ? "Carrera finalizada" : "Generando módulos compatibles…"}</div>
+            <div className="history-empty">{finalWinner ? "Carrera finalizada" : "Generando módulos compatibles…"}</div>
           )}
         </section>
 
@@ -1331,7 +1637,10 @@ function DucksScreen({
   sessionWinner,
   previousWinnerIds,
   onFinish,
+  onCommit,
+  resumedCommitment,
   onRestart,
+  restartDisabled,
 }: {
   participants: Participant[];
   activeParticipants: Participant[];
@@ -1343,9 +1652,13 @@ function DucksScreen({
   sessionWinner: RoundResult | null;
   previousWinnerIds: ReadonlySet<string>;
   onFinish: (survivor: DuckContestant, knockoutOrder: DuckContestant[]) => void;
+  onCommit: (commitmentId: string, seed: string, survivorId: string) => void;
+  resumedCommitment: { commitmentId: string; seed: string } | null;
   onRestart: () => void;
+  restartDisabled: boolean;
 }) {
-  const cannotPlay = !!sessionWinner || activeParticipants.length < 2;
+  const finalWinner = resolveFinalWinner(sessionWinner, latestResult, activeParticipants.length);
+  const cannotPlay = !!finalWinner || activeParticipants.length < 2;
 
   return (
     <section className="ducks-workspace">
@@ -1355,14 +1668,14 @@ function DucksScreen({
             <span className="eyebrow">SUPERVIVENCIA · 3 VIDAS</span>
             <h1>Patos de Fortuna</h1>
           </div>
-          <div className="live-badge"><span /> {sessionWinner ? "PARTIDA FINALIZADA" : "CAMPO DE TIRO 3D"}</div>
+          <div className="live-badge"><span /> {finalWinner ? "PARTIDA FINALIZADA" : "CAMPO DE TIRO 3D"}</div>
         </div>
 
-        {sessionWinner ? (
+        {finalWinner ? (
           <div className="cards-final-state ducks-final-state">
             <Bird size={64} />
             <span>Último pato en pie</span>
-            <strong>{sessionWinner.participantName}</strong>
+            <strong>{finalWinner.participantName}</strong>
             <p>Conservó al menos una vida. El premio ya está guardado en el salón de ganadores.</p>
           </div>
         ) : (
@@ -1370,6 +1683,8 @@ function DucksScreen({
             participants={activeParticipants}
             previousWinnerIds={previousWinnerIds}
             disabled={cannotPlay}
+            onCommit={onCommit}
+            resumedCommitment={resumedCommitment}
             onFinish={onFinish}
           />
         )}
@@ -1381,9 +1696,11 @@ function DucksScreen({
           <div className="duck-rule-steps">
             <span><b>1</b><strong>Tres vidas</strong><small>Cada participante empieza completo.</small></span>
             <span><b>2</b><strong>Impacto</strong><small>Revela el nombre y resta una vida.</small></span>
-            <span><b>3</b><strong>Reinicio</strong><small>Todos aterrizan y vuelven a despegar.</small></span>
-            <span><b>4</b><strong>Defensa adaptativa</strong><small>Un roce puede darle blindaje en el siguiente vuelo.</small></span>
-            <span><b>5</b><strong>Ruta impredecible</strong><small>Aprenden de tus disparos y cambian dirección.</small></span>
+            <span><b>3</b><strong>Bosque activo</strong><small>Se ocultan al azar entre árboles y pasto.</small></span>
+            <span><b>4</b><strong>Orden comprometido</strong><small>El clic solo avanza el próximo impacto ya sellado.</small></span>
+            <span><b>5</b><strong>Identidad protegida</strong><small>Nombre, color y corona se revelan después del impacto.</small></span>
+            <span><b>6</b><strong>Poderes de pato</strong><small>Paleta, temblor o inversión visual; nunca cambian el ganador.</small></span>
+            <span><b>7</b><strong>Salida colectiva</strong><small>Cada impacto hace salir a toda la bandada de su refugio.</small></span>
           </div>
         </section>
 
@@ -1423,7 +1740,7 @@ function DucksScreen({
           </div>
         </section>
 
-        <button className="text-button cards-restart-button ducks-restart" type="button" onClick={onRestart}>
+        <button className="text-button cards-restart-button ducks-restart" type="button" onClick={onRestart} disabled={restartDisabled}>
           <RotateCcw size={15} /> Reiniciar supervivencia
         </button>
 

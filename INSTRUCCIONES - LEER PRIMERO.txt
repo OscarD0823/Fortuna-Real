@@ -37,7 +37,7 @@ persona de confianza.
 3. PREPARAR UN SORTEO
 
 1. Agrega los nombres uno por uno o usa “Pegar varios nombres”.
-2. Selecciona Ruleta, Cartas o Pinball 3D. Canicas sigue desactivado.
+2. Selecciona Ruleta, Cartas, Pinball 3D, Canicas 3D o Patos 3D.
 3. Elige Ganador directo o Eliminación.
 4. Escribe el premio.
 5. Pulsa “Iniciar sorteo”.
@@ -59,18 +59,22 @@ Modo manual:
 - Usa D o flecha derecha para el flipper derecho.
 - También puedes usar los tres botones de la pantalla.
 
-En Ganador directo, la pelota sellada entra al jackpot. En Eliminación, la
-pelota sellada cae al pozo y sale una sola persona. El resultado se decide con
-azar seguro antes de la animación: los controles manuales no pueden cambiarlo.
-La mesa está optimizada para listas de 2 a 200 participantes.
+En Ganador directo, la primera pelota válida que atraviesa la meta gana. En
+Eliminación, esa pelota elimina una sola persona. En automático la máquina
+controla toda la partida y es el modo recomendado para un sorteo neutral. En
+manual, los lanzamientos y los flippers sí pueden alterar la trayectoria y el
+orden de llegada; úsalo solamente si quieres una experiencia de habilidad.
+La mesa admite listas de 2 a 200 participantes.
 
 
 5. RULETA
 
 - Cada número corresponde al nombre con el mismo número en la lista.
 - Pulsa “Lanzar pelota” y espera el resultado oficial.
-- En Eliminación, PAR o IMPAR habilita ese grupo únicamente para la siguiente
-  tirada; se elimina una persona y luego vuelven los demás.
+- Antes de animar cada giro, Fortuna Real compromete de manera uniforme a una
+  persona habilitada mediante azar criptográfico.
+- PAR e IMPAR son referencias visuales. No filtran, duplican ni cambian la
+  probabilidad de ningún participante.
 
 
 6. CARTAS
@@ -78,18 +82,59 @@ La mesa está optimizada para listas de 2 a 200 participantes.
 - Revisa las cartas y nombres antes de ocultarlos.
 - Pulsa “Reunir y barajar”.
 - Espera el nuevo reparto y elige cualquier carta boca abajo.
+- La semilla comprometida fija la asignación y el reparto. Si la aplicación se
+  cierra, la misma semilla reconstruye las mismas posiciones.
 
 
-7. GANADORES, PREMIOS Y SONIDO
+7. CANICAS
+
+- Cada canica conserva el número y color de su participante durante la carrera.
+- En Ganador directo, gana la primera canica que cruza la meta.
+- En Eliminación, sale la última canica que cruza la meta.
+- Fácil, Medio y Difícil cambian longitud, obstáculos, poderes y duración.
+- La pista se genera de nuevo para cada ronda.
+- Al reanudar una ronda comprometida se reconstruyen pista, orden y resultado;
+  no se permite cambiar mapa ni dificultad.
+
+
+8. PATOS 3D
+
+- Cada participante empieza con tres vidas; gana el único superviviente.
+- Antes de soltar la bandada, el programa genera con AES-CTR/256 todo el orden
+  de impactos y lo sella con SHA-256. Un clic acertado solo avanza ese orden:
+  no permite escoger quién pierde la vida.
+- Nombre, color y corona permanecen ocultos hasta el primer impacto oficial.
+- Si la vista 3D no puede abrirse, aparece un control accesible que consume el
+  mismo orden sellado; no se vuelve a sortear.
+- Con listas grandes, la espera entre impactos baja automáticamente: 2,08 s
+  hasta 20; 0,98 s de 21 a 50; 0,52 s de 51 a 100; y 0,26 s de 101 a 200.
+
+
+9. COMPROMISO, DURACIÓN Y CANCELACIÓN
+
+- Antes de iniciar Eliminación se muestra una estimación de duración.
+- Una sesión comprometida bloquea reinicio, regreso y cambios de configuración.
+- Para cancelarla debes confirmar la acción y escribir un motivo. La aplicación
+  guarda sesión, participantes, fecha, juego, compromiso pendiente y motivo en
+  el registro local de auditoría.
+- Si la aplicación se cierra durante una ronda, al volver Ruleta conserva la
+  persona elegida y Cartas, Pinball, Canicas y Patos reconstruyen asignación,
+  distribución, pista u orden desde la semilla comprometida. No toman una
+  decisión nueva.
+
+
+10. GANADORES, PREMIOS Y SONIDO
 
 - Los ganadores y premios quedan guardados aunque cambies de juego.
 - Un ganador no se repite hasta que pulses “Volver a incluir”.
 - Volver a incluir no borra los premios anteriores.
 - El altavoz activa o silencia sonidos y anuncios por voz.
 - El botón de las cuatro esquinas activa la pantalla completa.
+- En Patos, enfoca el campo y pulsa Enter o Espacio para registrar el siguiente
+  impacto comprometido. Escape cierra el diálogo de resultado.
 
 
-8. ACTUALIZACIONES
+11. ACTUALIZACIONES
 
 - Cuando recibas una versión nueva, abre su instalador sobre la versión actual.
 - Los datos guardados se conservan.
@@ -97,7 +142,7 @@ La mesa está optimizada para listas de 2 a 200 participantes.
   Fortuna Real.
 
 
-9. DESINSTALAR
+12. DESINSTALAR
 
 Abre Configuración de Windows > Aplicaciones > Aplicaciones instaladas, busca
 “Fortuna Real” y selecciona “Desinstalar”.

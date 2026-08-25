@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   Bird,
@@ -63,9 +63,11 @@ export function WinnerHistory({ compact = false }: { compact?: boolean }) {
   const blockedWinnerIds = useDrawStore((state) => state.blockedWinnerIds);
   const reenableWinner = useDrawStore((state) => state.reenableWinner);
   const reenableAllWinners = useDrawStore((state) => state.reenableAllWinners);
+  const sessionLocked = useDrawStore((state) => state.activeSession?.status === "committed");
   const [showAll, setShowAll] = useState(false);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<WinnerFilter>("all");
+  const galleryRef = useRef<HTMLElement>(null);
 
   const blockedSet = useMemo(() => new Set(blockedWinnerIds), [blockedWinnerIds]);
   const groups = useMemo(() => {
@@ -105,14 +107,39 @@ export function WinnerHistory({ compact = false }: { compact?: boolean }) {
   useEffect(() => {
     if (!showAll) return;
     const previousOverflow = document.body.style.overflow;
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setShowAll(false);
+    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const handleDialogKeys = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setShowAll(false);
+        return;
+      }
+      if (event.key !== "Tab" || !galleryRef.current) return;
+      const focusable = Array.from(galleryRef.current.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), input:not([disabled]), [href], [tabindex]:not([tabindex="-1"])',
+      )).filter((element) => !element.hasAttribute("hidden"));
+      if (focusable.length === 0) {
+        event.preventDefault();
+        galleryRef.current.focus();
+        return;
+      }
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
     };
     document.body.style.overflow = "hidden";
-    window.addEventListener("keydown", closeOnEscape);
+    window.addEventListener("keydown", handleDialogKeys);
+    requestAnimationFrame(() => galleryRef.current?.querySelector<HTMLElement>("input, button")?.focus());
     return () => {
       document.body.style.overflow = previousOverflow;
-      window.removeEventListener("keydown", closeOnEscape);
+      window.removeEventListener("keydown", handleDialogKeys);
+      previousFocus?.focus();
     };
   }, [showAll]);
 
@@ -155,7 +182,7 @@ export function WinnerHistory({ compact = false }: { compact?: boolean }) {
                       type="button"
                       className={isBlocked ? "winner-enable" : "winner-enabled"}
                       onClick={() => isBlocked && reenableWinner(group.participantId)}
-                      disabled={!isBlocked}
+                      disabled={!isBlocked || sessionLocked}
                       aria-label={isBlocked ? `Permitir que ${group.participantName} participe otra vez` : `${group.participantName} ya puede participar`}
                     >
                       {isBlocked ? <RotateCcw size={13} /> : <CheckCircle2 size={13} />}
@@ -177,7 +204,7 @@ export function WinnerHistory({ compact = false }: { compact?: boolean }) {
         )}
 
         {!compact && blockedWinnerIds.length > 1 && (
-          <button type="button" className="enable-all-winners" onClick={reenableAllWinners}>
+          <button type="button" className="enable-all-winners" onClick={reenableAllWinners} disabled={sessionLocked} title={sessionLocked ? "Cancela o completa la sesión comprometida para cambiar participantes" : undefined}>
             <RotateCcw size={15} /> Habilitar nuevamente a todos los ganadores
           </button>
         )}
@@ -190,7 +217,7 @@ export function WinnerHistory({ compact = false }: { compact?: boolean }) {
 
       {showAll && createPortal(
         <div className="winner-gallery-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setShowAll(false)}>
-          <section className="winner-gallery" role="dialog" aria-modal="true" aria-labelledby="winner-gallery-title">
+          <section ref={galleryRef} className="winner-gallery" role="dialog" aria-modal="true" aria-labelledby="winner-gallery-title" tabIndex={-1}>
             <header className="winner-gallery__hero">
               <div className="winner-gallery__crown"><Crown size={31} /></div>
               <div>
@@ -216,12 +243,12 @@ export function WinnerHistory({ compact = false }: { compact?: boolean }) {
                 <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar ganador o premio" autoFocus />
               </label>
               <div className="winner-gallery__filters" aria-label="Filtrar ganadores">
-                <button type="button" className={filter === "all" ? "is-active" : ""} onClick={() => setFilter("all")}>Todos <b>{groups.length}</b></button>
-                <button type="button" className={filter === "blocked" ? "is-active" : ""} onClick={() => setFilter("blocked")}>Fuera <b>{blockedGroups}</b></button>
-                <button type="button" className={filter === "enabled" ? "is-active" : ""} onClick={() => setFilter("enabled")}>Participando <b>{enabledGroups}</b></button>
+                <button type="button" aria-pressed={filter === "all"} className={filter === "all" ? "is-active" : ""} onClick={() => setFilter("all")}>Todos <b>{groups.length}</b></button>
+                <button type="button" aria-pressed={filter === "blocked"} className={filter === "blocked" ? "is-active" : ""} onClick={() => setFilter("blocked")}>Fuera <b>{blockedGroups}</b></button>
+                <button type="button" aria-pressed={filter === "enabled"} className={filter === "enabled" ? "is-active" : ""} onClick={() => setFilter("enabled")}>Participando <b>{enabledGroups}</b></button>
               </div>
               {blockedGroups > 1 && (
-                <button type="button" className="winner-gallery__enable-all" onClick={reenableAllWinners}>
+                <button type="button" className="winner-gallery__enable-all" onClick={reenableAllWinners} disabled={sessionLocked}>
                   <RotateCcw size={14} /> Habilitar a todos
                 </button>
               )}
@@ -260,7 +287,7 @@ export function WinnerHistory({ compact = false }: { compact?: boolean }) {
                     </div>
                     <footer>
                       <span>Última victoria · {formatAwardDate(group.awards[0].createdAt, true)}</span>
-                      <button type="button" disabled={!isBlocked} onClick={() => isBlocked && reenableWinner(group.participantId)}>
+                      <button type="button" disabled={!isBlocked || sessionLocked} onClick={() => isBlocked && reenableWinner(group.participantId)}>
                         {isBlocked ? <><RotateCcw size={13} /> Volver a incluir</> : <><CheckCircle2 size={13} /> Ya participa</>}
                       </button>
                     </footer>

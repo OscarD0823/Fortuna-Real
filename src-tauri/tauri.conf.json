@@ -15,14 +15,15 @@
         "title": "Fortuna Real",
         "width": 1480,
         "height": 920,
-        "minWidth": 1120,
-        "minHeight": 720,
+        "minWidth": 800,
+        "minHeight": 600,
         "center": true,
         "resizable": true
       }
     ],
     "security": {
-      "csp": null
+      "csp": "default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: data: blob:; font-src 'self' data:; media-src 'self' data: blob:; worker-src 'self' blob:; connect-src 'self' ipc: http://ipc.localhost https://github.com https://objects.githubusercontent.com https://release-assets.githubusercontent.com",
+      "devCsp": "default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: data: blob:; font-src 'self' data:; media-src 'self' data: blob:; worker-src 'self' blob:; connect-src 'self' ipc: http://ipc.localhost http://localhost:* ws://localhost:* https://github.com https://objects.githubusercontent.com https://release-assets.githubusercontent.com"
     }
   },
   "bundle": {
@@ -32,7 +33,7 @@
     "publisher": "Fortuna Real",
     "category": "CasinoGame",
     "shortDescription": "Sorteos con emoción real",
-    "longDescription": "Fortuna Real es una aplicación de escritorio para realizar sorteos mediante ruleta, cartas y Pinball 3D procedural, con modos de ganador directo y eliminación.",
+    "longDescription": "Fortuna Real es una aplicación de escritorio para realizar sorteos mediante Ruleta, Cartas, Pinball 3D, Canicas 3D y Patos 3D, con modos de ganador directo y eliminación.",
     "copyright": "Copyright © 2026 Fortuna Real",
     "icon": [
       "icons/32x32.png",

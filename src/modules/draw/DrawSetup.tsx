@@ -30,9 +30,11 @@ export function DrawSetup() {
             <p>Cinco juegos conectados al mismo sorteo e historial</p>
           </div>
         </div>
-        <div className="game-options game-options--large">
+        <div className="game-options game-options--large" role="radiogroup" aria-label="Juego del sorteo">
           <button
             type="button"
+            role="radio"
+            aria-checked={game === "roulette"}
             className={`game-option ${game === "roulette" ? "is-active" : ""}`}
             onClick={() => setGame("roulette")}
           >
@@ -42,6 +44,8 @@ export function DrawSetup() {
           </button>
           <button
             type="button"
+            role="radio"
+            aria-checked={game === "cards"}
             className={`game-option ${game === "cards" ? "is-active" : ""}`}
             onClick={() => setGame("cards")}
           >
@@ -51,6 +55,8 @@ export function DrawSetup() {
           </button>
           <button
             type="button"
+            role="radio"
+            aria-checked={game === "pinball"}
             className={`game-option ${game === "pinball" ? "is-active" : ""}`}
             onClick={() => setGame("pinball")}
           >
@@ -60,6 +66,8 @@ export function DrawSetup() {
           </button>
           <button
             type="button"
+            role="radio"
+            aria-checked={game === "marbles"}
             className={`game-option ${game === "marbles" ? "is-active" : ""}`}
             onClick={() => setGame("marbles")}
           >
@@ -69,6 +77,8 @@ export function DrawSetup() {
           </button>
           <button
             type="button"
+            role="radio"
+            aria-checked={game === "ducks"}
             className={`game-option game-option--ducks ${game === "ducks" ? "is-active" : ""}`}
             onClick={() => {
               setGame("ducks");
@@ -90,9 +100,11 @@ export function DrawSetup() {
             <p>Define cómo se resolverá cada tirada</p>
           </div>
         </div>
-        <div className="mode-options mode-options--two">
+        <div className="mode-options mode-options--two" role="radiogroup" aria-label="Modo del sorteo">
           <button
             type="button"
+            role="radio"
+            aria-checked={mode === "direct"}
             className={mode === "direct" ? "is-active" : ""}
             onClick={() => setMode("direct")}
             disabled={game === "ducks"}
@@ -106,13 +118,15 @@ export function DrawSetup() {
           </button>
           <button
             type="button"
+            role="radio"
+            aria-checked={mode === "elimination"}
             className={mode === "elimination" ? "is-active" : ""}
             onClick={() => setMode("elimination")}
           >
             <UsersRound size={22} />
             <span>
               <strong>Eliminación</strong>
-              <small>{game === "roulette" ? "Incluye las casillas PAR e IMPAR" : game === "pinball" ? "La primera pelota que cruza la meta sale" : game === "marbles" ? "La última canica queda eliminada" : game === "ducks" ? "Tres vidas; gana el último en pie" : "Una carta sale en cada ronda"}</small>
+              <small>{game === "roulette" ? "Incluye las casillas PAR e IMPAR" : game === "pinball" ? "La pelota sellada representa al eliminado" : game === "marbles" ? "La última canica queda eliminada" : game === "ducks" ? "Tres vidas; gana el último en pie" : "Una carta sale en cada ronda"}</small>
             </span>
           </button>
         </div>
@@ -120,16 +134,16 @@ export function DrawSetup() {
         {mode === "elimination" && game === "roulette" && (
           <div className="casino-rule-preview elimination-rule-preview">
             <span className="parity-token parity-token--even">PAR</span>
-            <p>Si cae en PAR, la siguiente tirada elimina un solo número par y después vuelven todos los demás.</p>
+            <p>Referencia visual para reconocer números pares; no cambia quién puede salir.</p>
             <span className="parity-token parity-token--odd">IMPAR</span>
-            <p>IMPAR hace lo mismo con los impares. Con N jugadores verás exactamente N + 2 casillas.</p>
+            <p>Antes de girar se compromete uniformemente una persona habilitada. PAR e IMPAR no participan en la selección.</p>
           </div>
         )}
 
         {mode === "elimination" && game === "cards" && (
           <div className="direct-rule-preview cards-rule-preview">
             <Layers3 size={17} />
-            <p>Las cartas se muestran, se reúnen, se barajan y se reparten boca abajo. La carta elegida elimina a una sola persona; el mazo se reconstruye con quienes continúan.</p>
+            <p>Las cartas se muestran, se reúnen, se barajan y se reparten boca abajo. El resultado se sella antes de elegir una posición; el mazo se reconstruye con quienes continúan.</p>
           </div>
         )}
 
@@ -137,14 +151,14 @@ export function DrawSetup() {
           <div className="pinball-control-choice">
             <div className="pinball-control-choice__heading">
               <Gamepad2 size={17} />
-              <span><strong>Control de la mesa</strong><small>En manual, tus flippers sí influyen en la carrera física.</small></span>
+              <span><strong>Control de la mesa</strong><small>Ambos modos conservan el mismo resultado sellado; Manual cambia la presentación.</small></span>
             </div>
-            <div className="pinball-control-choice__options">
-              <button type="button" className={pinballControlMode === "automatic" ? "is-active" : ""} onClick={() => setPinballControlMode("automatic")}>
+            <div className="pinball-control-choice__options" role="radiogroup" aria-label="Control del Pinball 3D">
+              <button type="button" role="radio" aria-checked={pinballControlMode === "automatic"} className={pinballControlMode === "automatic" ? "is-active" : ""} onClick={() => setPinballControlMode("automatic")}>
                 <Bot size={20} /><span><strong>Automático</strong><small>La mesa lanza y acciona los flippers</small></span>
               </button>
-              <button type="button" className={pinballControlMode === "manual" ? "is-active" : ""} onClick={() => setPinballControlMode("manual")}>
-                <Gamepad2 size={20} /><span><strong>Manual</strong><small>Juega con teclado o controles en pantalla</small></span>
+              <button type="button" role="radio" aria-checked={pinballControlMode === "manual"} className={pinballControlMode === "manual" ? "is-active" : ""} onClick={() => setPinballControlMode("manual")}>
+                <Gamepad2 size={20} /><span><strong>Manual</strong><small>Controla lanzador y flippers sin alterar el resultado</small></span>
               </button>
             </div>
           </div>
@@ -153,7 +167,7 @@ export function DrawSetup() {
         {mode === "elimination" && game === "pinball" && (
           <div className="direct-rule-preview pinball-rule-preview">
             <Gamepad2 size={17} />
-            <p>Todas las pelotas representan a los participantes. La primera que cruza entre los flippers queda eliminada y la siguiente ronda crea otra distribución.</p>
+            <p>Antes de iniciar se sella una pelota de manera uniforme. La mesa representa ese compromiso y la siguiente ronda crea otra distribución verificable.</p>
           </div>
         )}
 
@@ -167,7 +181,7 @@ export function DrawSetup() {
         {game === "ducks" && (
           <div className="direct-rule-preview ducks-rule-preview">
             <Bird size={17} />
-            <p>Cada pato tiene tres vidas. Al impactarlo se revela su nombre, toda la bandada aterriza y despega en otra formación. Con menos vidas volará más rápido.</p>
+            <p>El superviviente y el orden de impactos se comprometen antes de soltar la bandada. Cada acierto solo revela y representa el siguiente impacto oficial.</p>
           </div>
         )}
 

@@ -1,4 +1,5 @@
-import { Binary, Bird, Crown, Gamepad2, Gem, Layers3, RotateCcw, Target, Trophy, Volume2, VolumeX, X } from "lucide-react";
+import { Binary, Bird, Copy, Crown, Gamepad2, Gem, Layers3, RotateCcw, ShieldCheck, Target, Trophy, Volume2, VolumeX, X } from "lucide-react";
+import { useEffect, useRef } from "react";
 import type { RoundResult } from "../../core/types";
 
 export function ResultReveal({
@@ -20,10 +21,63 @@ export function ResultReveal({
   const isPinballGame = result.game === "pinball";
   const isDuckGame = result.game === "ducks";
   const parityLabel = result.parity === "even" ? "PAR" : "IMPAR";
+  const dialogRef = useRef<HTMLDivElement | null>(null);
+  const primaryActionRef = useRef<HTMLButtonElement | null>(null);
+  const titleId = `result-title-${result.id}`;
+  const descriptionId = `result-description-${result.id}`;
+
+  useEffect(() => {
+    const previousFocus = document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null;
+    const focusFrame = window.requestAnimationFrame(() => {
+      (primaryActionRef.current ?? dialogRef.current)?.focus();
+    });
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onClose();
+        return;
+      }
+      if (event.key !== "Tab" || !dialogRef.current) return;
+      const focusable = Array.from(
+        dialogRef.current.querySelectorAll<HTMLElement>(
+          "button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex='-1'])",
+        ),
+      );
+      if (focusable.length === 0) {
+        event.preventDefault();
+        dialogRef.current.focus();
+        return;
+      }
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.cancelAnimationFrame(focusFrame);
+      document.removeEventListener("keydown", handleKeyDown);
+      if (previousFocus?.isConnected && previousFocus !== document.body) {
+        previousFocus.focus();
+      } else {
+        document.querySelector<HTMLElement>(
+          ".cards-restart-button:not([disabled]), .text-button:not([disabled]), button:not([disabled])",
+        )?.focus();
+      }
+    };
+  }, [onClose]);
 
   return (
     <div className="reveal-backdrop" onMouseDown={onClose} role="presentation">
       <div
+        ref={dialogRef}
         className={`result-reveal result-reveal--${result.game} ${
           isWinner
             ? "result-reveal--winner"
@@ -33,7 +87,9 @@ export function ResultReveal({
         }`}
         role="dialog"
         aria-modal="true"
-        aria-label={`Resultado de ${isCardGame ? "las cartas" : isPinballGame ? "Pinball 3D" : isMarbleGame ? "las canicas" : isDuckGame ? "Patos 3D" : "la ruleta"}`}
+        aria-labelledby={titleId}
+        aria-describedby={descriptionId}
+        tabIndex={-1}
         onMouseDown={(event) => event.stopPropagation()}
       >
         <button className="reveal-close" type="button" onClick={onClose} aria-label="Cerrar resultado">
@@ -76,23 +132,23 @@ export function ResultReveal({
         {isParitySelection ? (
           <>
             <span className="reveal-kicker">CASILLA ESPECIAL {parityLabel}</span>
-            <h2 className="parity-result-title">Solo juegan los {parityLabel === "PAR" ? "pares" : "impares"}</h2>
+            <h2 id={titleId} className="parity-result-title">Referencia visual {parityLabel}</h2>
             <div className={`large-parity-badge large-parity-badge--${result.parity}`}>
               {parityLabel}
             </div>
-            <p>
-              La próxima tirada eliminará <strong>un solo participante</strong> entre los {parityLabel === "PAR" ? "pares" : "impares"}. Después, todos los demás volverán a estar disponibles.
+            <p id={descriptionId}>
+              Este es un resultado heredado. La paridad ya no filtra participantes: la siguiente persona se comprometerá <strong>uniformemente entre todos los habilitados</strong>.
             </p>
           </>
         ) : isQualifiedRound ? (
           <>
             <span className="reveal-kicker">LA PELOTA CAYÓ EN EL NÚMERO {result.landedNumber}</span>
-            <h2 className="parity-result-title">Pasan los {parityLabel === "PAR" ? "pares" : "impares"}</h2>
+            <h2 id={titleId} className="parity-result-title">Referencia visual {parityLabel}</h2>
             <div className={`large-parity-badge large-parity-badge--${result.parity}`}>
               {parityLabel}
             </div>
-            <p>
-              La casilla de <strong>{result.participantName}</strong> marcó {parityLabel}. Quedan {result.remainingCount} participantes para la ronda {result.round + 1}.
+            <p id={descriptionId}>
+              La casilla de <strong>{result.participantName}</strong> marcó {parityLabel}, solo como presentación. Quedan {result.remainingCount} participantes habilitados.
             </p>
           </>
         ) : (
@@ -114,8 +170,8 @@ export function ResultReveal({
                     ? `${(result.selectionLabel || `CANICA ${result.landedNumber}`).toUpperCase()} · CARRERA FINALIZADA`
                   : `NÚMERO ${result.landedNumber} · SALE DE LA RULETA`}
             </span>
-            <h2>{result.participantName}</h2>
-            <p>
+            <h2 id={titleId}>{result.participantName}</h2>
+            <p id={descriptionId}>
               {isWinner
                 ? isDuckGame
                   ? <>Es el último participante con vida y se lleva <strong>{result.prize || "Premio del sorteo"}</strong>. Podrás habilitarlo otra vez sin perder este premio.</>
@@ -125,7 +181,7 @@ export function ResultReveal({
                 : isCardGame
                   ? "Su carta sale del mazo y el nombre queda marcado como eliminado para la siguiente ronda."
                   : isPinballGame
-                    ? "Su pelota cayó al pozo y el nombre queda eliminado. La próxima ronda tendrá una distribución completamente nueva."
+                    ? "Su pelota activó el resultado sellado y el nombre queda eliminado. La próxima ronda tendrá un compromiso completamente nuevo."
                   : isMarbleGame
                     ? "Su canica cruzó de última y el nombre queda marcado como eliminado. La próxima ronda tendrá una pista nueva."
                   : "Su casilla desaparece de la ruleta y el nombre queda marcado como eliminado."}
@@ -133,12 +189,35 @@ export function ResultReveal({
           </>
         )}
 
+        {result.auditHash && result.commitmentId && (
+          <div className="result-proof" aria-label="Comprobante verificable de la ronda">
+            <ShieldCheck size={16} />
+            <span><strong>Ronda verificada</strong><small>{result.auditHash.slice(0, 20).toUpperCase()}…</small></span>
+            <button
+              type="button"
+              onClick={() => void navigator.clipboard?.writeText(JSON.stringify({
+                auditId: result.auditId,
+                commitmentId: result.commitmentId,
+                revealedSeed: result.revealedSeed,
+                auditHash: result.auditHash,
+                result: {
+                  participantId: result.participantId,
+                  participantName: result.participantName,
+                  kind: result.kind,
+                  landedNumber: result.landedNumber,
+                },
+              }, null, 2))}
+              aria-label="Copiar comprobante de la ronda"
+            ><Copy size={14} /> Copiar</button>
+          </div>
+        )}
+
         <div className="reveal-actions">
-          <button className="reveal-action" type="button" onClick={onClose}>
+          <button ref={primaryActionRef} className="reveal-action" type="button" onClick={onClose}>
             {isWinner ? (
               <><Trophy size={17} /> {result.mode === "direct" ? "Continuar sin repetir" : "Cerrar resultado"}</>
             ) : isParitySelection ? (
-              `Eliminar 1 entre ${result.eligibleCount}`
+              "Cerrar referencia de paridad"
             ) : (
               "Continuar a la siguiente ronda"
             )}

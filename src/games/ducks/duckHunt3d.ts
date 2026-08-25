@@ -1,4 +1,12 @@
 import * as THREE from "three";
+import {
+  duckSabotageDefinitions,
+  getDuckCoverAmount,
+  getDuckCoverKind,
+  getDuckHitRadius,
+  getDuckResetDuration,
+  getDuckVisualScale,
+} from "./duckHuntEngine";
 import type { DuckContestant } from "./duckHuntEngine";
 
 export interface DuckHuntStats {
@@ -12,6 +20,7 @@ export interface DuckHuntController {
   updateContestants: (contestants: readonly DuckContestant[]) => void;
   setRunning: (running: boolean) => void;
   shoot: (clientX: number, clientY: number) => DuckShotTarget;
+  castPower: (casterId: string) => void;
   resetFlock: (targetId: string, labelOverride?: string) => void;
   regenerateFormation: () => void;
   dispose: () => void;
@@ -28,16 +37,20 @@ interface ResetState {
   startedAt: number;
   targetId: string;
   nonce: number;
+  duration: number;
 }
 
-const RESET_DURATION = 2050;
 const tempObject = new THREE.Object3D();
 const tempColor = new THREE.Color();
 const tempWingColor = new THREE.Color();
+const tempPowerColor = new THREE.Color();
 const duckHeadColor = new THREE.Color("#197c55");
 const duckHitBodyColor = new THREE.Color("#ff9f28");
 const duckHitHeadColor = new THREE.Color("#ffcc4d");
 const duckWhite = new THREE.Color("#e8f4dc");
+const hiddenPosition = new THREE.Vector3(0, -100, 0);
+const hiddenRotation = new THREE.Euler();
+const hiddenScale = new THREE.Vector3(0.001, 0.001, 0.001);
 
 const smoothstep = (value: number) => {
   const clamped = Math.max(0, Math.min(1, value));
@@ -107,10 +120,13 @@ export const createDuckHunt3D = (
   onStats?: (stats: DuckHuntStats) => void,
 ): DuckHuntController => {
   const maxCount = Math.max(2, initialContestants.length);
+  const denseFlock = maxCount > 96;
+  const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
   let contestants = [...initialContestants];
   let running = false;
   let hasStarted = false;
   let runStartedAt = 0;
+  let coverCycleStartedAt = 0;
   let disposed = false;
   let formationNonce = 0;
   let resetState: ResetState | null = null;
@@ -119,25 +135,33 @@ export const createDuckHunt3D = (
   let labelSprite: THREE.Sprite | null = null;
   let labelTexture: THREE.Texture | null = null;
   let shotFlashUntil = 0;
+  let powerPulseUntil = 0;
+  let powerCasterId: string | null = null;
 
   const renderer = new THREE.WebGLRenderer({
     canvas,
     antialias: initialContestants.length <= 90,
     powerPreference: "high-performance",
   });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, initialContestants.length > 120 ? 1.25 : 1.7));
+  const maximumPixelRatio = Math.min(
+    window.devicePixelRatio || 1,
+    initialContestants.length > 150 ? 0.95 : initialContestants.length > 100 ? 1.1 : initialContestants.length > 50 ? 1.35 : 1.5,
+  );
+  renderer.setPixelRatio(maximumPixelRatio);
+  canvas.dataset.renderQuality = "high";
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.06;
-  renderer.shadowMap.enabled = initialContestants.length <= 70;
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.shadowMap.enabled = initialContestants.length <= 48;
+  renderer.shadowMap.type = THREE.PCFShadowMap;
 
   const scene = new THREE.Scene();
+  scene.name = "SC_DuckHunt";
   scene.background = new THREE.Color("#071927");
   scene.fog = new THREE.FogExp2("#071927", 0.022);
   const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 90);
-  const overviewCameraPosition = new THREE.Vector3(0, 7.6, 21.5);
-  const overviewCameraTarget = new THREE.Vector3(0, 3.6, 0);
+  const overviewCameraPosition = new THREE.Vector3(0, 6.8, 18.2);
+  const overviewCameraTarget = new THREE.Vector3(0, 3.75, 0.25);
   const readyCameraPosition = initialContestants.length > 120
     ? new THREE.Vector3(0, 6.1, 17.4)
     : initialContestants.length > 60
@@ -228,61 +252,126 @@ export const createDuckHunt3D = (
   clouds.instanceMatrix.needsUpdate = true;
   scene.add(clouds);
 
-  const treeCount = 42;
+  const treeCount = 54;
+  const treePositions: THREE.Vector3[] = [];
   const trunks = new THREE.InstancedMesh(
-    new THREE.CylinderGeometry(0.13, 0.22, 2.6, 6),
-    new THREE.MeshStandardMaterial({ color: "#3a2b1b", roughness: 1 }),
+    new THREE.CylinderGeometry(0.15, 0.3, 3.2, 7),
+    new THREE.MeshStandardMaterial({ color: "#3b2819", roughness: 1 }),
     treeCount,
   );
-  const crowns = new THREE.InstancedMesh(
-    new THREE.ConeGeometry(1.05, 3.1, 7),
-    new THREE.MeshStandardMaterial({ color: "#0a3b27", roughness: 0.93 }),
+  const lowerCrowns = new THREE.InstancedMesh(
+    new THREE.ConeGeometry(1.2, 2.8, 8),
+    new THREE.MeshStandardMaterial({ color: "#0a4028", roughness: 0.96 }),
+    treeCount,
+  );
+  const upperCrowns = new THREE.InstancedMesh(
+    new THREE.ConeGeometry(0.88, 2.35, 8),
+    new THREE.MeshStandardMaterial({ color: "#126038", roughness: 0.93 }),
     treeCount,
   );
   for (let index = 0; index < treeCount; index += 1) {
+    const isBackRow = index < 26;
     const side = index % 2 === 0 ? -1 : 1;
-    const row = Math.floor(index / 2);
-    const x = side * (7.6 + (row % 6) * 1.5) + Math.sin(index * 3.1) * 0.65;
-    const z = -7.4 + (row % 4) * 1.35;
-    const height = 0.78 + (index % 5) * 0.09;
-    setInstanceTransform(trunks, index, new THREE.Vector3(x, 1.25 * height, z), new THREE.Euler(), new THREE.Vector3(1, height, 1));
-    setInstanceTransform(crowns, index, new THREE.Vector3(x, 3.05 * height, z), new THREE.Euler(), new THREE.Vector3(1, height, 1));
+    const sideRow = Math.floor((index - 26) / 2);
+    const x = isBackRow
+      ? -12.4 + (index % 13) * 2.05 + (index > 12 ? 0.7 : 0)
+      : side * (8.1 + (sideRow % 4) * 1.05) + Math.sin(index * 2.7) * 0.35;
+    const z = isBackRow
+      ? -7.5 - Math.floor(index / 13) * 1.15 + Math.sin(index * 1.9) * 0.22
+      : -6.2 + (sideRow % 11) * 0.92;
+    const height = 0.76 + (index % 6) * 0.07;
+    const position = new THREE.Vector3(x, 0, z);
+    treePositions.push(position);
+    setInstanceTransform(trunks, index, new THREE.Vector3(x, 1.52 * height, z), new THREE.Euler(0, index * 0.73, 0), new THREE.Vector3(1, height, 1));
+    setInstanceTransform(lowerCrowns, index, new THREE.Vector3(x, 3.22 * height, z), new THREE.Euler(0, index * 0.41, 0), new THREE.Vector3(1, height, 1));
+    setInstanceTransform(upperCrowns, index, new THREE.Vector3(x, 4.35 * height, z), new THREE.Euler(0, index * 0.57, 0), new THREE.Vector3(0.86, height, 0.86));
   }
   trunks.instanceMatrix.needsUpdate = true;
-  crowns.instanceMatrix.needsUpdate = true;
-  scene.add(trunks, crowns);
+  lowerCrowns.instanceMatrix.needsUpdate = true;
+  upperCrowns.instanceMatrix.needsUpdate = true;
+  trunks.castShadow = renderer.shadowMap.enabled;
+  lowerCrowns.castShadow = renderer.shadowMap.enabled;
+  upperCrowns.castShadow = renderer.shadowMap.enabled;
+  scene.add(trunks, lowerCrowns, upperCrowns);
+
+  const grassCount = 240;
+  const grass = new THREE.InstancedMesh(
+    new THREE.ConeGeometry(0.12, 0.9, 4),
+    new THREE.MeshStandardMaterial({ color: "#2e7b39", roughness: 0.96 }),
+    grassCount,
+  );
+  for (let index = 0; index < grassCount; index += 1) {
+    const front = index < 178;
+    const unitX = ((index * 73) % 239) / 238;
+    const unitZ = ((index * 131) % 241) / 240;
+    const x = front ? -11.8 + unitX * 23.6 : (index % 2 === 0 ? -1 : 1) * (6.8 + unitX * 4.8);
+    const z = front ? 3.25 + unitZ * 5.2 : -5.7 + unitZ * 9.4;
+    const height = 0.58 + ((index * 29) % 11) * 0.045;
+    setInstanceTransform(
+      grass,
+      index,
+      new THREE.Vector3(x, height * 0.45, z),
+      new THREE.Euler(0, index * 1.71, Math.sin(index) * 0.08),
+      new THREE.Vector3(0.72 + (index % 4) * 0.12, height, 0.72),
+    );
+  }
+  grass.instanceMatrix.needsUpdate = true;
+  grass.receiveShadow = true;
+  scene.add(grass);
+
+  const shrubCount = 52;
+  const shrubs = new THREE.InstancedMesh(
+    new THREE.IcosahedronGeometry(0.72, 1),
+    new THREE.MeshStandardMaterial({ color: "#195c31", roughness: 1 }),
+    shrubCount,
+  );
+  for (let index = 0; index < shrubCount; index += 1) {
+    const x = -11.4 + (((index * 43) % 53) / 52) * 22.8;
+    const z = index < 34 ? 4.15 + (index % 4) * 0.72 : -7 + (index % 6) * 0.62;
+    const scale = 0.62 + (index % 5) * 0.095;
+    setInstanceTransform(
+      shrubs,
+      index,
+      new THREE.Vector3(x, 0.48 * scale, z),
+      new THREE.Euler(0, index * 0.91, 0),
+      new THREE.Vector3(scale * 1.4, scale, scale),
+    );
+  }
+  shrubs.instanceMatrix.needsUpdate = true;
+  shrubs.castShadow = renderer.shadowMap.enabled;
+  scene.add(shrubs);
 
   const body = new THREE.InstancedMesh(
-    new THREE.SphereGeometry(0.55, 12, 8),
+    new THREE.SphereGeometry(0.55, denseFlock ? 8 : 12, denseFlock ? 5 : 8),
     new THREE.MeshStandardMaterial({ roughness: 0.55, metalness: 0.04 }),
     maxCount,
   );
   const head = new THREE.InstancedMesh(
-    new THREE.SphereGeometry(0.35, 10, 8),
+    new THREE.SphereGeometry(0.35, denseFlock ? 7 : 10, denseFlock ? 5 : 8),
     new THREE.MeshStandardMaterial({ roughness: 0.48 }),
     maxCount,
   );
-  const wingGeometry = new THREE.SphereGeometry(0.46, 9, 6);
+  const wingGeometry = new THREE.SphereGeometry(0.46, denseFlock ? 6 : 9, denseFlock ? 4 : 6);
   const wingMaterial = new THREE.MeshStandardMaterial({ roughness: 0.6 });
   const leftWing = new THREE.InstancedMesh(wingGeometry, wingMaterial, maxCount);
   const rightWing = new THREE.InstancedMesh(wingGeometry, wingMaterial, maxCount);
   const beak = new THREE.InstancedMesh(
-    new THREE.ConeGeometry(0.16, 0.52, 7),
+    new THREE.ConeGeometry(0.16, 0.52, denseFlock ? 5 : 7),
     new THREE.MeshStandardMaterial({ color: "#ffac2f", roughness: 0.55 }),
     maxCount,
   );
   const eye = new THREE.InstancedMesh(
-    new THREE.SphereGeometry(0.055, 7, 5),
+    new THREE.SphereGeometry(0.055, denseFlock ? 4 : 7, denseFlock ? 3 : 5),
     new THREE.MeshBasicMaterial({ color: "#eaffff" }),
     maxCount,
   );
   const tail = new THREE.InstancedMesh(
-    new THREE.ConeGeometry(0.24, 0.58, 7),
+    new THREE.ConeGeometry(0.24, 0.58, denseFlock ? 5 : 7),
     new THREE.MeshStandardMaterial({ roughness: 0.62 }),
     maxCount,
   );
   const neckRing = new THREE.InstancedMesh(
-    new THREE.TorusGeometry(0.25, 0.055, 5, 10),
+    new THREE.TorusGeometry(0.25, 0.055, denseFlock ? 3 : 5, denseFlock ? 7 : 10),
     new THREE.MeshBasicMaterial({ color: "#eaf8e4" }),
     maxCount,
   );
@@ -292,12 +381,19 @@ export const createDuckHunt3D = (
     maxCount,
   );
   const shields = new THREE.InstancedMesh(
-    new THREE.SphereGeometry(0.78, 10, 7),
+    new THREE.SphereGeometry(0.78, denseFlock ? 7 : 10, denseFlock ? 5 : 7),
     new THREE.MeshBasicMaterial({ color: "#5df4ff", transparent: true, opacity: 0.24, wireframe: true, depthWrite: false }),
     maxCount,
   );
-  const duckMeshes = [body, head, leftWing, rightWing, beak, eye, tail, neckRing, winnerCrown, shields];
-  duckMeshes.forEach((mesh) => {
+  const powerSigils = new THREE.InstancedMesh(
+    new THREE.TorusGeometry(0.65, 0.06, denseFlock ? 4 : 6, denseFlock ? 10 : 18),
+    new THREE.MeshBasicMaterial({ color: "#ffffff", transparent: true, opacity: 0.7, depthWrite: false }),
+    maxCount,
+  );
+  const coreDuckMeshes = [body, head, leftWing, rightWing, beak, eye, tail, ...(!denseFlock ? [neckRing] : []), powerSigils];
+  const duckMeshes = [...coreDuckMeshes, winnerCrown, shields];
+  duckMeshes.forEach((mesh, index) => {
+    mesh.name = `SM_DuckPart_${index}`;
     mesh.frustumCulled = false;
     mesh.castShadow = renderer.shadowMap.enabled;
     scene.add(mesh);
@@ -315,13 +411,37 @@ export const createDuckHunt3D = (
   scene.add(flash);
 
   const currentPositions = new Map<string, THREE.Vector3>();
+  const coverAmounts = new Map<string, number>();
   const projected = new THREE.Vector3();
+  const flightPosition = new THREE.Vector3();
+  const groundPosition = new THREE.Vector3();
+  const partPosition = new THREE.Vector3();
+  const bodyScale = new THREE.Vector3();
+  const headScale = new THREE.Vector3();
+  const wingScale = new THREE.Vector3();
+  const beakScale = new THREE.Vector3();
+  const unitScale = new THREE.Vector3();
+  const tailScale = new THREE.Vector3();
+  const shieldScale = new THREE.Vector3();
+  const baseRotation = new THREE.Euler();
+  const leftWingRotation = new THREE.Euler();
+  const rightWingRotation = new THREE.Euler();
+  const beakRotation = new THREE.Euler();
+  const tailRotation = new THREE.Euler();
+  const neckRotation = new THREE.Euler();
+  const crownRotation = new THREE.Euler();
+  const shieldRotation = new THREE.Euler();
+  const powerRotation = new THREE.Euler();
+  const powerScale = new THREE.Vector3();
+  const labelOffset = new THREE.Vector3(0, 1.1, 0);
+  const hiddenContestantIds = new Set<string>();
+  const colorSignatures: string[] = [];
 
   const hideInstance = (mesh: THREE.InstancedMesh, index: number) => {
-    setInstanceTransform(mesh, index, new THREE.Vector3(0, -100, 0), new THREE.Euler(), new THREE.Vector3(0.001, 0.001, 0.001));
+    setInstanceTransform(mesh, index, hiddenPosition, hiddenRotation, hiddenScale);
   };
 
-  const getFlightPosition = (contestant: DuckContestant, elapsedSeconds: number) => {
+  const getFlightPosition = (contestant: DuckContestant, elapsedSeconds: number, target: THREE.Vector3) => {
     const { profile } = contestant;
     const speed = contestant.speed;
     const routePhase = contestant.routeSeed * Math.PI * 2;
@@ -338,17 +458,26 @@ export const createDuckHunt3D = (
     const z = profile.depth
       + Math.cos(elapsedSeconds * (0.31 + contestant.routeSeed * 0.18) * speed + phase) * 2.15
       + Math.sin(elapsedSeconds * 0.67 * speed + routePhase) * contestant.threatLevel * 0.7;
-    return new THREE.Vector3(x, y, z);
+    return target.set(x, y, z);
   };
 
-  const getGroundPosition = (contestant: DuckContestant) => {
-    const angle = contestant.number * 2.399963 + formationNonce * 0.72;
-    const radius = 1.4 + Math.sqrt(contestant.number) * 0.47;
-    return new THREE.Vector3(Math.cos(angle) * Math.min(8.8, radius), 0.42, Math.sin(angle) * Math.min(4.8, radius * 0.55) + 0.6);
+  const getCoverPosition = (contestant: DuckContestant, target: THREE.Vector3) => {
+    if (getDuckCoverKind(contestant) === "grass") {
+      const x = -7.8 + ((contestant.routeSeed * 13.73 + contestant.number * 0.37) % 1) * 15.6;
+      const z = 4.3 + ((contestant.routeSeed * 7.19 + contestant.number * 0.21) % 1) * 2.6;
+      return target.set(x, 0.26, z);
+    }
+    const treeIndex = (contestant.number * 17 + Math.floor(contestant.routeSeed * 101)) % treePositions.length;
+    const tree = treePositions[treeIndex];
+    const centerPull = tree.x === 0 ? 0 : -Math.sign(tree.x) * 0.38;
+    return target.set(tree.x + centerPull, 0.5, tree.z + 0.22);
   };
 
   const removeLabel = () => {
-    if (labelSprite) scene.remove(labelSprite);
+    if (labelSprite) {
+      scene.remove(labelSprite);
+      labelSprite.material.dispose();
+    }
     labelTexture?.dispose();
     labelSprite = null;
     labelTexture = null;
@@ -367,126 +496,263 @@ export const createDuckHunt3D = (
     scene.add(labelSprite);
   };
 
+  let renderWidth = 0;
+  let renderHeight = 0;
   const resize = () => {
     const rect = canvas.getBoundingClientRect();
     const width = Math.max(1, Math.round(rect.width));
     const height = Math.max(1, Math.round(rect.height));
-    if (canvas.width !== Math.round(width * renderer.getPixelRatio()) || canvas.height !== Math.round(height * renderer.getPixelRatio())) {
-      renderer.setSize(width, height, false);
-    }
+    if (width === renderWidth && height === renderHeight) return;
+    renderWidth = width;
+    renderHeight = height;
+    renderer.setSize(width, height, false);
     camera.aspect = width / height;
     camera.fov = height < 560 ? 47 : 42;
     camera.updateProjectionMatrix();
   };
+  const resizeObserver = new ResizeObserver(resize);
+  resizeObserver.observe(canvas);
+  resize();
 
   const updateDucks = (now: number) => {
     const elapsedSeconds = now / 1000;
-    const resetElapsed = resetState ? now - resetState.startedAt : RESET_DURATION + 1;
-    const scaleBase = contestants.length > 150 ? 0.52 : contestants.length > 90 ? 0.61 : contestants.length > 45 ? 0.72 : 0.86;
-    currentPositions.clear();
+    const flightElapsedSeconds = hasStarted ? Math.max(0, (now - coverCycleStartedAt) / 1000) : 0;
+    const resetDuration = resetState?.duration ?? getDuckResetDuration(contestants.length);
+    const resetElapsed = resetState ? now - resetState.startedAt : resetDuration + 1;
+    const coverReachedAt = resetDuration * 0.34;
+    const emergenceStartsAt = resetDuration * 0.54;
+    const scaleBase = getDuckVisualScale(contestants.length);
     let visible = 0;
+    let visibleCrowns = 0;
+    let visibleShields = 0;
+    let matricesChanged = false;
+    let colorsChanged = false;
 
     contestants.forEach((contestant, index) => {
-      const shouldHide = contestant.knockedOut && (!resetState || resetElapsed > 1040);
+      const shouldHide = contestant.knockedOut && (!resetState || resetElapsed > emergenceStartsAt);
       if (shouldHide) {
-        duckMeshes.forEach((mesh) => hideInstance(mesh, index));
+        coverAmounts.set(contestant.id, 1);
+        if (!hiddenContestantIds.has(contestant.id)) {
+          coreDuckMeshes.forEach((mesh) => hideInstance(mesh, index));
+          hiddenContestantIds.add(contestant.id);
+          matricesChanged = true;
+        }
         return;
       }
-      visible += 1;
-      const flight = getFlightPosition(contestant, elapsedSeconds);
-      const groundPosition = getGroundPosition(contestant);
-      let position = flight;
-      if (!running) {
-        position = groundPosition.clone();
-      } else if (resetState) {
-        if (resetElapsed < 720) {
-          position = flight.clone().lerp(groundPosition, smoothstep(resetElapsed / 720));
-        } else if (resetElapsed < 1120) {
-          position = groundPosition.clone();
-        } else if (resetElapsed < RESET_DURATION) {
-          position = groundPosition.clone().lerp(flight, smoothstep((resetElapsed - 1120) / (RESET_DURATION - 1120)));
-        }
+      getFlightPosition(contestant, elapsedSeconds, flightPosition);
+      getCoverPosition(contestant, groundPosition);
+      let position = currentPositions.get(contestant.id);
+      if (!position) {
+        position = new THREE.Vector3();
+        currentPositions.set(contestant.id, position);
       }
-      currentPositions.set(contestant.id, position.clone());
+      if (!running) {
+        position.copy(groundPosition);
+        coverAmounts.set(contestant.id, 1);
+      } else if (resetState) {
+        if (resetElapsed < coverReachedAt) {
+          const coverAmount = smoothstep(resetElapsed / coverReachedAt);
+          position.lerpVectors(flightPosition, groundPosition, coverAmount);
+          coverAmounts.set(contestant.id, coverAmount);
+        } else if (resetElapsed < emergenceStartsAt) {
+          position.copy(groundPosition);
+          coverAmounts.set(contestant.id, 1);
+        } else if (resetElapsed < resetDuration) {
+          const emergence = smoothstep((resetElapsed - emergenceStartsAt) / (resetDuration - emergenceStartsAt));
+          position.lerpVectors(groundPosition, flightPosition, emergence);
+          position.y += Math.sin(emergence * Math.PI) * (0.7 + contestant.routeSeed * 0.55);
+          coverAmounts.set(contestant.id, 1 - emergence);
+        } else {
+          position.copy(flightPosition);
+          coverAmounts.set(contestant.id, 0);
+        }
+      } else {
+        const coverAmount = getDuckCoverAmount(contestant, flightElapsedSeconds);
+        position.lerpVectors(flightPosition, groundPosition, coverAmount);
+        if (coverAmount > 0 && coverAmount < 1) position.y += Math.sin(coverAmount * Math.PI) * 0.3;
+        coverAmounts.set(contestant.id, coverAmount);
+      }
+      const isFullyCovered = (coverAmounts.get(contestant.id) ?? 0) >= 0.88;
+      if (isFullyCovered) {
+        if (!hiddenContestantIds.has(contestant.id)) {
+          coreDuckMeshes.forEach((mesh) => hideInstance(mesh, index));
+          hiddenContestantIds.add(contestant.id);
+          matricesChanged = true;
+        }
+        return;
+      }
+      hiddenContestantIds.delete(contestant.id);
+      visible += 1;
+      matricesChanged = true;
 
       const scale = scaleBase * contestant.profile.scale * (contestant.lives === 1 ? 0.91 : 1);
       const flapAmount = resetState && resetElapsed > 640 && resetElapsed < 1160
         ? 0.12
-        : Math.sin(elapsedSeconds * (10.5 + contestant.speed * 2.3) + contestant.profile.phase) * 0.74;
+        : reducedMotion ? 0.12 : Math.sin(elapsedSeconds * (10.5 + contestant.speed * 2.3) + contestant.profile.phase) * 0.74;
       const yaw = Math.sin(elapsedSeconds * 0.42 * contestant.speed + contestant.profile.phase) * 0.38;
-      const rotation = new THREE.Euler(0, yaw, 0);
-      const participantColor = tempColor.set(contestant.accent);
-      const bodyColor = contestant.id === resetState?.targetId ? duckHitBodyColor : participantColor;
-      const wingColor = tempWingColor.copy(bodyColor).lerp(duckWhite, 0.22);
-      body.setColorAt(index, bodyColor);
-      leftWing.setColorAt(index, wingColor);
-      rightWing.setColorAt(index, wingColor);
-      tail.setColorAt(index, wingColor);
-      head.setColorAt(index, contestant.id === resetState?.targetId ? duckHitHeadColor : duckHeadColor);
+      baseRotation.set(0, yaw, 0);
+      const isHitTarget = contestant.id === resetState?.targetId;
+      const colorSignature = `${contestant.accent}|${isHitTarget ? 1 : 0}|${contestant.power}`;
+      if (colorSignatures[index] !== colorSignature) {
+        const participantColor = tempColor.set(contestant.accent);
+        const bodyColor = isHitTarget ? duckHitBodyColor : participantColor;
+        const wingColor = tempWingColor.copy(bodyColor).lerp(duckWhite, 0.22);
+        body.setColorAt(index, bodyColor);
+        leftWing.setColorAt(index, wingColor);
+        rightWing.setColorAt(index, wingColor);
+        tail.setColorAt(index, wingColor);
+        head.setColorAt(index, isHitTarget ? duckHitHeadColor : duckHeadColor);
+        powerSigils.setColorAt(index, tempPowerColor.set(duckSabotageDefinitions[contestant.power].color));
+        colorSignatures[index] = colorSignature;
+        colorsChanged = true;
+      }
 
-      setInstanceTransform(body, index, position, rotation, new THREE.Vector3(1.35, 0.82, 0.78).multiplyScalar(scale));
-      const headPosition = position.clone().add(new THREE.Vector3(0.66 * scale, 0.25 * scale, 0));
-      setInstanceTransform(head, index, headPosition, rotation, new THREE.Vector3(0.95, 0.95, 0.95).multiplyScalar(scale));
-      const wingScale = new THREE.Vector3(1.22, 0.24, 0.72).multiplyScalar(scale);
-      setInstanceTransform(leftWing, index, position.clone().add(new THREE.Vector3(0, 0.18 * scale, 0.42 * scale)), new THREE.Euler(flapAmount, yaw, 0.08), wingScale);
-      setInstanceTransform(rightWing, index, position.clone().add(new THREE.Vector3(0, 0.18 * scale, -0.42 * scale)), new THREE.Euler(-flapAmount, yaw, -0.08), wingScale);
-      setInstanceTransform(beak, index, headPosition.clone().add(new THREE.Vector3(0.38 * scale, -0.03 * scale, 0)), new THREE.Euler(0, 0, -Math.PI / 2), new THREE.Vector3(0.8, 1, 0.8).multiplyScalar(scale));
-      setInstanceTransform(eye, index, headPosition.clone().add(new THREE.Vector3(0.22 * scale, 0.12 * scale, 0.27 * scale)), rotation, new THREE.Vector3(1, 1, 1).multiplyScalar(scale));
-      setInstanceTransform(tail, index, position.clone().add(new THREE.Vector3(-0.72 * scale, 0.04 * scale, 0)), new THREE.Euler(0, 0, Math.PI / 2), new THREE.Vector3(0.82, 1.05, 0.82).multiplyScalar(scale));
-      setInstanceTransform(neckRing, index, position.clone().add(new THREE.Vector3(0.43 * scale, 0.2 * scale, 0)), new THREE.Euler(0, Math.PI / 2 + yaw, 0), new THREE.Vector3(1, 1, 1).multiplyScalar(scale));
+      bodyScale.set(1.35, 0.82, 0.78).multiplyScalar(scale);
+      setInstanceTransform(body, index, position, baseRotation, bodyScale);
+      const headPosition = partPosition.copy(position);
+      headPosition.x += 0.66 * scale;
+      headPosition.y += 0.25 * scale;
+      headScale.setScalar(0.95 * scale);
+      setInstanceTransform(head, index, headPosition, baseRotation, headScale);
+      wingScale.set(1.22, 0.24, 0.72).multiplyScalar(scale);
+      leftWingRotation.set(flapAmount, yaw, 0.08);
+      partPosition.copy(position).addScaledVector(THREE.Object3D.DEFAULT_UP, 0.18 * scale);
+      partPosition.z += 0.42 * scale;
+      setInstanceTransform(leftWing, index, partPosition, leftWingRotation, wingScale);
+      rightWingRotation.set(-flapAmount, yaw, -0.08);
+      partPosition.copy(position).addScaledVector(THREE.Object3D.DEFAULT_UP, 0.18 * scale);
+      partPosition.z -= 0.42 * scale;
+      setInstanceTransform(rightWing, index, partPosition, rightWingRotation, wingScale);
+      beakRotation.set(0, 0, -Math.PI / 2);
+      beakScale.set(0.8, 1, 0.8).multiplyScalar(scale);
+      partPosition.copy(position).setX(position.x + 1.04 * scale).setY(position.y + 0.22 * scale);
+      setInstanceTransform(beak, index, partPosition, beakRotation, beakScale);
+      unitScale.setScalar(scale);
+      partPosition.copy(position).set(position.x + 0.88 * scale, position.y + 0.37 * scale, position.z + 0.27 * scale);
+      setInstanceTransform(eye, index, partPosition, baseRotation, unitScale);
+      tailRotation.set(0, 0, Math.PI / 2);
+      tailScale.set(0.82, 1.05, 0.82).multiplyScalar(scale);
+      partPosition.copy(position).set(position.x - 0.72 * scale, position.y + 0.04 * scale, position.z);
+      setInstanceTransform(tail, index, partPosition, tailRotation, tailScale);
+      neckRotation.set(0, Math.PI / 2 + yaw, 0);
+      partPosition.copy(position).set(position.x + 0.43 * scale, position.y + 0.2 * scale, position.z);
+      if (!denseFlock) setInstanceTransform(neckRing, index, partPosition, neckRotation, unitScale);
       if (contestant.previousWinner) {
-        setInstanceTransform(winnerCrown, index, headPosition.clone().add(new THREE.Vector3(0, 0.58 * scale, 0)), new THREE.Euler(0, -yaw, 0), new THREE.Vector3(1, 1, 1).multiplyScalar(scale));
-      } else {
-        hideInstance(winnerCrown, index);
+        crownRotation.set(0, -yaw, 0);
+        partPosition.copy(position).set(position.x + 0.66 * scale, position.y + 0.83 * scale, position.z);
+        setInstanceTransform(winnerCrown, visibleCrowns, partPosition, crownRotation, unitScale);
+        visibleCrowns += 1;
       }
       if (contestant.shielded) {
-        setInstanceTransform(shields, index, position, new THREE.Euler(0, elapsedSeconds * 0.8, 0), new THREE.Vector3(1.15, 0.92, 0.92).multiplyScalar(scale));
-      } else {
-        hideInstance(shields, index);
+        shieldRotation.set(0, reducedMotion ? 0 : elapsedSeconds * 0.8, 0);
+        shieldScale.set(1.15, 0.92, 0.92).multiplyScalar(scale);
+        setInstanceTransform(shields, visibleShields, position, shieldRotation, shieldScale);
+        visibleShields += 1;
       }
+      const isCasting = contestant.id === powerCasterId && powerPulseUntil > now;
+      const pulse = isCasting ? 1.4 + Math.sin((powerPulseUntil - now) * 0.022) * 0.24 : 1;
+      powerRotation.set(Math.PI / 2, 0, reducedMotion ? 0 : -elapsedSeconds * (0.65 + contestant.routeSeed));
+      powerScale.set(0.78, 0.78, 0.78).multiplyScalar(scale * pulse);
+      partPosition.copy(position).setY(position.y - 0.2 * scale);
+      setInstanceTransform(powerSigils, index, partPosition, powerRotation, powerScale);
     });
 
-    duckMeshes.forEach((mesh) => {
+    coreDuckMeshes.forEach((mesh) => {
       mesh.count = contestants.length;
-      mesh.instanceMatrix.needsUpdate = true;
-      if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+      if (matricesChanged) mesh.instanceMatrix.needsUpdate = true;
+      if (colorsChanged && mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
     });
+    neckRing.count = denseFlock ? 0 : contestants.length;
+    winnerCrown.count = visibleCrowns;
+    shields.count = visibleShields;
+    if (matricesChanged) {
+      winnerCrown.instanceMatrix.needsUpdate = true;
+      shields.instanceMatrix.needsUpdate = true;
+    }
 
     if (labelSprite && resetState) {
       const targetPosition = currentPositions.get(resetState.targetId);
-      if (targetPosition) labelSprite.position.copy(targetPosition).add(new THREE.Vector3(0, 1.1, 0));
+      if (targetPosition) labelSprite.position.copy(targetPosition).add(labelOffset);
       labelSprite.visible = resetElapsed < 1780;
     }
-    if (resetState && resetElapsed >= RESET_DURATION) {
+    if (powerPulseUntil <= now) powerCasterId = null;
+    if (resetState && resetElapsed >= resetDuration) {
       resetState = null;
+      coverCycleStartedAt = now;
       removeLabel();
     }
     return visible;
   };
 
   let animationFrame = 0;
+  let qualityScale = 1;
+  let lowFpsWindows = 0;
+  let highFpsWindows = 0;
+  let lastRenderedAt = 0;
+  let lastDuckUpdateAt = Number.NEGATIVE_INFINITY;
+  let visibleCount = 0;
   const render = (now: number) => {
     if (disposed) return;
-    resize();
-    const visible = updateDucks(now);
+    const idleFrameInterval = running || resetState || shotFlashUntil > now || powerPulseUntil > now ? 0 : 50;
+    if (document.hidden) {
+      statsStartedAt = now;
+      frames = 0;
+      animationFrame = window.requestAnimationFrame(render);
+      return;
+    }
+    if (idleFrameInterval > 0 && lastRenderedAt > 0 && now - lastRenderedAt < idleFrameInterval) {
+      animationFrame = window.requestAnimationFrame(render);
+      return;
+    }
+    lastRenderedAt = now;
+    const duckUpdateInterval = maxCount > 150 ? 30 : maxCount > 96 ? 22 : 0;
+    if (now < lastDuckUpdateAt || duckUpdateInterval === 0 || now - lastDuckUpdateAt >= duckUpdateInterval) {
+      visibleCount = updateDucks(now);
+      lastDuckUpdateAt = now;
+    }
+    const visible = visibleCount;
     const cameraBlend = hasStarted
-      ? running ? smoothstep((now - runStartedAt) / 1650) : 1
+      ? running ? reducedMotion ? 1 : smoothstep((now - runStartedAt) / 1650) : 1
       : 0;
     camera.position.lerpVectors(readyCameraPosition, overviewCameraPosition, cameraBlend);
     cameraTarget.lerpVectors(readyCameraTarget, overviewCameraTarget, cameraBlend);
     camera.lookAt(cameraTarget);
-    pond.rotation.z = Math.sin(now / 2200) * 0.012;
+    pond.rotation.z = reducedMotion ? 0 : Math.sin(now / 2200) * 0.012;
     const flashMaterial = flash.material as THREE.SpriteMaterial;
     flashMaterial.opacity = shotFlashUntil > now ? Math.max(0, (shotFlashUntil - now) / 120) : 0;
     renderer.render(scene, camera);
     frames += 1;
     if (now - statsStartedAt >= 1000) {
+      const measuredFps = Math.round((frames * 1000) / (now - statsStartedAt));
+      canvas.dataset.renderCalls = String(renderer.info.render.calls);
+      canvas.dataset.renderTriangles = String(renderer.info.render.triangles);
       onStats?.({
-        fps: Math.round((frames * 1000) / (now - statsStartedAt)),
+        fps: running ? measuredFps : 60,
         visible,
         renderCalls: renderer.info.render.calls,
         triangles: renderer.info.render.triangles,
       });
+      if (running && now - runStartedAt > 1_200) {
+        lowFpsWindows = measuredFps < 48 ? lowFpsWindows + 1 : 0;
+        highFpsWindows = measuredFps > 57 ? highFpsWindows + 1 : 0;
+      }
+      if (lowFpsWindows >= 2 && qualityScale > 0.68) {
+        qualityScale = qualityScale > 0.9 ? 0.82 : 0.68;
+        renderer.setPixelRatio(Math.max(0.65, maximumPixelRatio * qualityScale));
+        canvas.dataset.renderQuality = qualityScale < 0.75 ? "performance" : "balanced";
+        renderWidth = 0;
+        resize();
+        lowFpsWindows = 0;
+        highFpsWindows = 0;
+      } else if (highFpsWindows >= 6 && qualityScale < 1) {
+        qualityScale = qualityScale < 0.8 ? 0.82 : 1;
+        renderer.setPixelRatio(maximumPixelRatio * qualityScale);
+        canvas.dataset.renderQuality = qualityScale === 1 ? "high" : "balanced";
+        renderWidth = 0;
+        resize();
+        lowFpsWindows = 0;
+        highFpsWindows = 0;
+      }
       statsStartedAt = now;
       frames = 0;
     }
@@ -497,12 +763,22 @@ export const createDuckHunt3D = (
   return {
     updateContestants(nextContestants) {
       contestants = [...nextContestants];
+      hiddenContestantIds.clear();
+      colorSignatures.length = 0;
+      const activeIds = new Set(nextContestants.map((contestant) => contestant.id));
+      currentPositions.forEach((_, id) => {
+        if (!activeIds.has(id)) {
+          currentPositions.delete(id);
+          coverAmounts.delete(id);
+        }
+      });
     },
     setRunning(nextRunning) {
       running = nextRunning;
       if (nextRunning && !hasStarted) {
         hasStarted = true;
         runStartedAt = performance.now();
+        coverCycleStartedAt = runStartedAt;
       }
     },
     shoot(clientX, clientY) {
@@ -515,9 +791,10 @@ export const createDuckHunt3D = (
       let grazedId: string | null = null;
       let selectedDistance = Number.POSITIVE_INFINITY;
       let grazeDistance = Number.POSITIVE_INFINITY;
-      const radius = contestants.length > 120 ? 24 : contestants.length > 60 ? 29 : 38;
+      const radius = getDuckHitRadius(contestants.length);
       contestants.forEach((contestant) => {
         if (contestant.knockedOut) return;
+        if ((coverAmounts.get(contestant.id) ?? 0) >= 0.58) return;
         const position = currentPositions.get(contestant.id);
         if (!position) return;
         projected.copy(position).project(camera);
@@ -542,11 +819,22 @@ export const createDuckHunt3D = (
         threatY: 1 - (pointerY / rect.height) * 2,
       };
     },
+    castPower(casterId) {
+      powerCasterId = casterId;
+      powerPulseUntil = performance.now() + 1_250;
+    },
     resetFlock(targetId, labelOverride) {
       const entropy = new Uint32Array(1);
       crypto.getRandomValues(entropy);
       formationNonce = entropy[0];
-      resetState = { startedAt: performance.now(), targetId, nonce: formationNonce };
+      powerCasterId = null;
+      powerPulseUntil = 0;
+      resetState = {
+        startedAt: performance.now(),
+        targetId,
+        nonce: formationNonce,
+        duration: getDuckResetDuration(contestants.length),
+      };
       const target = contestants.find((contestant) => contestant.id === targetId);
       if (target) {
         if (labelOverride) {
@@ -571,15 +859,31 @@ export const createDuckHunt3D = (
     dispose() {
       disposed = true;
       window.cancelAnimationFrame(animationFrame);
+      resizeObserver.disconnect();
       removeLabel();
-      flashTexture?.dispose();
+      const geometries = new Set<THREE.BufferGeometry>();
+      const materials = new Set<THREE.Material>();
+      const textures = new Set<THREE.Texture>();
       scene.traverse((object) => {
-        if (object instanceof THREE.Mesh || object instanceof THREE.InstancedMesh) {
-          object.geometry.dispose();
-          const materials = Array.isArray(object.material) ? object.material : [object.material];
-          materials.forEach((material) => material.dispose());
-        }
+        if (
+          !(object instanceof THREE.Mesh) &&
+          !(object instanceof THREE.Line) &&
+          !(object instanceof THREE.Points) &&
+          !(object instanceof THREE.Sprite)
+        ) return;
+        if ("geometry" in object && object.geometry instanceof THREE.BufferGeometry) geometries.add(object.geometry);
+        const objectMaterials = Array.isArray(object.material) ? object.material : [object.material];
+        objectMaterials.forEach((material) => {
+          materials.add(material);
+          Object.values(material).forEach((value) => {
+            if (value instanceof THREE.Texture) textures.add(value);
+          });
+        });
       });
+      if (flashTexture) textures.add(flashTexture);
+      textures.forEach((texture) => texture.dispose());
+      materials.forEach((material) => material.dispose());
+      geometries.forEach((geometry) => geometry.dispose());
       renderer.dispose();
     },
   };

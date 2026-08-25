@@ -1,4 +1,6 @@
 import type { DrawMode, Participant, PinballControlMode } from "../../core/types";
+import { sha256Hex } from "../../shared/crypto/sha256.ts";
+import { uniformIndexFromUint32 } from "../roulette/rouletteCommitment.ts";
 
 export interface PinballPoint {
   x: number;
@@ -65,6 +67,9 @@ export interface PinballBallAssignment {
 export interface PreparedPinballRound {
   layout: PinballLayout;
   balls: PinballBallAssignment[];
+  selected: PinballBallAssignment;
+  selectedIndex: number;
+  commitmentId: string;
   drawMode: DrawMode;
   controlMode: PinballControlMode;
   overtimeAfterMs: number;
@@ -85,6 +90,43 @@ export interface PinballPhysicsBall {
 export interface PinballFlipperState {
   left: boolean;
   right: boolean;
+  leftAngle?: number;
+  rightAngle?: number;
+}
+
+export type PinballSide = "left" | "right";
+
+export interface PinballSegmentCollider {
+  id: string;
+  start: PinballPoint;
+  end: PinballPoint;
+  radius: number;
+}
+
+export interface PinballPhysicsFrame {
+  delta: number;
+  dampingX: number;
+  dampingZ: number;
+  leftFlipper: PinballSegmentCollider;
+  rightFlipper: PinballSegmentCollider;
+  spinnerColliders: PinballSegmentCollider[];
+}
+
+export interface PinballTargetBankDefinition extends PinballPoint {
+  id: string;
+  count: number;
+  spacing: number;
+  rotation: number;
+  radius: number;
+}
+
+export interface PinballFlipperDefinition extends PinballPoint {
+  side: PinballSide;
+  direction: -1 | 1;
+  length: number;
+  radius: number;
+  restAngle: number;
+  activeAngle: number;
 }
 
 export interface PinballValidation {
@@ -110,6 +152,110 @@ const BOARD_NAMES = [
   "Bóveda Magnética",
 ];
 
+export const PINBALL_TARGET_BANKS: readonly PinballTargetBankDefinition[] = [
+  { id: "target-bank-left", x: -3.25, z: 1.65, count: 4, spacing: 0.78, rotation: 0.3, radius: 0.3 },
+  { id: "target-bank-right", x: 3.3, z: -2.5, count: 3, spacing: 0.78, rotation: -0.38, radius: 0.3 },
+];
+
+export const PINBALL_SLING_COLLIDERS: readonly PinballSegmentCollider[] = [
+  { id: "sling-left", start: { x: -2.75, z: 7.28 }, end: { x: -0.58, z: 7.28 }, radius: 0.17 },
+  { id: "sling-right", start: { x: 0.58, z: 7.28 }, end: { x: 2.75, z: 7.28 }, radius: 0.17 },
+];
+
+export const PINBALL_FLIPPERS: Readonly<Record<PinballSide, PinballFlipperDefinition>> = {
+  left: {
+    side: "left",
+    direction: 1,
+    x: -2.55,
+    z: 8.55,
+    length: 2.15,
+    radius: 0.32,
+    restAngle: -0.28,
+    activeAngle: 0.48,
+  },
+  right: {
+    side: "right",
+    direction: -1,
+    x: 2.55,
+    z: 8.55,
+    length: 2.15,
+    radius: 0.32,
+    restAngle: 0.28,
+    activeAngle: -0.48,
+  },
+};
+
+export const PINBALL_TARGET_COLLIDERS: readonly PinballSegmentCollider[] = PINBALL_TARGET_BANKS.flatMap((bank) =>
+  Array.from({ length: bank.count }, (_, index) => {
+    const localX = (index - (bank.count - 1) / 2) * bank.spacing;
+    const x = bank.x + localX * Math.cos(bank.rotation);
+    const z = bank.z - localX * Math.sin(bank.rotation);
+    return {
+      id: `${bank.id}-${index}`,
+      start: { x, z },
+      end: { x, z },
+      radius: bank.radius,
+    };
+  }),
+);
+
+export const getPinballTargetColliders = () => PINBALL_TARGET_COLLIDERS;
+
+export const getPinballFlipperCollider = (
+  side: PinballSide,
+  angle = PINBALL_FLIPPERS[side].restAngle,
+): PinballSegmentCollider => {
+  const definition = PINBALL_FLIPPERS[side];
+  const directionX = Math.cos(angle) * definition.direction;
+  const directionZ = -Math.sin(angle) * definition.direction;
+  return {
+    id: `flipper-${side}`,
+    start: { x: definition.x, z: definition.z },
+    end: {
+      x: definition.x + directionX * definition.length,
+      z: definition.z + directionZ * definition.length,
+    },
+    radius: definition.radius,
+  };
+};
+
+export const createPinballPhysicsFrame = (
+  layout: PinballLayout,
+  deltaSeconds: number,
+  flippers: PinballFlipperState,
+  spinnerAngles?: readonly number[],
+): PinballPhysicsFrame => {
+  const delta = clamp(deltaSeconds, 0, 0.034);
+  return {
+    delta,
+    dampingX: Math.pow(0.995, delta * 60),
+    dampingZ: Math.pow(0.997, delta * 60),
+    leftFlipper: getPinballFlipperCollider(
+      "left",
+      flippers.leftAngle ?? (flippers.left ? PINBALL_FLIPPERS.left.activeAngle : PINBALL_FLIPPERS.left.restAngle),
+    ),
+    rightFlipper: getPinballFlipperCollider(
+      "right",
+      flippers.rightAngle ?? (flippers.right ? PINBALL_FLIPPERS.right.activeAngle : PINBALL_FLIPPERS.right.restAngle),
+    ),
+    spinnerColliders: layout.spinners.map((spinner, index) => {
+      const angle = spinnerAngles?.[index] ?? spinner.rotation;
+      const halfLength = spinner.length / 2;
+      const axisX = Math.cos(angle) * halfLength;
+      const axisZ = -Math.sin(angle) * halfLength;
+      return {
+        id: spinner.id,
+        start: { x: spinner.x - axisX, z: spinner.z - axisZ },
+        end: { x: spinner.x + axisX, z: spinner.z + axisZ },
+        radius: 0.14,
+      };
+    }),
+  };
+};
+
+export const canConfirmPinballFinish = (launchedCount: number, totalCount: number) =>
+  totalCount > 0 && launchedCount >= totalCount;
+
 const clamp = (value: number, minimum: number, maximum: number) =>
   Math.min(maximum, Math.max(minimum, value));
 
@@ -123,20 +269,31 @@ export const hashPinballSeed = (value: string) => {
 };
 
 export const createPinballRandom = (seed: string) => {
-  let state = hashPinballSeed(seed) || 1;
+  const drawUint32 = createPinballUint32(seed);
+  return () => drawUint32() / 4294967296;
+};
+
+export const createPinballUint32 = (seed: string) => {
+  let counter = 0;
+  let pool: number[] = [];
   return () => {
-    state += 0x6d2b79f5;
-    let value = state;
-    value = Math.imul(value ^ (value >>> 15), value | 1);
-    value ^= value + Math.imul(value ^ (value >>> 7), value | 61);
-    return ((value ^ (value >>> 14)) >>> 0) / 4294967296;
+    if (pool.length === 0) {
+      const digest = sha256Hex(`${seed}:${counter}`);
+      counter += 1;
+      pool = Array.from({ length: 8 }, (_, index) =>
+        Number.parseInt(digest.slice(index * 8, index * 8 + 8), 16) >>> 0,
+      );
+    }
+    return pool.shift() ?? 0;
   };
 };
 
-export const createPinballSeed = () =>
-  typeof crypto !== "undefined" && "randomUUID" in crypto
-    ? crypto.randomUUID()
-    : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+export const createPinballSeed = () => {
+  if (typeof crypto === "undefined" || !("randomUUID" in crypto)) {
+    throw new Error("Este equipo no ofrece una fuente criptográfica segura para Pinball.");
+  }
+  return crypto.randomUUID();
+};
 
 const overlaps = (
   candidate: PinballPoint,
@@ -246,16 +403,6 @@ export const preparePinballRound = (
   if (participants.length < 2) throw new Error("Pinball necesita al menos dos participantes.");
   const layout = generatePinballLayout(seed, participants.length);
   const random = createPinballRandom(`balls-${seed}-${participants.map((participant) => participant.id).join("|")}`);
-  const launchWindowMs = Math.min(3800, Math.max(700, participants.length * 20));
-  const launchOrder = participants.map((_, index) => index);
-  for (let index = launchOrder.length - 1; index > 0; index -= 1) {
-    const swapIndex = Math.floor(random() * (index + 1));
-    [launchOrder[index], launchOrder[swapIndex]] = [launchOrder[swapIndex], launchOrder[index]];
-  }
-  const launchRanks = new Uint16Array(participants.length);
-  launchOrder.forEach((participantIndex, rank) => {
-    launchRanks[participantIndex] = rank;
-  });
   const balls = participants.map((participant, index) => {
     const hue = (index * 137.508 + random() * 48) % 360;
     return {
@@ -264,14 +411,31 @@ export const preparePinballRound = (
       participant,
       color: participant.color,
       accent: `hsl(${hue}, 92%, 68%)`,
-      launchDelayMs: participants.length === 1 ? 0 : (launchRanks[index] / (participants.length - 1)) * launchWindowMs,
+      launchDelayMs: 0,
       laneBias: random() * 2 - 1,
       previousWinner: previousWinnerIds.has(participant.id),
     } satisfies PinballBallAssignment;
   });
+  const selectedIndex = uniformIndexFromUint32(
+    balls.length,
+    createPinballUint32(`result-${seed}-${participants.map((participant) => participant.id).join("|")}`),
+  );
+  const selected = balls[selectedIndex];
+  const proof = JSON.stringify({
+    version: 3,
+    layout: layout.signature,
+    participants: participants.map((participant) => participant.id),
+    launch: balls.map((ball) => [ball.participant.id, ball.launchDelayMs, ball.laneBias]),
+    selectedParticipantId: selected.participant.id,
+    drawMode,
+    controlMode,
+  });
   return {
     layout,
     balls,
+    selected,
+    selectedIndex,
+    commitmentId: `PIN-${sha256Hex(proof).toUpperCase()}`,
     drawMode,
     controlMode,
     overtimeAfterMs: clamp(7200 + participants.length * 8, 7500, 9000),
@@ -292,11 +456,11 @@ export const getPinballFinishCrossing = (
 };
 
 export const createPinballPhysicsBall = (assignment: PinballBallAssignment, layout: PinballLayout): PinballPhysicsBall => ({
-  x: layout.launch.x + assignment.laneBias * 0.18,
-  z: layout.launch.z + ((assignment.number % 7) - 3) * 0.025,
+  x: layout.launch.x + assignment.laneBias * 0.38,
+  z: layout.launch.z + ((assignment.number - 1) % 3 - 1) * 0.055,
   vx: 0,
   vz: 0,
-  radius: assignment.number > 120 ? 0.2 : 0.23,
+  radius: 0.23,
   launched: false,
   drained: false,
   respawnAtMs: 0,
@@ -308,10 +472,10 @@ export const launchPinballPhysicsBall = (
   assignment: PinballBallAssignment,
   layout: PinballLayout,
 ) => {
-  ball.x = layout.launch.x + assignment.laneBias * 0.2;
-  ball.z = layout.launch.z;
-  ball.vx = -0.55 - assignment.laneBias * 0.48;
-  ball.vz = -13.4 - (assignment.number % 9) * 0.17;
+  ball.x = layout.launch.x + assignment.laneBias * 0.38;
+  ball.z = layout.launch.z + ((assignment.number - 1) % 3 - 1) * 0.055;
+  ball.vx = -0.65 + assignment.laneBias * 1.65;
+  ball.vz = -13.4;
   ball.launched = true;
   ball.drained = false;
   ball.respawnAtMs = 0;
@@ -343,18 +507,72 @@ const collideCircle = (
   return true;
 };
 
+const collideSegment = (
+  ball: PinballPhysicsBall,
+  collider: PinballSegmentCollider,
+  restitution: number,
+) => {
+  const segmentX = collider.end.x - collider.start.x;
+  const segmentZ = collider.end.z - collider.start.z;
+  const segmentLengthSquared = segmentX * segmentX + segmentZ * segmentZ;
+  const projection = segmentLengthSquared > 0.000001
+    ? clamp(
+      ((ball.x - collider.start.x) * segmentX + (ball.z - collider.start.z) * segmentZ) / segmentLengthSquared,
+      0,
+      1,
+    )
+    : 0;
+  const nearestX = collider.start.x + segmentX * projection;
+  const nearestZ = collider.start.z + segmentZ * projection;
+  let normalX = ball.x - nearestX;
+  let normalZ = ball.z - nearestZ;
+  const minimum = ball.radius + collider.radius;
+  const distanceSquared = normalX * normalX + normalZ * normalZ;
+  if (distanceSquared >= minimum * minimum) return false;
+
+  let distance = Math.sqrt(distanceSquared);
+  if (distance < 0.000001) {
+    const segmentLength = Math.sqrt(segmentLengthSquared);
+    if (segmentLength > 0.000001) {
+      normalX = -segmentZ / segmentLength;
+      normalZ = segmentX / segmentLength;
+    } else {
+      normalX = 0;
+      normalZ = -1;
+    }
+    distance = 0;
+  } else {
+    normalX /= distance;
+    normalZ /= distance;
+  }
+
+  const overlap = minimum - distance;
+  ball.x += normalX * overlap;
+  ball.z += normalZ * overlap;
+  const normalVelocity = ball.vx * normalX + ball.vz * normalZ;
+  if (normalVelocity < 0) {
+    ball.vx -= (1 + restitution) * normalVelocity * normalX;
+    ball.vz -= (1 + restitution) * normalVelocity * normalZ;
+  }
+  ball.collisions += 1;
+  return true;
+};
+
 export const stepPinballPhysics = (
   ball: PinballPhysicsBall,
   layout: PinballLayout,
   deltaSeconds: number,
   flippers: PinballFlipperState,
+  spinnerAngles?: readonly number[],
+  preparedFrame?: PinballPhysicsFrame,
 ) => {
   if (!ball.launched || ball.drained) return 0;
   const before = ball.collisions;
-  const delta = clamp(deltaSeconds, 0, 0.034);
+  const frame = preparedFrame ?? createPinballPhysicsFrame(layout, deltaSeconds, flippers, spinnerAngles);
+  const delta = frame.delta;
   ball.vz += 4.1 * delta;
-  ball.vx *= Math.pow(0.995, delta * 60);
-  ball.vz *= Math.pow(0.997, delta * 60);
+  ball.vx *= frame.dampingX;
+  ball.vz *= frame.dampingZ;
   ball.x += ball.vx * delta;
   ball.z += ball.vz * delta;
 
@@ -371,7 +589,7 @@ export const stepPinballPhysics = (
     ball.collisions += 1;
   }
 
-  layout.bumpers.forEach((bumper) => {
+  for (const bumper of layout.bumpers) {
     if (collideCircle(ball, bumper, bumper.radius, bumper.strength)) {
       const speed = Math.hypot(ball.vx, ball.vz);
       if (speed < 8.5) {
@@ -379,46 +597,35 @@ export const stepPinballPhysics = (
         ball.vz *= 1.16;
       }
     }
-  });
-  layout.pegs.forEach((peg) => collideCircle(ball, peg, peg.radius, 0.86));
-  layout.spinners.forEach((spinner) => {
-    if (collideCircle(ball, spinner, Math.min(0.48, spinner.length * 0.24), 0.94)) {
+  }
+  for (const peg of layout.pegs) collideCircle(ball, peg, peg.radius, 0.86);
+  layout.spinners.forEach((spinner, index) => {
+    if (collideSegment(ball, frame.spinnerColliders[index], 0.94)) {
       ball.vx += (spinner.rotation >= 0 ? 1 : -1) * 1.15;
       ball.vz -= 0.7;
     }
   });
 
-  const targetRows = [
-    { x: -4.35, z: 1.7 }, { x: -3.55, z: 1.6 }, { x: -2.75, z: 1.5 }, { x: -1.95, z: 1.4 },
-    { x: 2.55, z: -2.35 }, { x: 3.3, z: -2.5 }, { x: 4.05, z: -2.65 },
-  ];
-  targetRows.forEach((target) => {
-    if (collideCircle(ball, target, 0.3, 1.08)) ball.vz -= 0.75;
+  PINBALL_TARGET_COLLIDERS.forEach((target) => {
+    if (collideSegment(ball, target, 1.08)) ball.vz -= 0.75;
   });
 
-  const leftSling = ball.z > 6.55 && ball.z < 8.55 && ball.x > -5.1 && ball.x < -0.65;
-  const rightSling = ball.z > 6.55 && ball.z < 8.55 && ball.x < 5.1 && ball.x > 0.65;
-  if (leftSling && ball.vz > 0 && ball.x < -1.6) {
+  if (ball.vz > 0 && collideSegment(ball, PINBALL_SLING_COLLIDERS[0], 0.92)) {
     ball.vx += 2.25;
     ball.vz = -Math.max(7.8, Math.abs(ball.vz) * 0.82);
-    ball.collisions += 1;
   }
-  if (rightSling && ball.vz > 0 && ball.x > 1.6) {
+  if (ball.vz > 0 && collideSegment(ball, PINBALL_SLING_COLLIDERS[1], 0.92)) {
     ball.vx -= 2.25;
     ball.vz = -Math.max(7.8, Math.abs(ball.vz) * 0.82);
-    ball.collisions += 1;
   }
 
-  const nearFlippers = ball.z > 7.35 && ball.z < 10.15;
-  if (nearFlippers && flippers.left && ball.x > -6.2 && ball.x < -0.68) {
+  if (collideSegment(ball, frame.leftFlipper, 0.9) && flippers.left) {
     ball.vz = -11.4 - Math.abs(ball.vx) * 0.15;
     ball.vx += 2.3;
-    ball.collisions += 1;
   }
-  if (nearFlippers && flippers.right && ball.x < 6.2 && ball.x > 0.68) {
+  if (collideSegment(ball, frame.rightFlipper, 0.9) && flippers.right) {
     ball.vz = -11.4 - Math.abs(ball.vx) * 0.15;
     ball.vx -= 2.3;
-    ball.collisions += 1;
   }
 
   const speed = Math.hypot(ball.vx, ball.vz);

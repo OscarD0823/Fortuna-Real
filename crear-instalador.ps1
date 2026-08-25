@@ -8,12 +8,23 @@ $ErrorActionPreference = "Stop"
 $ProjectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $InstallerOutput = Join-Path $ProjectRoot "instaladores"
 $SigningKeyPath = Join-Path $env:USERPROFILE ".tauri\fortuna-real.key"
-$SigningPasswordPath = "$SigningKeyPath.password"
+$SigningPasswordPath = "$SigningKeyPath.password.dpapi"
 $ReleaseRepository = "OscarD0823/Fortuna-Real"
 
 function Write-Step {
     param([string]$Message)
     Write-Host "`n  $Message" -ForegroundColor Cyan
+}
+
+function ConvertFrom-ProtectedString {
+    param([Security.SecureString]$SecureValue)
+    $pointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($SecureValue)
+    try {
+        return [Runtime.InteropServices.Marshal]::PtrToStringBSTR($pointer)
+    }
+    finally {
+        [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($pointer)
+    }
 }
 
 function Test-Administrator {
@@ -165,18 +176,32 @@ try {
     if (-not (Test-Path -LiteralPath $SigningKeyPath)) {
         throw "Falta la clave privada de actualizaciones en '$SigningKeyPath'. Restaura la copia de seguridad antes de crear una nueva version."
     }
-    if (-not (Test-Path -LiteralPath $SigningPasswordPath)) {
-        throw "Falta la contrasena de firma en '$SigningPasswordPath'. Restaura la copia de seguridad antes de crear una nueva version."
-    }
-
     $env:TAURI_SIGNING_PRIVATE_KEY = $SigningKeyPath
-    $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = (Get-Content -Raw -LiteralPath $SigningPasswordPath).Trim()
+    $secureSigningPassword = if (Test-Path -LiteralPath $SigningPasswordPath) {
+        Get-Content -Raw -LiteralPath $SigningPasswordPath | ConvertTo-SecureString
+    }
+    else {
+        Read-Host "Contrasena de la clave de firma (no se guardara en texto plano)" -AsSecureString
+    }
+    $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = ConvertFrom-ProtectedString $secureSigningPassword
 
     Write-Step "Instalando las dependencias del proyecto..."
-    & npm.cmd install
+    & npm.cmd ci
     if ($LASTEXITCODE -ne 0) {
-        throw "npm install no pudo completarse."
+        throw "npm ci no pudo completarse."
     }
+
+    Write-Step "Ejecutando las mismas puertas de calidad de publicacion..."
+    & npm.cmd run lint
+    if ($LASTEXITCODE -ne 0) { throw "La comprobacion TypeScript fallo." }
+    & npm.cmd test
+    if ($LASTEXITCODE -ne 0) { throw "Las pruebas automatizadas fallaron." }
+    & cargo.exe fmt --manifest-path "src-tauri/Cargo.toml" -- --check
+    if ($LASTEXITCODE -ne 0) { throw "El formato Rust no es valido." }
+    & cargo.exe test --locked --manifest-path "src-tauri/Cargo.toml"
+    if ($LASTEXITCODE -ne 0) { throw "Las pruebas Rust fallaron." }
+    & cargo.exe clippy --locked --manifest-path "src-tauri/Cargo.toml" --all-targets -- -D warnings
+    if ($LASTEXITCODE -ne 0) { throw "Clippy encontro advertencias." }
 
     Write-Step "Compilando Fortuna Real y creando el instalador..."
     $buildStartedAt = Get-Date
@@ -246,4 +271,8 @@ catch {
     Write-Host "  No se pudo crear el instalador:" -ForegroundColor Red
     Write-Host "  $($_.Exception.Message)" -ForegroundColor Red
     exit 1
+}
+finally {
+    Remove-Item Env:TAURI_SIGNING_PRIVATE_KEY -ErrorAction SilentlyContinue
+    Remove-Item Env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD -ErrorAction SilentlyContinue
 }

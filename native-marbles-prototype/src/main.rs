@@ -1,6 +1,7 @@
 use bevy::{
     camera::{Hdr, ScalingMode},
     core_pipeline::tonemapping::Tonemapping,
+    image::{ImageAddressMode, ImageLoaderSettings, ImageSampler, ImageSamplerDescriptor},
     pbr::{ScreenSpaceAmbientOcclusion, ScreenSpaceAmbientOcclusionQualityLevel},
     post_process::bloom::Bloom,
     prelude::*,
@@ -10,6 +11,10 @@ use std::f32::consts::{FRAC_PI_2, TAU};
 const TRACK_WIDTH: f32 = 1.86;
 const TRACK_TOP: f32 = 0.78;
 const CAMERA_POSITION: Vec3 = Vec3::new(0.0, 28.5, 26.0);
+const CAMERA_MIN_WIDTH: f32 = 31.5;
+const CAMERA_MIN_HEIGHT: f32 = 20.5;
+const WORLD_FLOOR_WIDTH: f32 = 29.4;
+const WORLD_FLOOR_DEPTH: f32 = 19.7;
 
 #[derive(Component)]
 struct FloatingMarble {
@@ -86,10 +91,12 @@ fn setup(
     asset_server: Res<AssetServer>,
 ) {
     commands.spawn((
+        Name::new("CAM_MarblePrototype"),
         Camera3d::default(),
         Projection::from(OrthographicProjection {
-            scaling_mode: ScalingMode::FixedVertical {
-                viewport_height: 19.4,
+            scaling_mode: ScalingMode::AutoMin {
+                min_width: CAMERA_MIN_WIDTH,
+                min_height: CAMERA_MIN_HEIGHT,
             },
             ..OrthographicProjection::default_3d()
         }),
@@ -105,6 +112,7 @@ fn setup(
     ));
 
     commands.spawn((
+        Name::new("LGT_KeySun"),
         DirectionalLight {
             illuminance: 10_500.0,
             shadow_maps_enabled: true,
@@ -114,6 +122,7 @@ fn setup(
     ));
 
     commands.spawn((
+        Name::new("LGT_CoolFill"),
         DirectionalLight {
             color: Color::srgb(0.25, 0.52, 0.68),
             illuminance: 6_500.0,
@@ -124,6 +133,7 @@ fn setup(
     ));
 
     commands.spawn((
+        Name::new("LGT_CyanWorld"),
         PointLight {
             color: Color::srgb(0.0, 0.72, 1.0),
             intensity: 2_600_000.0,
@@ -135,6 +145,7 @@ fn setup(
     ));
 
     commands.spawn((
+        Name::new("LGT_OrangeWorld"),
         PointLight {
             color: Color::srgb(1.0, 0.39, 0.05),
             intensity: 2_200_000.0,
@@ -261,6 +272,16 @@ fn create_materials(
     materials: &mut Assets<StandardMaterial>,
     asset_server: &AssetServer,
 ) -> SceneMaterials {
+    let gunmetal_texture = asset_server
+        .load_builder()
+        .with_settings(|settings: &mut ImageLoaderSettings| {
+            settings.sampler = ImageSampler::Descriptor(ImageSamplerDescriptor {
+                address_mode_u: ImageAddressMode::Repeat,
+                address_mode_v: ImageAddressMode::Repeat,
+                ..ImageSamplerDescriptor::linear()
+            });
+        })
+        .load("textures/gunmetal-panels-v1.png");
     SceneMaterials {
         floor: materials.add(StandardMaterial {
             base_color: Color::srgb(0.004, 0.009, 0.012),
@@ -281,7 +302,7 @@ fn create_materials(
         }),
         track_top: materials.add(StandardMaterial {
             base_color: Color::srgb(1.0, 1.0, 1.0),
-            base_color_texture: Some(asset_server.load("textures/gunmetal-panels-v1.png")),
+            base_color_texture: Some(gunmetal_texture),
             metallic: 0.86,
             perceptual_roughness: 0.36,
             ..default()
@@ -387,7 +408,11 @@ fn spawn_floor(commands: &mut Commands, meshes: &SceneMeshes, mats: &SceneMateri
     commands.spawn((
         Mesh3d(meshes.cube.clone()),
         MeshMaterial3d(mats.black.clone()),
-        Transform::from_xyz(0.0, -0.78, 0.0).with_scale(Vec3::new(29.4, 0.34, 19.7)),
+        Transform::from_xyz(0.0, -0.78, 0.0).with_scale(Vec3::new(
+            WORLD_FLOOR_WIDTH,
+            0.34,
+            WORLD_FLOOR_DEPTH,
+        )),
     ));
     commands.spawn((
         Mesh3d(meshes.cube.clone()),
@@ -491,122 +516,127 @@ fn spawn_track(
     mats: &SceneMaterials,
     track: &[Vec3],
 ) {
-    for index in 0..track.len() {
-        let start = track[index];
-        let end = track[(index + 1) % track.len()];
-        let delta = end - start;
-        let length = Vec2::new(delta.x, delta.z).length();
-        if length < 0.02 {
-            continue;
-        }
+    let track_root = commands
+        .spawn((Name::new("GRP_Track"), Transform::default()))
+        .id();
+    commands.entity(track_root).with_children(|builder| {
+        for index in 0..track.len() {
+            let start = track[index];
+            let end = track[(index + 1) % track.len()];
+            let delta = end - start;
+            let length = Vec2::new(delta.x, delta.z).length();
+            if length < 0.02 {
+                continue;
+            }
 
-        let direction = Vec3::new(delta.x / length, 0.0, delta.z / length);
-        let side = Vec3::new(-direction.z, 0.0, direction.x);
-        let midpoint = (start + end) * 0.5 + Vec3::Y * TRACK_TOP;
-        let yaw = delta.x.atan2(delta.z);
-        let rotation = Quat::from_rotation_y(yaw);
-        let block_rotation = rotation * Quat::from_rotation_x(FRAC_PI_2);
+            let direction = Vec3::new(delta.x / length, 0.0, delta.z / length);
+            let side = Vec3::new(-direction.z, 0.0, direction.x);
+            let midpoint = (start + end) * 0.5 + Vec3::Y * TRACK_TOP;
+            let yaw = delta.x.atan2(delta.z);
+            let rotation = Quat::from_rotation_y(yaw);
+            let block_rotation = rotation * Quat::from_rotation_x(FRAC_PI_2);
 
-        // Chasis grueso: la pista ya no parece una cinta plana apoyada en el suelo.
-        commands.spawn((
-            Mesh3d(meshes.beveled_block.clone()),
-            MeshMaterial3d(mats.black.clone()),
-            Transform::from_translation(midpoint - Vec3::Y * 0.16)
-                .with_rotation(block_rotation)
-                .with_scale(Vec3::new(TRACK_WIDTH * 1.12, length * 1.34, 0.62)),
-        ));
-        commands.spawn((
-            Mesh3d(meshes.beveled_block.clone()),
-            MeshMaterial3d(mats.gunmetal.clone()),
-            Transform::from_translation(midpoint + Vec3::Y * 0.02)
-                .with_rotation(block_rotation)
-                .with_scale(Vec3::new(TRACK_WIDTH, length * 1.3, 0.42)),
-        ));
-        commands.spawn((
-            Mesh3d(meshes.beveled_block.clone()),
-            MeshMaterial3d(mats.track_top.clone()),
-            Transform::from_translation(midpoint + Vec3::Y * 0.265)
-                .with_rotation(block_rotation)
-                .with_scale(Vec3::new(TRACK_WIDTH * 0.76, length * 1.24, 0.075)),
-        ));
-
-        let power_zone = matches!(index, 18..=35 | 76..=94 | 142..=159);
-        let danger_zone = matches!(index, 107..=119 | 176..=186);
-        if power_zone || danger_zone {
-            commands.spawn((
+            // Chasis grueso: la pista ya no parece una cinta plana apoyada en el suelo.
+            builder.spawn((
                 Mesh3d(meshes.beveled_block.clone()),
-                MeshMaterial3d(if power_zone {
-                    mats.cyan_light.clone()
-                } else {
-                    mats.red_light.clone()
-                }),
-                Transform::from_translation(midpoint + Vec3::Y * 0.317)
+                MeshMaterial3d(mats.black.clone()),
+                Transform::from_translation(midpoint - Vec3::Y * 0.16)
                     .with_rotation(block_rotation)
-                    .with_scale(Vec3::new(0.055, length * 1.22, 0.028)),
+                    .with_scale(Vec3::new(TRACK_WIDTH * 1.12, length * 1.34, 0.62)),
             ));
-        }
-
-        for edge in [-1.0, 1.0] {
-            // Muro lateral oscuro, placa exterior y un filete de latón muy fino.
-            commands.spawn((
+            builder.spawn((
                 Mesh3d(meshes.beveled_block.clone()),
                 MeshMaterial3d(mats.gunmetal.clone()),
-                Transform::from_translation(
-                    midpoint + side * edge * (TRACK_WIDTH * 0.51) + Vec3::Y * 0.18,
-                )
-                .with_rotation(block_rotation)
-                .with_scale(Vec3::new(0.34, length * 1.37, 0.68)),
+                Transform::from_translation(midpoint + Vec3::Y * 0.02)
+                    .with_rotation(block_rotation)
+                    .with_scale(Vec3::new(TRACK_WIDTH, length * 1.3, 0.42)),
             ));
-            commands.spawn((
+            builder.spawn((
                 Mesh3d(meshes.beveled_block.clone()),
-                MeshMaterial3d(mats.panel.clone()),
-                Transform::from_translation(
-                    midpoint + side * edge * (TRACK_WIDTH * 0.585) + Vec3::Y * 0.12,
-                )
-                .with_rotation(block_rotation)
-                .with_scale(Vec3::new(0.15, length * 1.39, 0.36)),
-            ));
-            commands.spawn((
-                Mesh3d(meshes.cube.clone()),
-                MeshMaterial3d(mats.brass.clone()),
-                Transform::from_translation(
-                    midpoint + side * edge * (TRACK_WIDTH * 0.59) + Vec3::Y * 0.54,
-                )
-                .with_rotation(rotation)
-                .with_scale(Vec3::new(0.065, 0.105, length * 1.4)),
+                MeshMaterial3d(mats.track_top.clone()),
+                Transform::from_translation(midpoint + Vec3::Y * 0.265)
+                    .with_rotation(block_rotation)
+                    .with_scale(Vec3::new(TRACK_WIDTH * 0.76, length * 1.24, 0.075)),
             ));
 
-            if index % 4 == 0 {
-                commands.spawn((
-                    Mesh3d(meshes.small_sphere.clone()),
-                    MeshMaterial3d(mats.gold_light.clone()),
+            let power_zone = matches!(index, 18..=35 | 76..=94 | 142..=159);
+            let danger_zone = matches!(index, 107..=119 | 176..=186);
+            if power_zone || danger_zone {
+                builder.spawn((
+                    Mesh3d(meshes.beveled_block.clone()),
+                    MeshMaterial3d(if power_zone {
+                        mats.cyan_light.clone()
+                    } else {
+                        mats.red_light.clone()
+                    }),
+                    Transform::from_translation(midpoint + Vec3::Y * 0.317)
+                        .with_rotation(block_rotation)
+                        .with_scale(Vec3::new(0.055, length * 1.22, 0.028)),
+                ));
+            }
+
+            for edge in [-1.0, 1.0] {
+                // Muro lateral oscuro, placa exterior y un filete de latón muy fino.
+                builder.spawn((
+                    Mesh3d(meshes.beveled_block.clone()),
+                    MeshMaterial3d(mats.gunmetal.clone()),
                     Transform::from_translation(
-                        midpoint + side * edge * (TRACK_WIDTH * 0.59) + Vec3::Y * 0.62,
+                        midpoint + side * edge * (TRACK_WIDTH * 0.51) + Vec3::Y * 0.18,
                     )
-                    .with_scale(Vec3::splat(0.42)),
+                    .with_rotation(block_rotation)
+                    .with_scale(Vec3::new(0.34, length * 1.37, 0.68)),
+                ));
+                builder.spawn((
+                    Mesh3d(meshes.beveled_block.clone()),
+                    MeshMaterial3d(mats.panel.clone()),
+                    Transform::from_translation(
+                        midpoint + side * edge * (TRACK_WIDTH * 0.585) + Vec3::Y * 0.12,
+                    )
+                    .with_rotation(block_rotation)
+                    .with_scale(Vec3::new(0.15, length * 1.39, 0.36)),
+                ));
+                builder.spawn((
+                    Mesh3d(meshes.cube.clone()),
+                    MeshMaterial3d(mats.brass.clone()),
+                    Transform::from_translation(
+                        midpoint + side * edge * (TRACK_WIDTH * 0.59) + Vec3::Y * 0.54,
+                    )
+                    .with_rotation(rotation)
+                    .with_scale(Vec3::new(0.065, 0.105, length * 1.4)),
+                ));
+
+                if index % 4 == 0 {
+                    builder.spawn((
+                        Mesh3d(meshes.small_sphere.clone()),
+                        MeshMaterial3d(mats.gold_light.clone()),
+                        Transform::from_translation(
+                            midpoint + side * edge * (TRACK_WIDTH * 0.59) + Vec3::Y * 0.62,
+                        )
+                        .with_scale(Vec3::splat(0.42)),
+                    ));
+                }
+            }
+
+            if index % 3 == 0 {
+                builder.spawn((
+                    Mesh3d(meshes.cube.clone()),
+                    MeshMaterial3d(mats.black.clone()),
+                    Transform::from_translation(midpoint + Vec3::Y * 0.315)
+                        .with_rotation(rotation)
+                        .with_scale(Vec3::new(TRACK_WIDTH * 0.76, 0.028, 0.045)),
+                ));
+            }
+
+            if index % 10 == 0 {
+                builder.spawn((
+                    Mesh3d(meshes.cube.clone()),
+                    MeshMaterial3d(mats.black.clone()),
+                    Transform::from_translation(midpoint - Vec3::Y * (0.7 + start.y))
+                        .with_scale(Vec3::new(0.7, 1.12 + start.y * 2.0, 0.7)),
                 ));
             }
         }
-
-        if index % 3 == 0 {
-            commands.spawn((
-                Mesh3d(meshes.cube.clone()),
-                MeshMaterial3d(mats.black.clone()),
-                Transform::from_translation(midpoint + Vec3::Y * 0.315)
-                    .with_rotation(rotation)
-                    .with_scale(Vec3::new(TRACK_WIDTH * 0.76, 0.028, 0.045)),
-            ));
-        }
-
-        if index % 10 == 0 {
-            commands.spawn((
-                Mesh3d(meshes.cube.clone()),
-                MeshMaterial3d(mats.black.clone()),
-                Transform::from_translation(midpoint - Vec3::Y * (0.7 + start.y))
-                    .with_scale(Vec3::new(0.7, 1.12 + start.y * 2.0, 0.7)),
-            ));
-        }
-    }
+    });
 }
 
 fn spawn_round_platform(
@@ -687,6 +717,7 @@ fn spawn_turbine(
 
     let parent = commands
         .spawn((
+            Name::new("GRP_TurbineRotor"),
             Transform::from_translation(center + Vec3::Y * 0.32),
             Spinner { speed: 0.42 },
         ))
@@ -843,6 +874,7 @@ fn spawn_portal(
         let count = 12 + ring * 4;
         let parent = commands
             .spawn((
+                Name::new(format!("GRP_PortalRing_{ring}")),
                 Transform::from_translation(center + Vec3::Y * (0.01 + ring as f32 * 0.045)),
                 Spinner {
                     speed: if ring % 2 == 0 {
@@ -1023,6 +1055,7 @@ fn spawn_marbles(
         });
 
         commands.spawn((
+            Name::new(format!("SM_Marble_{:02}", index + 1)),
             Mesh3d(meshes.sphere.clone()),
             MeshMaterial3d(material.clone()),
             Transform::from_translation(point).with_scale(Vec3::splat(0.53)),
@@ -1085,5 +1118,40 @@ fn pulse_lights(time: Res<Time>, mut query: Query<(&PulseLight, &mut PointLight)
     for (pulse, mut light) in &mut query {
         let wave = (time.elapsed_secs() * 2.0 + pulse.phase).sin() * 0.18 + 0.82;
         light.intensity = pulse.base * wave;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn responsive_camera_keeps_the_full_factory_in_frame() {
+        for (viewport_width, viewport_height) in [
+            (800.0_f32, 600.0_f32),
+            (1_024.0, 768.0),
+            (1_440.0, 900.0),
+            (1_920.0, 1_080.0),
+            (2_560.0, 1_080.0),
+        ] {
+            let aspect = viewport_width / viewport_height;
+            let minimum_aspect = CAMERA_MIN_WIDTH / CAMERA_MIN_HEIGHT;
+            let (visible_width, visible_height) = if aspect >= minimum_aspect {
+                (CAMERA_MIN_HEIGHT * aspect, CAMERA_MIN_HEIGHT)
+            } else {
+                (CAMERA_MIN_WIDTH, CAMERA_MIN_WIDTH / aspect)
+            };
+            assert!(visible_width >= WORLD_FLOOR_WIDTH + 2.0);
+            assert!(visible_height >= WORLD_FLOOR_DEPTH + 0.8);
+        }
+    }
+
+    #[test]
+    fn fixed_track_sampling_is_stable() {
+        let points = fixed_track_points();
+        let samples = sample_closed_track(&points, 6);
+        assert_eq!(points.len(), 35);
+        assert_eq!(samples.len(), 210);
+        assert!(samples.iter().all(|point| point.is_finite()));
     }
 }

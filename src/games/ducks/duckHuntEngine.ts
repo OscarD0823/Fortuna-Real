@@ -2,6 +2,40 @@ import type { Participant } from "../../core/types";
 
 export const DUCK_STARTING_LIVES = 3;
 
+export type DuckSabotagePower = "palette" | "shake" | "invert";
+
+export const DUCK_SABOTAGE_POWERS: readonly DuckSabotagePower[] = [
+  "palette",
+  "shake",
+  "invert",
+];
+
+export const duckSabotageDefinitions: Record<DuckSabotagePower, {
+  label: string;
+  description: string;
+  durationMs: number;
+  color: string;
+}> = {
+  palette: {
+    label: "Paleta alterada",
+    description: "Desplaza temporalmente los colores del bosque y la bandada.",
+    durationMs: 2_400,
+    color: "#d77cff",
+  },
+  shake: {
+    label: "Temblor del bosque",
+    description: "Sacude el campo de tiro sin mover el punto real del impacto.",
+    durationMs: 1_650,
+    color: "#ffb52e",
+  },
+  invert: {
+    label: "Visión invertida",
+    description: "Invierte por unos instantes la imagen del campo.",
+    durationMs: 1_900,
+    color: "#58e8ff",
+  },
+};
+
 export interface DuckFlightProfile {
   lane: number;
   altitude: number;
@@ -27,6 +61,7 @@ export interface DuckContestant {
   dodgeX: number;
   dodgeY: number;
   threatLevel: number;
+  power: DuckSabotagePower;
   profile: DuckFlightProfile;
 }
 
@@ -71,6 +106,61 @@ export const createDuckSeed = () => {
 
 export const getDuckSpeed = (lives: number) => 1 + (DUCK_STARTING_LIVES - lives) * 0.34;
 
+/**
+ * Mantiene cada pato como un objetivo legible sin desbordar bandadas grandes.
+ * Las bandadas pequeñas priorizan un blanco táctil y visual claro; desde 46
+ * participantes se reduce progresivamente para conservar las 200 instancias.
+ */
+export const getDuckVisualScale = (count: number) => {
+  if (count > 150) return 0.5;
+  if (count > 90) return 0.6;
+  if (count > 45) return 0.72;
+  if (count > 20) return 0.92;
+  return 1.08;
+};
+
+export const getDuckHitRadius = (count: number) => {
+  if (count > 120) return 25;
+  if (count > 60) return 31;
+  if (count > 20) return 38;
+  return 46;
+};
+
+/** Duración visual de la entrada al refugio y la salida colectiva. */
+export const getDuckResetDuration = (count: number) => {
+  if (count > 100) return 620;
+  if (count > 50) return 880;
+  if (count > 20) return 1_240;
+  return 2_050;
+};
+
+/**
+ * Cantidad de ocultamiento entre 0 (vuelo libre) y 1 (dentro de la cobertura).
+ * La fase depende solo del perfil visual del pato: no toca el orden sellado.
+ */
+export const getDuckCoverAmount = (contestant: DuckContestant, elapsedSeconds: number) => {
+  if (elapsedSeconds < 1.8 || contestant.knockedOut) return 0;
+  const cycle = 7.4 + contestant.routeSeed * 4.1 + (contestant.number % 4) * 0.37;
+  const phaseOffset = contestant.routeSeed * cycle + (contestant.profile.phase / (Math.PI * 2)) * 2.3;
+  const local = (elapsedSeconds - 1.8 + phaseOffset) % cycle;
+  const hideStart = cycle * (0.52 + (contestant.number % 3) * 0.045);
+  const hideEnd = Math.min(cycle - 0.72, hideStart + 1.35 + contestant.routeSeed * 1.15);
+  const transitionIn = 0.42;
+  const transitionOut = 0.58;
+  if (local < hideStart || local > hideEnd) return 0;
+  if (local < hideStart + transitionIn) return smoothstep01((local - hideStart) / transitionIn);
+  if (local > hideEnd - transitionOut) return smoothstep01((hideEnd - local) / transitionOut);
+  return 1;
+};
+
+export const getDuckCoverKind = (contestant: DuckContestant) =>
+  contestant.number % 3 === 0 ? "grass" as const : "forest" as const;
+
+const smoothstep01 = (value: number) => {
+  const clamped = clamp(value, 0, 1);
+  return clamped * clamped * (3 - 2 * clamped);
+};
+
 export const prepareDuckContestants = (
   participants: readonly Participant[],
   seed: string,
@@ -79,6 +169,7 @@ export const prepareDuckContestants = (
   const random = mulberry32(hashString(`${seed}:${participant.id}:${index}`));
   const band = index % 5;
   const hue = (index * 137.508 + random() * 42) % 360;
+  const power = DUCK_SABOTAGE_POWERS[Math.floor(random() * DUCK_SABOTAGE_POWERS.length)];
   return {
     id: participant.id,
     number: index + 1,
@@ -95,6 +186,7 @@ export const prepareDuckContestants = (
     dodgeX: 0,
     dodgeY: 0,
     threatLevel: 0,
+    power,
     profile: {
       lane: (random() * 2 - 1) * 0.88,
       altitude: 2.9 + band * 0.62 + random() * 1.15,

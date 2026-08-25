@@ -228,30 +228,30 @@ try {
             Where-Object { $_ -gt 0 -and $_ -ne $PID }
     )
 
-    foreach ($listenerProcessId in $listenerProcessIds) {
-        $process = Get-Process -Id $listenerProcessId -ErrorAction SilentlyContinue
-        if ($process) {
+    if ($listenerProcessIds.Count -gt 0) {
+        foreach ($listenerProcessId in $listenerProcessIds) {
+            $process = Get-Process -Id $listenerProcessId -ErrorAction SilentlyContinue
+            $processDetails = Get-CimInstance `
+                -ClassName Win32_Process `
+                -Filter "ProcessId = $listenerProcessId" `
+                -ErrorAction SilentlyContinue
             $usedPorts = @(
                 $listeners |
                     Where-Object { $_.OwningProcess -eq $listenerProcessId } |
                     Select-Object -ExpandProperty LocalPort -Unique
             ) -join ", "
-
-            Write-Host "  Cerrando $($process.ProcessName) (PID $listenerProcessId) en puerto(s) $usedPorts..." -ForegroundColor DarkGray
-            try {
-                Stop-Process -Id $listenerProcessId -Force -ErrorAction Stop
+            $processName = if ($process) { $process.ProcessName } else { "proceso desconocido" }
+            $processPath = if ($processDetails.ExecutablePath) {
+                $processDetails.ExecutablePath
             }
-            catch {
-                throw "No se pudo cerrar el proceso $listenerProcessId. Ejecuta el iniciador como administrador."
+            else {
+                "ruta no disponible"
             }
+            Write-Host "  Puerto(s) ${usedPorts}: $processName (PID $listenerProcessId)" -ForegroundColor Yellow
+            Write-Host "    $processPath" -ForegroundColor DarkGray
         }
-    }
 
-    Start-Sleep -Milliseconds 350
-    $remainingListeners = Get-FortunaListeners -Ports $FortunaPorts
-    if ($remainingListeners.Count -gt 0) {
-        $busyPorts = @($remainingListeners | Select-Object -ExpandProperty LocalPort -Unique) -join ", "
-        throw "Los puertos $busyPorts continúan ocupados."
+        throw "Fortuna Real no cerrará procesos ajenos. Cierra manualmente el proceso indicado o libera los puertos 1420 y 1421."
     }
 
     Write-Host "  Puertos disponibles." -ForegroundColor Green

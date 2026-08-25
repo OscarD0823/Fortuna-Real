@@ -1,4 +1,6 @@
 import type { Participant } from "../../core/types";
+import { sha256Hex } from "../../shared/crypto/sha256.ts";
+import { uniformIndexFromUint32 } from "../roulette/rouletteCommitment.ts";
 
 export const CARD_SUITS = [
   { id: "hearts", symbol: "♥", name: "corazones", red: true },
@@ -35,12 +37,50 @@ export interface CardAssignment {
 }
 
 const secureUnit = () => {
-  if (typeof crypto !== "undefined" && "getRandomValues" in crypto) {
-    const values = new Uint32Array(1);
-    crypto.getRandomValues(values);
-    return values[0] / 2 ** 32;
+  if (typeof crypto === "undefined" || !("getRandomValues" in crypto)) {
+    throw new Error("Este equipo no ofrece una fuente criptográfica segura.");
   }
-  return Math.random();
+  const values = new Uint32Array(1);
+  crypto.getRandomValues(values);
+  return values[0] / 2 ** 32;
+};
+
+export const createCardSeed = () => {
+  if (typeof crypto === "undefined" || !("getRandomValues" in crypto)) {
+    throw new Error("Este equipo no ofrece una fuente criptográfica segura.");
+  }
+  const values = new Uint32Array(8);
+  crypto.getRandomValues(values);
+  return Array.from(values, (value) => value.toString(16).padStart(8, "0")).join("");
+};
+
+export const hashCardSeed = (value: string) => {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+};
+
+export const createCardRandom = (seed: string) => {
+  const drawUint32 = createCardUint32(seed);
+  return () => drawUint32() / 4294967296;
+};
+
+export const createCardUint32 = (seed: string) => {
+  let counter = 0;
+  let pool: number[] = [];
+  return () => {
+    if (pool.length === 0) {
+      const digest = sha256Hex(`${seed}:${counter}`);
+      counter += 1;
+      pool = Array.from({ length: 8 }, (_, index) =>
+        Number.parseInt(digest.slice(index * 8, index * 8 + 8), 16) >>> 0,
+      );
+    }
+    return pool.shift() ?? 0;
+  };
 };
 
 export const shuffleCards = <T,>(items: readonly T[], random = secureUnit): T[] => {
@@ -76,4 +116,37 @@ export const buildCardAssignments = (
       participant,
     };
   });
+};
+
+export interface PreparedCardRound {
+  seed: string;
+  assigned: CardAssignment[];
+  shuffled: CardAssignment[];
+  selected: CardAssignment;
+  commitmentId: string;
+}
+
+export const prepareCardRound = (
+  participants: readonly Participant[],
+  seed: string,
+): PreparedCardRound => {
+  if (participants.length < 2) throw new Error("Cartas necesita al menos dos participantes.");
+  const assigned = buildCardAssignments(participants, createCardRandom(`assign-${seed}`));
+  const shuffled = shuffleCards(assigned, createCardRandom(`shuffle-${seed}`));
+  const selected = shuffled[uniformIndexFromUint32(shuffled.length, createCardUint32(`result-${seed}`))];
+  const proof = [
+    "fortuna-card-v2",
+    ...assigned.map((assignment) => assignment.participant.id),
+    "shuffle",
+    ...shuffled.map((assignment) => assignment.participant.id),
+    "selected",
+    selected.participant.id,
+  ].join("|");
+  return {
+    seed,
+    assigned,
+    shuffled,
+    selected,
+    commitmentId: `CARD-${sha256Hex(proof).toUpperCase()}`,
+  };
 };

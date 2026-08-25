@@ -4,26 +4,75 @@ type StopSound = () => void;
 
 class FortunaAudioEngine {
   private context: AudioContext | null = null;
-  private enabled = true;
+  private output: GainNode | null = null;
+  private effectsEnabled = true;
+  private voiceEnabled = true;
+  private volume = 0.8;
   private announcementTimer: number | null = null;
+  private voiceRetryTimer: number | null = null;
+  private voiceChangeHandler: (() => void) | null = null;
 
   setEnabled(enabled: boolean) {
-    this.enabled = enabled;
+    this.effectsEnabled = enabled;
+    this.voiceEnabled = enabled;
     if (!enabled && this.context?.state === "running") {
       void this.context.suspend();
     }
     if (!enabled) this.cancelAnnouncement();
   }
 
+  setEffectsEnabled(enabled: boolean) {
+    this.effectsEnabled = enabled;
+    if (!enabled && this.context?.state === "running") void this.context.suspend();
+  }
+
+  setVoiceEnabled(enabled: boolean) {
+    this.voiceEnabled = enabled;
+    if (!enabled) this.cancelAnnouncement();
+  }
+
+  setVolume(volume: number) {
+    this.volume = Math.min(1, Math.max(0, volume));
+    this.output?.gain.setTargetAtTime(this.volume, this.context?.currentTime ?? 0, 0.015);
+  }
+
   private getContext() {
-    if (!this.enabled) return null;
+    if (!this.effectsEnabled || typeof globalThis === "undefined") return null;
     if (!this.context) {
-      this.context = new AudioContext();
+      const AudioContextConstructor = (
+        globalThis as typeof globalThis & {
+          AudioContext?: typeof AudioContext;
+          webkitAudioContext?: typeof AudioContext;
+        }
+      ).AudioContext ?? (
+        globalThis as typeof globalThis & { webkitAudioContext?: typeof AudioContext }
+      ).webkitAudioContext;
+      if (!AudioContextConstructor) return null;
+      try {
+        this.context = new AudioContextConstructor();
+        const compressor = this.context.createDynamicsCompressor();
+        compressor.threshold.value = -16;
+        compressor.knee.value = 12;
+        compressor.ratio.value = 4;
+        compressor.attack.value = 0.004;
+        compressor.release.value = 0.18;
+        this.output = this.context.createGain();
+        this.output.gain.value = this.volume;
+        this.output.connect(compressor).connect(this.context.destination);
+      } catch {
+        this.context = null;
+        this.output = null;
+        return null;
+      }
     }
     if (this.context.state === "suspended") {
-      void this.context.resume();
+      void this.context.resume().catch(() => undefined);
     }
     return this.context;
+  }
+
+  private getOutput(context: AudioContext) {
+    return this.output ?? context.destination;
   }
 
   private tone(
@@ -49,7 +98,7 @@ class FortunaAudioEngine {
     gain.gain.setValueAtTime(0.0001, start);
     gain.gain.exponentialRampToValueAtTime(options.volume ?? 0.06, start + 0.012);
     gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
-    oscillator.connect(gain).connect(context.destination);
+    oscillator.connect(gain).connect(this.getOutput(context));
     oscillator.start(start);
     oscillator.stop(start + duration + 0.02);
   }
@@ -73,7 +122,7 @@ class FortunaAudioEngine {
     gain.gain.exponentialRampToValueAtTime(volume, start + 0.015);
     gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
     source.buffer = buffer;
-    source.connect(filter).connect(gain).connect(context.destination);
+    source.connect(filter).connect(gain).connect(this.getOutput(context));
     source.start(start);
   }
 
@@ -270,23 +319,43 @@ class FortunaAudioEngine {
       globalThis.clearTimeout(this.announcementTimer);
       this.announcementTimer = null;
     }
+    if (this.voiceRetryTimer !== null) {
+      globalThis.clearTimeout(this.voiceRetryTimer);
+      this.voiceRetryTimer = null;
+    }
+    if (this.voiceChangeHandler && typeof window !== "undefined" && "speechSynthesis" in window) {
+      window.speechSynthesis.removeEventListener("voiceschanged", this.voiceChangeHandler);
+      this.voiceChangeHandler = null;
+    }
     if (typeof window !== "undefined" && "speechSynthesis" in window) {
       window.speechSynthesis.cancel();
     }
   }
 
   announceResult(result: RoundResult) {
-    if (!this.enabled || (result.kind !== "winner" && result.kind !== "eliminated")) return;
+    if (!this.voiceEnabled || (result.kind !== "winner" && result.kind !== "eliminated")) return;
     if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
     if (typeof SpeechSynthesisUtterance === "undefined") return;
 
     this.cancelAnnouncement();
     this.announcementTimer = window.setTimeout(() => {
-      const spanishVoices = window.speechSynthesis.getVoices().filter(
+      let spoken = false;
+      const speak = (allowDefaultVoice = false) => {
+        if (spoken || !this.voiceEnabled) return;
+        const availableVoices = window.speechSynthesis.getVoices();
+        if (availableVoices.length === 0 && !allowDefaultVoice) return;
+        spoken = true;
+        if (this.voiceRetryTimer !== null) window.clearTimeout(this.voiceRetryTimer);
+        this.voiceRetryTimer = null;
+        if (this.voiceChangeHandler) {
+          window.speechSynthesis.removeEventListener("voiceschanged", this.voiceChangeHandler);
+          this.voiceChangeHandler = null;
+        }
+      const spanishVoices = availableVoices.filter(
         (voice) => voice.lang.toLocaleLowerCase().startsWith("es"),
       );
       const voice = spanishVoices.find(
-        (candidate) => /natural|neural|colombia|mexico|mexican|sabina|helena|dalia|elvira/i.test(
+        (candidate) => /es-co|colombia|natural|neural|es-mx|mexico|mexican|sabina|helena|dalia|elvira/i.test(
           `${candidate.name} ${candidate.lang}`,
         ),
       ) ?? spanishVoices[0] ?? null;
@@ -313,8 +382,8 @@ class FortunaAudioEngine {
               { text: `Premio: ${result.prize || "premio del sorteo"}. ¡Felicidades!`, rate: 1, pitch: 1.15 },
             ]
         : [
-            { text: "Atención. Resultado confirmado.", rate: 0.82, pitch: 0.78 },
-            { text: `${contextLabel}. ${result.participantName}. Eliminado.`, rate: 0.76, pitch: 0.68 },
+              { text: "Atención. Resultado confirmado.", rate: 0.92, pitch: 0.94 },
+              { text: `${contextLabel}. ${result.participantName}. Eliminado.`, rate: 0.9, pitch: 0.9 },
           ];
 
       if (result.kind === "winner") {
@@ -334,9 +403,19 @@ class FortunaAudioEngine {
         announcement.lang = voice?.lang || "es-CO";
         announcement.rate = part.rate;
         announcement.pitch = part.pitch;
-        announcement.volume = 1;
+        announcement.volume = this.volume;
         window.speechSynthesis.speak(announcement);
       });
+      };
+      this.voiceChangeHandler = () => speak();
+      window.speechSynthesis.addEventListener("voiceschanged", this.voiceChangeHandler, { once: true });
+      speak();
+      if (!spoken) {
+        this.voiceRetryTimer = window.setTimeout(() => {
+          speak(true);
+          if (!spoken) this.voiceChangeHandler = null;
+        }, 1_000);
+      }
       this.announcementTimer = null;
     }, result.kind === "winner" ? 720 : 560);
   }
@@ -354,7 +433,7 @@ class FortunaAudioEngine {
     humGain.gain.setValueAtTime(0.0001, context.currentTime);
     humGain.gain.exponentialRampToValueAtTime(0.022, context.currentTime + 0.15);
     humGain.gain.exponentialRampToValueAtTime(0.0001, context.currentTime + 5.7);
-    hum.connect(humGain).connect(context.destination);
+    hum.connect(humGain).connect(this.getOutput(context));
     hum.start();
     hum.stop(context.currentTime + 5.75);
 

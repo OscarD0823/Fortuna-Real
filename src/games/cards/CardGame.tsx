@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { Crown, Hand, Layers3, Play, Shuffle, Sparkles } from "lucide-react";
 import type { DrawMode, Participant } from "../../core/types";
 import { fortunaAudio } from "../../shared/audio/audioEngine";
-import { buildCardAssignments, shuffleCards, type CardAssignment } from "./cardDeck";
+import { createCardSeed, prepareCardRound, type CardAssignment } from "./cardDeck";
 
 type CardPhase = "assigned" | "gathering" | "shuffling" | "redealing" | "choosing" | "revealing";
 
@@ -25,7 +25,7 @@ const phaseCopy: Record<CardPhase, { title: string; detail: string }> = {
   },
   choosing: {
     title: "Elige una carta",
-    detail: "La carta que abras decidirá el resultado de esta ronda.",
+    detail: "Elige una posición: revelará el resultado que ya estaba sellado.",
   },
   revealing: {
     title: "Carta seleccionada",
@@ -50,16 +50,24 @@ export function CardGame({
   participants,
   mode,
   disabled,
+  initialSeed,
+  onCommit,
   onSelect,
 }: {
   participants: Participant[];
   mode: DrawMode;
   disabled: boolean;
+  initialSeed?: string;
+  onCommit: (seed: string) => void;
   onSelect: (assignment: CardAssignment, position: number) => void;
 }) {
-  const [assignments, setAssignments] = useState(() => buildCardAssignments(participants));
+  const [seed] = useState(() => initialSeed?.trim() || createCardSeed());
+  const [preparedRound] = useState(() => prepareCardRound(participants, seed));
+  const [assignments, setAssignments] = useState(() => preparedRound.assigned);
   const [phase, setPhase] = useState<CardPhase>("assigned");
+  const [commitError, setCommitError] = useState<string | null>(null);
   const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
+  const [focusedCardIndex, setFocusedCardIndex] = useState(0);
   const boardRef = useRef<HTMLDivElement | null>(null);
   const cardRefs = useRef(new Map<string, HTMLButtonElement>());
   const mountedRef = useRef(true);
@@ -75,8 +83,45 @@ export function CardGame({
       ? "dense"
       : "standard";
   const highDensity = performanceMode !== "standard";
+  const animationSampleStep = performanceMode === "ultra"
+    ? Math.max(1, Math.ceil(assignments.length / 48))
+    : performanceMode === "dense"
+      ? Math.max(1, Math.ceil(assignments.length / 72))
+      : 1;
+  const animatedCardCount = Math.ceil(assignments.length / animationSampleStep);
   const copy = phaseCopy[phase];
   const faceDown = phase !== "assigned";
+
+  useEffect(() => {
+    if (phase !== "choosing") return;
+    setFocusedCardIndex(0);
+    const frame = window.requestAnimationFrame(() => {
+      const first = assignments[0];
+      if (first) cardRefs.current.get(first.id)?.focus();
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [assignments, phase]);
+
+  const moveCardFocus = (currentIndex: number, event: KeyboardEvent<HTMLButtonElement>) => {
+    if (phase !== "choosing") return;
+    const keyOffset = event.key === "ArrowRight" || event.key === "ArrowDown"
+      ? 1
+      : event.key === "ArrowLeft" || event.key === "ArrowUp"
+        ? -1
+        : 0;
+    const nextIndex = event.key === "Home"
+      ? 0
+      : event.key === "End"
+        ? assignments.length - 1
+        : keyOffset
+          ? (currentIndex + keyOffset + assignments.length) % assignments.length
+          : currentIndex;
+    if (nextIndex === currentIndex && !["Home", "End"].includes(event.key)) return;
+    event.preventDefault();
+    setFocusedCardIndex(nextIndex);
+    const next = assignments[nextIndex];
+    if (next) cardRefs.current.get(next.id)?.focus();
+  };
 
   useEffect(() => {
     mountedRef.current = true;
@@ -101,6 +146,14 @@ export function CardGame({
     const board = boardRef.current;
     if (!board) return;
 
+    try {
+      onCommit(seed);
+      setCommitError(null);
+    } catch {
+      setCommitError("No se pudo verificar el compromiso persistente de esta mesa.");
+      return;
+    }
+
     setPhase("gathering");
     fortunaAudio.playCardGather();
     await wait(reducedMotion ? 30 : 330);
@@ -114,8 +167,9 @@ export function CardGame({
     const cards = assignments
       .map((assignment) => cardRefs.current.get(assignment.id))
       .filter((card): card is HTMLButtonElement => Boolean(card));
+    const motionCards = cards.filter((_, index) => index % animationSampleStep === 0);
     const gatherDuration = reducedMotion ? 40 : highDensity ? 520 : 720;
-    const gatherAnimations = cards.map((card, index) => card.animate(
+    const gatherAnimations = motionCards.map((card, index) => card.animate(
       highDensity
         ? [
             { transform: "none", opacity: 1 },
@@ -142,10 +196,10 @@ export function CardGame({
     fortunaAudio.playCardShuffle();
     const shuffleDuration = reducedMotion ? 50 : highDensity ? 820 : 1250;
     const visibleShuffleCards = performanceMode === "ultra"
-      ? cards.slice(-24)
+      ? motionCards.slice(-24)
       : highDensity
-        ? cards.slice(-42)
-        : cards;
+        ? motionCards.slice(-42)
+        : motionCards;
     const shuffleAnimations = visibleShuffleCards.map((card, index) => {
       const base = stackTransform(card, center, index);
       const side = index % 2 === 0 ? 1 : -1;
@@ -171,13 +225,15 @@ export function CardGame({
     if (!mountedRef.current) return;
 
     cards.forEach((card) => card.getAnimations().forEach((animation) => animation.cancel()));
-    setAssignments((current) => shuffleCards(current));
+    setAssignments(preparedRound.shuffled);
     setPhase("redealing");
     fortunaAudio.playCardDeal();
     await nextFrame();
     if (!mountedRef.current) return;
 
-    const redealtCards = Array.from(cardRefs.current.values());
+    const redealtCards = preparedRound.shuffled
+      .map((assignment, index) => index % animationSampleStep === 0 ? cardRefs.current.get(assignment.id) : null)
+      .filter((card): card is HTMLButtonElement => Boolean(card));
     const dealAnimations = redealtCards.map((card, index) => card.animate(
       [
         { transform: stackTransform(card, center, index), opacity: 0.72 },
@@ -230,7 +286,7 @@ export function CardGame({
       await wait(reducedMotion ? 50 : 820);
     }
     if (!mountedRef.current) return;
-    onSelect(assignment, position);
+    onSelect(preparedRound.selected, position);
   };
 
   return (
@@ -238,6 +294,7 @@ export function CardGame({
       className={`card-game card-game--${phase} card-game--${mode}`}
       data-card-count={assignments.length}
       data-performance-mode={performanceMode}
+      data-animated-card-count={animatedCardCount}
     >
       <div className="card-game-status" aria-live="polite">
         <span className="card-game-status__icon">
@@ -257,9 +314,24 @@ export function CardGame({
           {Array.from({ length: 6 }, (_, index) => <i key={index} />)}
           <span><Crown size={24} /><b>FR</b></span>
         </div>
+        {phase === "assigned" && highDensity && (
+          <section className="card-verification-list" aria-label="Verificación de participantes antes de barajar">
+            <header><strong>Verifica los {assignments.length} nombres</strong><span>Lista completa antes de ocultar y sellar el resultado</span></header>
+            <div>
+              {assignments.map((assignment, index) => (
+                <span key={assignment.id}>
+                  <b>{index + 1}</b>
+                  <i style={{ background: assignment.participant.color }} aria-hidden="true" />
+                  <strong>{assignment.participant.name}</strong>
+                  <small>{assignment.label}</small>
+                </span>
+              ))}
+            </div>
+          </section>
+        )}
         <div
           ref={boardRef}
-          className={`card-grid ${assignments.length > 36 ? "card-grid--dense" : ""} ${assignments.length > 72 ? "card-grid--very-dense" : ""} ${highDensity ? "card-grid--ultra-dense" : ""}`}
+          className={`card-grid ${assignments.length > 36 ? "card-grid--dense" : ""} ${assignments.length > 72 ? "card-grid--very-dense" : ""} ${highDensity ? "card-grid--ultra-dense" : ""} ${phase === "assigned" && highDensity ? "is-verification-background" : ""}`}
           style={{
             gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`,
             gridTemplateRows: `repeat(${rows}, minmax(0, 1fr))`,
@@ -269,6 +341,7 @@ export function CardGame({
           {assignments.map((assignment, index) => {
             const selected = selectedCardId === assignment.id;
             const showFace = !faceDown || selected;
+            const visibleAssignment = selected ? preparedRound.selected : assignment;
             return (
               <button
                 type="button"
@@ -277,18 +350,23 @@ export function CardGame({
                   if (element) cardRefs.current.set(assignment.id, element);
                   else cardRefs.current.delete(assignment.id);
                 }}
-                className={`playing-card ${showFace ? "is-face-up" : "is-face-down"} ${selected ? "is-selected" : ""}`}
+                className={`playing-card ${index % animationSampleStep === 0 ? "is-animation-sample" : ""} ${showFace ? "is-face-up" : "is-face-down"} ${selected ? "is-selected" : ""}`}
                 onClick={() => selectCard(assignment, index + 1)}
+                onFocus={() => setFocusedCardIndex(index)}
+                onKeyDown={(event) => moveCardFocus(index, event)}
+                tabIndex={phase === "choosing" && index === focusedCardIndex ? 0 : -1}
                 disabled={phase !== "choosing" || disabled}
-                aria-label={showFace ? `${assignment.label}, ${assignment.participant.name}` : `Carta oculta ${index + 1}`}
+                aria-label={showFace ? `${visibleAssignment.label}, ${visibleAssignment.participant.name}` : `Carta oculta ${index + 1}`}
               >
                 <span className="playing-card__inner">
-                  <span className={`playing-card__face ${assignment.isRed ? "is-red" : ""}`}>
-                    <span className="playing-card__corner"><strong>{assignment.rank}</strong><i>{assignment.suitSymbol}</i></span>
-                    <span className="playing-card__suit">{assignment.suitSymbol}</span>
-                    <span className="playing-card__person" title={assignment.participant.name}>{assignment.participant.name}</span>
-                    <span className="playing-card__number">#{index + 1}</span>
-                  </span>
+                  {showFace && (
+                    <span className={`playing-card__face ${visibleAssignment.isRed ? "is-red" : ""}`}>
+                      <span className="playing-card__corner"><strong>{visibleAssignment.rank}</strong><i>{visibleAssignment.suitSymbol}</i></span>
+                      <span className="playing-card__suit">{visibleAssignment.suitSymbol}</span>
+                      <span className="playing-card__person" title={visibleAssignment.participant.name}>{visibleAssignment.participant.name}</span>
+                      <span className="playing-card__number">#{index + 1}</span>
+                    </span>
+                  )}
                   <span className="playing-card__back">
                     <span><Crown size={25} /><b>FR</b></span>
                   </span>
@@ -311,7 +389,9 @@ export function CardGame({
         ) : (
           <div className="card-choice-callout is-busy"><Play size={17} /> {copy.title}…</div>
         )}
-        <small className="card-fairness-note">La asignación queda fijada antes de la animación y no cambia al elegir.</small>
+        <small className="card-fairness-note">
+          {commitError ?? `Compromiso ${preparedRound.commitmentId.slice(0, 21)}…: el resultado queda sellado antes de animar; cualquier carta revela la misma ronda.`}
+        </small>
       </div>
     </div>
   );

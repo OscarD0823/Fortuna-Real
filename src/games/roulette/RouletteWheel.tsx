@@ -33,7 +33,10 @@ export function RouletteWheel({
     if (!canvas) return;
 
     const size = 900;
-    const ratio = Math.min(window.devicePixelRatio || 1, entries.length > 120 ? 1.5 : 2);
+    const ratio = Math.min(
+      window.devicePixelRatio || 1,
+      entries.length > 120 ? 1.15 : entries.length > 60 ? 1.5 : 2,
+    );
     canvas.width = size * ratio;
     canvas.height = size * ratio;
     const context = canvas.getContext("2d");
@@ -127,8 +130,36 @@ export function RouletteWheel({
           : "rgba(245, 188, 52, .82)";
       context.lineWidth = entries.length > 140 ? 0.65 : entries.length > 70 ? 0.9 : entries.length > 36 ? 1.4 : 3.2;
       context.stroke();
-
     });
+
+    if (entries.length > 80) {
+      const compactFontSize = Math.max(6.5, Math.min(10, 1_420 / entries.length));
+      context.save();
+      context.textAlign = "center";
+      context.textBaseline = "middle";
+      context.font = `900 ${compactFontSize}px Arial, sans-serif`;
+      entries.forEach((entry, index) => {
+        const angle = -Math.PI / 2 + index * slice;
+        const labelRadius = index % 2 === 0 ? 382 : 348;
+        const label = entry.kind === "participant"
+          ? String(entry.number)
+          : entry.parity === "even" ? "P" : "I";
+        context.save();
+        context.translate(
+          center + Math.cos(angle) * labelRadius,
+          center + Math.sin(angle) * labelRadius,
+        );
+        context.rotate(angle + Math.PI / 2);
+        context.fillStyle = entry.disabled
+          ? "rgba(167,190,194,.42)"
+          : entry.kind === "parity" ? "#fff0a1" : index % 2 === 0 ? "#fff1bc" : "#70f6f1";
+        context.shadowColor = "rgba(0,0,0,.95)";
+        context.shadowBlur = 3;
+        context.fillText(label, 0, 0);
+        context.restore();
+      });
+      context.restore();
+    }
 
     context.shadowColor = "rgba(247, 177, 43, .5)";
     context.shadowBlur = 18;
@@ -186,6 +217,7 @@ export function RouletteWheel({
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
 
     let lastFrame = performance.now();
+    let lastPaint = lastFrame;
     let animationFrame = 0;
     const animateIdle = (now: number) => {
       if (document.hidden) {
@@ -193,8 +225,13 @@ export function RouletteWheel({
         animationFrame = window.requestAnimationFrame(animateIdle);
         return;
       }
+      if (now - lastPaint < 32) {
+        animationFrame = window.requestAnimationFrame(animateIdle);
+        return;
+      }
       const elapsed = Math.min(50, now - lastFrame);
       lastFrame = now;
+      lastPaint = now;
       wheelRotationRef.current += elapsed * 0.00355;
       if (rotorRef.current) {
         rotorRef.current.style.transform = `rotate(${wheelRotationRef.current}deg)`;
@@ -214,6 +251,7 @@ export function RouletteWheel({
 
   const studCount = Math.min(60, Math.max(18, entries.length));
   const showEntryNames = entries.length <= 32;
+  const showDomLabels = entries.length <= 80;
   const isLargeWheel = entries.length >= 33;
   const isHugeWheel = entries.length > 120;
   const numberFontSize = Math.max(4.5, Math.min(13, 880 / Math.max(entries.length, 1)));
@@ -222,6 +260,7 @@ export function RouletteWheel({
     <div
       className={`roulette casino-roulette ${isLargeWheel ? "roulette--large" : ""} ${isHugeWheel ? "roulette--huge" : ""} ${entries.length > 0 && !isSpinning ? "roulette--idle" : ""} ${isSpinning ? "roulette--spinning" : ""}`}
       data-entry-count={entries.length}
+      data-label-mode={showDomLabels ? "dom" : "canvas"}
     >
       <div className="roulette-pointer" aria-hidden="true"><span /></div>
       <div className="wheel-outer-frame casino-wheel-frame">
@@ -246,7 +285,7 @@ export function RouletteWheel({
             aria-label={`Ruleta de casino con ${entries.length} casillas visibles`}
           />
           <div className="wheel-labels" aria-hidden="true">
-            {entries.map((entry, index) => {
+            {showDomLabels && entries.map((entry, index) => {
               const angle = (index * 360) / entries.length;
               const radians = (angle * Math.PI) / 180;
               const labelRadius = isHugeWheel

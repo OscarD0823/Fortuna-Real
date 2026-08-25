@@ -319,10 +319,12 @@ const seededRandom = (seed: string) => {
 
 const roundPoint = (value: number) => Math.round(value * 10000) / 10000;
 
-export const createMarbleSeed = () =>
-  typeof crypto !== "undefined" && "randomUUID" in crypto
-    ? crypto.randomUUID()
-    : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+export const createMarbleSeed = () => {
+  if (typeof crypto === "undefined" || !("randomUUID" in crypto)) {
+    throw new Error("Este equipo no ofrece una fuente criptográfica segura para Canicas.");
+  }
+  return crypto.randomUUID();
+};
 
 interface ModuleGeometryDefinition {
   lengthScale: number;
@@ -572,7 +574,7 @@ const assembleModuleRoute = (
       if (!candidateWithinBoard(traced.points)) continue;
       const endpoint = traced.points[traced.points.length - 1];
       const clearance = minimumRouteDistance(traced.points, points);
-      if (clearance < 0.026) continue;
+      if (clearance < 0.034) continue;
       const margin = Math.min(endpoint.x - 0.055, 0.945 - endpoint.x, endpoint.y - 0.055, 0.945 - endpoint.y);
       const goalDistance = Math.hypot(endpoint.x - goal.x, endpoint.y - goal.y);
       const alignment = Math.abs(normalizeAngle(traced.exitHeading - targetHeading));
@@ -698,7 +700,8 @@ export const generateMarbleTrack = (
     return { type, zoneIndex, definition: pickSectionModule(type, index, random) };
   });
   let assembly = assembleModuleRoute(plans, random, config.rows + 2);
-  for (let attempt = 1; attempt < 4 && routeCoverage(assembly.points) < 0.2; attempt += 1) {
+  const targetCoverage = difficulty === "easy" ? 0.3 : difficulty === "medium" ? 0.42 : 0.46;
+  for (let attempt = 1; attempt < 8 && routeCoverage(assembly.points) < targetCoverage; attempt += 1) {
     const candidate = assembleModuleRoute(plans, random, config.rows + 2);
     if (routeCoverage(candidate.points) > routeCoverage(assembly.points)) assembly = candidate;
   }
@@ -750,9 +753,9 @@ export const generateMarbleTrack = (
   });
   const elevations = buildVerticalProfile(sectionDrafts, random, difficulty);
   const maximumBank = difficulty === "easy" ? 0.16 : difficulty === "medium" ? 0.24 : 0.31;
-  const maximumBridgeLift = difficulty === "easy" ? 0.28 : difficulty === "medium" ? 0.46 : 0.62;
-  const bridgeLifts = sectionDrafts.map((draft) => draft.clearance < 0.055
-    ? roundPoint(maximumBridgeLift * clamp(1 - draft.clearance / 0.055, 0.24, 1))
+  const maximumBridgeLift = difficulty === "easy" ? 0.55 : difficulty === "medium" ? 0.85 : 1.15;
+  const bridgeLifts = sectionDrafts.map((draft) => draft.clearance < 0.07
+    ? roundPoint(maximumBridgeLift * clamp(1 - draft.clearance / 0.07, 0.24, 1))
     : 0,
   );
   const sectionBanks = sectionDrafts.map((draft) => roundPoint(clamp(
@@ -984,17 +987,36 @@ const powerAdjustedProgress = (racer: MarbleRacer, track: MarbleTrack, raw: numb
   // Arranque desde reposo y aceleración sostenida: no hay frenada artificial antes de meta.
   const kineticTime = raw * raw * (2 - raw);
   let progress = profileProgressAtTime(track, kineticTime);
-  const at = racer.powerAt;
+  const at = clamp(racer.powerAt, 0, 0.9);
   const powerWindow = racer.power === "boost" ? 0.14 : racer.power === "restart" ? 0.11 : 0.09;
-  const local = clamp((progress - at) / powerWindow, 0, 1);
-  const pulse = Math.sin(local * Math.PI);
-  if (progress >= at && progress <= at + powerWindow) {
-    if (racer.power === "boost") progress += pulse * 0.052;
-    else if (racer.power === "freeze") progress -= pulse * 0.038;
-    else if (racer.power === "reverse") progress -= pulse * 0.075;
-    else if (racer.power === "restart") progress = progress * (1 - local) + 0.025 * local;
+  const powerEnd = Math.min(0.965, at + powerWindow);
+  const span = Math.max(0.001, powerEnd - at);
+  const local = clamp((progress - at) / span, 0, 1);
+  if (racer.power === "boost" && progress >= at) {
+    const gain = Math.min(0.052, (1 - powerEnd) * 0.72);
+    const boostedEnd = powerEnd + gain;
+    progress = progress <= powerEnd
+      ? at + (boostedEnd - at) * local
+      : boostedEnd + (1 - boostedEnd) * ((progress - powerEnd) / Math.max(0.001, 1 - powerEnd));
+  } else if (racer.power === "freeze" && progress >= at) {
+    const frozenEnd = at + span * 0.46;
+    progress = progress <= powerEnd
+      ? at + (frozenEnd - at) * local
+      : frozenEnd + (1 - frozenEnd) * ((progress - powerEnd) / Math.max(0.001, 1 - powerEnd));
+  } else if (racer.power === "reverse" && progress >= at && progress <= powerEnd) {
+    progress -= Math.sin(local * Math.PI) * 0.075;
+  } else if (racer.power === "restart" && progress >= at) {
+    const restartFloor = 0.025;
+    if (progress <= powerEnd) {
+      const smoothReturn = local * local * (3 - 2 * local);
+      progress = at + (restartFloor - at) * smoothReturn;
+    } else {
+      const replay = clamp((progress - powerEnd) / Math.max(0.001, 1 - powerEnd), 0, 1);
+      const replayKinetic = replay * replay * (2 - replay);
+      progress = restartFloor + (1 - restartFloor) * replayKinetic;
+    }
   }
-  return raw >= 1 ? 1 : clamp(progress, 0, 0.999);
+  return clamp(progress, 0, 1);
 };
 
 export const getMarbleMotion = (

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { isTauri } from "@tauri-apps/api/core";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { check, type Update } from "@tauri-apps/plugin-updater";
@@ -8,6 +8,7 @@ type UpdateStatus = "available" | "downloading" | "restarting" | "error";
 
 export function AppUpdater() {
   const updateRef = useRef<Update | null>(null);
+  const dialogRef = useRef<HTMLElement | null>(null);
   const [visible, setVisible] = useState(false);
   const [status, setStatus] = useState<UpdateStatus>("available");
   const [version, setVersion] = useState("");
@@ -15,26 +16,71 @@ export function AppUpdater() {
   const [progress, setProgress] = useState(0);
   const [errorMessage, setErrorMessage] = useState("");
 
+  const checkForUpdate = useCallback(async () => {
+    if (navigator.onLine === false) return;
+    try {
+      const update = await check({ timeout: 12_000 });
+      if (!update) return;
+
+      updateRef.current = update;
+      setVersion(update.version);
+      setNotes(update.body ?? "Incluye mejoras y correcciones para Fortuna Real.");
+      setStatus("available");
+      setVisible(true);
+    } catch (error) {
+      // La comprobación se ejecuta al iniciar y no debe confundir un endpoint sin
+      // release publicado con una pérdida de Internet. Una instalación iniciada
+      // por el usuario sí conserva su error visible más abajo.
+      console.info("[Fortuna Real] Comprobación automática aplazada.", error);
+    }
+  }, []);
+
   useEffect(() => {
     if (!isTauri()) return;
 
-    const timer = window.setTimeout(async () => {
-      try {
-        const update = await check({ timeout: 12_000 });
-        if (!update) return;
+    const timer = window.setTimeout(() => void checkForUpdate(), 4_500);
+    const retryWhenOnline = () => void checkForUpdate();
+    window.addEventListener("online", retryWhenOnline, { once: true });
 
-        updateRef.current = update;
-        setVersion(update.version);
-        setNotes(update.body ?? "Incluye mejoras y correcciones para Fortuna Real.");
-        setStatus("available");
-        setVisible(true);
-      } catch {
-        // La comprobación se repetirá en el siguiente inicio sin interrumpir el sorteo.
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener("online", retryWhenOnline);
+    };
+  }, [checkForUpdate]);
+
+  useEffect(() => {
+    if (!visible) return;
+    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const focusFrame = window.requestAnimationFrame(() => {
+      dialogRef.current?.querySelector<HTMLElement>("button:not([disabled])")?.focus();
+    });
+    const trapFocus = (event: KeyboardEvent) => {
+      if (event.key !== "Tab" || !dialogRef.current) return;
+      const focusable = Array.from(dialogRef.current.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), [href], [tabindex]:not([tabindex="-1"])',
+      ));
+      if (focusable.length === 0) {
+        event.preventDefault();
+        dialogRef.current.focus();
+        return;
       }
-    }, 4_500);
-
-    return () => window.clearTimeout(timer);
-  }, []);
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("keydown", trapFocus);
+    return () => {
+      window.cancelAnimationFrame(focusFrame);
+      document.removeEventListener("keydown", trapFocus);
+      if (previousFocus?.isConnected && previousFocus !== document.body) previousFocus.focus();
+    };
+  }, [visible]);
 
   const installUpdate = async () => {
     const update = updateRef.current;
@@ -76,7 +122,7 @@ export function AppUpdater() {
 
   return (
     <div className="update-overlay" role="dialog" aria-modal="true" aria-labelledby="update-title">
-      <section className="update-card">
+      <section ref={dialogRef} className="update-card" tabIndex={-1}>
         {status === "available" && (
           <button
             type="button"

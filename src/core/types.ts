@@ -47,4 +47,8 @@ export interface RoundResult {
   remainingCount: number;
   eligibleCount: number;
   createdAt: string;
+  auditId?: string;
+  commitmentId?: string;
+  revealedSeed?: string;
+  auditHash?: string;
 }

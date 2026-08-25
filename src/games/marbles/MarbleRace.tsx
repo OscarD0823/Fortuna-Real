@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Crown, Flag, Gauge, Gem, Play, RefreshCw, Sparkles, WandSparkles } from "lucide-react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Camera, ChevronLeft, ChevronRight, Crown, Flag, Gauge, Gem, Play, RefreshCw, Sparkles, WandSparkles } from "lucide-react";
 import type { DrawMode, MarbleDifficulty, Participant } from "../../core/types";
 import { fortunaAudio } from "../../shared/audio/audioEngine";
 import {
@@ -20,21 +20,45 @@ import {
 import { disposeMarbleRace3D, drawMarbleRace3D } from "./marbleRace3d";
 
 type RacePhase = "ready" | "racing" | "finished";
-const MARBLE_CAMERA_INTRO_MS = 1400;
+const getMarbleCameraIntroMs = () =>
+  window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ? 0 : 1_400;
 
-const webglFallbackCanvases = new WeakSet<HTMLCanvasElement>();
+const failedWebglCanvases = new WeakSet<HTMLCanvasElement>();
+type MarbleRenderMode = "webgl" | "fallback";
 
 interface RankingItem {
   racer: MarbleRacer;
   progress: number;
   finished: boolean;
+  powerActive: boolean;
+  position: number;
 }
 
-interface PowerEvent {
+interface RaceEvent {
   id: string;
-  participantName: string;
-  power: MarblePower;
+  title: string;
+  detail: string;
+  tone: MarblePower | "race" | "risk" | "finish";
 }
+
+const powerDescriptions: Record<MarblePower, string> = {
+  boost: "acelera",
+  shield: "protege",
+  freeze: "congela rivales",
+  reverse: "invierte impulso",
+  giant: "aumenta tamaño",
+  tiny: "reduce tamaño",
+  restart: "reinicia tramo",
+};
+
+const compactRanking = <T extends { racer: MarbleRacer }>(items: T[]) => {
+  if (items.length <= 8) return items;
+  const leaders = items.slice(0, 5);
+  const last = items[items.length - 1];
+  return leaders.some((item) => item.racer.id === last.racer.id)
+    ? leaders
+    : [...leaders, last];
+};
 
 interface ScaledTrackPoint {
   x: number;
@@ -588,32 +612,35 @@ const getStaticTrackLayer = (
 };
 
 const drawRace = (
-  canvas: HTMLCanvasElement,
+  webglCanvas: HTMLCanvasElement,
+  fallbackCanvas: HTMLCanvasElement,
   race: PreparedMarbleRace,
   elapsedMs: number,
   phase: RacePhase,
-) => {
-  if (!webglFallbackCanvases.has(canvas)) {
+  followRacerId: string | null,
+): MarbleRenderMode => {
+  if (!failedWebglCanvases.has(webglCanvas)) {
     try {
-      drawMarbleRace3D(canvas, race, elapsedMs, phase);
-      return;
+      drawMarbleRace3D(webglCanvas, race, elapsedMs, phase, followRacerId);
+      return "webgl";
     } catch (error) {
-      webglFallbackCanvases.add(canvas);
-      console.warn("Fortuna Real no pudo iniciar la escena 3D; se usarÃ¡ el render compatible.", error);
+      failedWebglCanvases.add(webglCanvas);
+      disposeMarbleRace3D(webglCanvas);
+      console.warn("Fortuna Real no pudo iniciar la escena 3D; se usará el render compatible.", error);
     }
   }
-  const bounds = canvas.getBoundingClientRect();
+  const bounds = fallbackCanvas.getBoundingClientRect();
   const ratio = Math.min(window.devicePixelRatio || 1, 2);
   const width = Math.max(520, bounds.width);
   const height = Math.max(480, bounds.height);
-  if (canvas.width !== Math.round(width * ratio) || canvas.height !== Math.round(height * ratio)) {
-    canvas.width = Math.round(width * ratio);
-    canvas.height = Math.round(height * ratio);
+  if (fallbackCanvas.width !== Math.round(width * ratio) || fallbackCanvas.height !== Math.round(height * ratio)) {
+    fallbackCanvas.width = Math.round(width * ratio);
+    fallbackCanvas.height = Math.round(height * ratio);
   }
-  const context = canvas.getContext("2d");
-  if (!context) return;
+  const context = fallbackCanvas.getContext("2d");
+  if (!context) throw new Error("No fue posible iniciar el render compatible 2D.");
   context.setTransform(1, 0, 0, 1, 0, 0);
-  context.clearRect(0, 0, canvas.width, canvas.height);
+  context.clearRect(0, 0, fallbackCanvas.width, fallbackCanvas.height);
   context.setTransform(ratio, 0, 0, ratio, 0, 0);
 
   const paddingX = Math.max(54, width * 0.045);
@@ -623,7 +650,7 @@ const drawRace = (
     y: paddingY + point.y * (height - paddingY * 2),
   });
   const scaledPoints = race.track.points.map(scalePoint);
-  const staticLayer = getStaticTrackLayer(canvas, race, width, height, ratio, scalePoint, scaledPoints);
+  const staticLayer = getStaticTrackLayer(fallbackCanvas, race, width, height, ratio, scalePoint, scaledPoints);
   context.drawImage(staticLayer, 0, 0, width, height);
 
   race.track.zones.forEach((zone) => {
@@ -645,7 +672,7 @@ const drawRace = (
   const baseRadius = count > 150 ? 3.2 : count > 90 ? 4 : count > 48 ? 5 : count > 22 ? 6.2 : 8.5;
   const drawDetailed = count <= 90;
   const selectedId = phase === "finished" ? race.selected.id : null;
-  const visualRaceElapsed = phase === "ready" ? 0 : Math.max(0, elapsedMs - MARBLE_CAMERA_INTRO_MS);
+  const visualRaceElapsed = phase === "ready" ? 0 : Math.max(0, elapsedMs - getMarbleCameraIntroMs());
   const ordered = [...race.racers].sort((first, second) =>
     getMarbleProgress(first, visualRaceElapsed, race.track).progress - getMarbleProgress(second, visualRaceElapsed, race.track).progress,
   );
@@ -666,7 +693,7 @@ const drawRace = (
   }
 
   ordered.forEach((racer) => {
-    const raceElapsed = phase === "ready" ? 0 : Math.max(0, elapsedMs - MARBLE_CAMERA_INTRO_MS);
+    const raceElapsed = phase === "ready" ? 0 : Math.max(0, elapsedMs - getMarbleCameraIntroMs());
     const state = getMarbleProgress(racer, raceElapsed, race.track);
     const point = getTrackPosition(race.track.points, state.progress);
     const scaled = scalePoint(point);
@@ -734,6 +761,7 @@ const drawRace = (
     }
     context.restore();
   });
+  return "fallback";
 };
 
 export function MarbleRace({
@@ -743,6 +771,7 @@ export function MarbleRace({
   disabled,
   previousWinnerIds,
   initialSeed,
+  onCommit,
   onDifficultyChange,
   onTrackPrepared,
   onFinish,
@@ -753,27 +782,45 @@ export function MarbleRace({
   disabled: boolean;
   previousWinnerIds: ReadonlySet<string>;
   initialSeed?: string;
+  onCommit: (seed: string) => void;
   onDifficultyChange: (difficulty: MarbleDifficulty) => void;
   onTrackPrepared?: (track: MarbleTrack) => void;
   onFinish: (racer: MarbleRacer, label: string) => void;
 }) {
   const [seed, setSeed] = useState(() => initialSeed?.trim() || createMarbleSeed());
+  const resumedSeed = Boolean(initialSeed?.trim());
+  const [roundParticipants] = useState(() => participants);
+  const [roundPreviousWinnerIds] = useState(() => new Set(previousWinnerIds));
   const [phase, setPhase] = useState<RacePhase>("ready");
+  const [commitError, setCommitError] = useState<string | null>(null);
   const [ranking, setRanking] = useState<RankingItem[]>([]);
-  const [powerEvents, setPowerEvents] = useState<PowerEvent[]>([]);
+  const [raceEvents, setRaceEvents] = useState<RaceEvent[]>([]);
   const [fps, setFps] = useState(60);
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const [renderMode, setRenderMode] = useState<MarbleRenderMode>("webgl");
+  const [cameraTargetId, setCameraTargetId] = useState<string | null>(null);
+  const renderModeRef = useRef<MarbleRenderMode>("webgl");
+  const cameraTargetRef = useRef<string | null>(null);
+  const webglCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const fallbackCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const frameRef = useRef(0);
   const finishTimerRef = useRef<number | null>(null);
   const mountedRef = useRef(true);
   const triggeredPowersRef = useRef(new Set<string>());
+  const trackedPositionRef = useRef<string | null>(null);
   const race = useMemo(
-    () => prepareMarbleRace(participants, mode, seed, difficulty, previousWinnerIds),
-    [difficulty, mode, participants, previousWinnerIds, seed],
+    () => prepareMarbleRace(roundParticipants, mode, seed, difficulty, roundPreviousWinnerIds),
+    [difficulty, mode, roundParticipants, roundPreviousWinnerIds, seed],
   );
 
   const paint = useCallback((elapsedMs: number, currentPhase: RacePhase) => {
-    if (canvasRef.current) drawRace(canvasRef.current, race, elapsedMs, currentPhase);
+    const webglCanvas = webglCanvasRef.current;
+    const fallbackCanvas = fallbackCanvasRef.current;
+    if (!webglCanvas || !fallbackCanvas) return;
+    const nextRenderMode = drawRace(webglCanvas, fallbackCanvas, race, elapsedMs, currentPhase, cameraTargetRef.current);
+    if (nextRenderMode !== renderModeRef.current) {
+      renderModeRef.current = nextRenderMode;
+      setRenderMode(nextRenderMode);
+    }
   }, [race]);
 
   useEffect(() => {
@@ -781,40 +828,63 @@ export function MarbleRace({
   }, [onTrackPrepared, race.track]);
 
   useEffect(() => {
-    const redraw = () => paint(phase === "finished" ? race.selected.durationMs : 0, phase);
+    const redraw = () => paint(
+      phase === "finished" ? race.selected.durationMs + getMarbleCameraIntroMs() : 0,
+      phase,
+    );
     redraw();
     const observer = new ResizeObserver(redraw);
-    if (canvasRef.current) observer.observe(canvasRef.current);
+    if (webglCanvasRef.current) observer.observe(webglCanvasRef.current);
     return () => observer.disconnect();
   }, [paint, phase, race.selected.durationMs]);
 
   useEffect(() => {
     mountedRef.current = true;
-    const canvas = canvasRef.current;
+    const webglCanvas = webglCanvasRef.current;
     return () => {
       mountedRef.current = false;
       window.cancelAnimationFrame(frameRef.current);
       if (finishTimerRef.current) window.clearTimeout(finishTimerRef.current);
-      if (canvas) disposeMarbleRace3D(canvas);
+      if (webglCanvas) disposeMarbleRace3D(webglCanvas);
     };
   }, []);
 
   const resetPreparedRace = () => {
     setPhase("ready");
     setRanking([]);
-    setPowerEvents([]);
+    setRaceEvents([]);
+    trackedPositionRef.current = null;
     triggeredPowersRef.current.clear();
   };
 
+  const changeCameraTarget = (nextTargetId: string) => {
+    const nextTarget = nextTargetId || null;
+    cameraTargetRef.current = nextTarget;
+    setCameraTargetId(nextTarget);
+    fortunaAudio.playClick();
+    if (phase !== "racing") {
+      paint(phase === "finished" ? race.selected.durationMs + getMarbleCameraIntroMs() : 0, phase);
+    }
+  };
+
+  const stepCameraTarget = (direction: -1 | 1) => {
+    if (race.racers.length === 0) return;
+    const currentIndex = cameraTargetId
+      ? race.racers.findIndex((racer) => racer.id === cameraTargetId)
+      : direction > 0 ? -1 : 0;
+    const nextIndex = (currentIndex + direction + race.racers.length) % race.racers.length;
+    changeCameraTarget(race.racers[nextIndex].id);
+  };
+
   const regenerateTrack = () => {
-    if (phase === "racing") return;
+    if (phase !== "ready" || resumedSeed) return;
     fortunaAudio.playClick();
     setSeed(createMarbleSeed());
     resetPreparedRace();
   };
 
   const changeDifficulty = (nextDifficulty: MarbleDifficulty) => {
-    if (phase === "racing" || nextDifficulty === difficulty) return;
+    if (phase !== "ready" || resumedSeed || nextDifficulty === difficulty) return;
     fortunaAudio.playClick();
     onDifficultyChange(nextDifficulty);
     setSeed(createMarbleSeed());
@@ -822,9 +892,22 @@ export function MarbleRace({
   };
 
   const startRace = () => {
-    if (disabled || phase === "racing") return;
+    if (disabled || phase !== "ready") return;
+    try {
+      onCommit(seed);
+      setCommitError(null);
+    } catch {
+      setCommitError("La semilla no coincide con el compromiso persistente de esta carrera.");
+      return;
+    }
     setPhase("racing");
-    setPowerEvents([]);
+    setRaceEvents([{
+      id: `start-${seed}`,
+      title: "Compuerta abierta",
+      detail: `${participants.length} canicas entran en carrera`,
+      tone: "race",
+    }]);
+    trackedPositionRef.current = null;
     triggeredPowersRef.current.clear();
     fortunaAudio.playMarbleStart();
     const startedAt = performance.now();
@@ -832,6 +915,8 @@ export function MarbleRace({
     let fpsWindow = startedAt;
     let frameCount = 0;
     const finishAt = race.selected.durationMs;
+    const cameraIntroMs = getMarbleCameraIntroMs();
+    const uiUpdateInterval = race.racers.length > 120 ? 320 : race.racers.length > 72 ? 250 : 180;
 
     const tick = (now: number) => {
       if (!mountedRef.current) return;
@@ -839,27 +924,46 @@ export function MarbleRace({
       frameCount += 1;
       paint(elapsed, "racing");
 
-      if (now - lastUiUpdate >= 180) {
+      if (now - lastUiUpdate >= uiUpdateInterval) {
         const orderedRacers = race.racers
           .map((racer) => {
-            const state = getMarbleProgress(racer, Math.max(0, elapsed - MARBLE_CAMERA_INTRO_MS), race.track);
-            return { racer, progress: state.progress, finished: state.finished };
+            const state = getMarbleProgress(racer, Math.max(0, elapsed - cameraIntroMs), race.track);
+            return { racer, progress: state.progress, finished: state.finished, powerActive: state.powerActive };
           })
-          .sort((first, second) => second.progress - first.progress);
-        setRanking(orderedRacers.slice(0, 6));
-        const newEvents = race.racers.flatMap((racer) => {
+          .sort((first, second) => second.progress - first.progress)
+          .map((item, index) => ({ ...item, position: index + 1 }));
+        setRanking(compactRanking(orderedRacers));
+        const trackedRacer = mode === "direct"
+          ? orderedRacers[0]
+          : orderedRacers[orderedRacers.length - 1];
+        const positionEvent: RaceEvent | null = (
+          elapsed > cameraIntroMs + 300
+          && trackedPositionRef.current
+          && trackedPositionRef.current !== trackedRacer.racer.id
+        ) ? {
+            id: `position-${trackedRacer.racer.id}-${Math.round(elapsed)}`,
+            title: mode === "direct" ? "Cambio de líder" : "Zona de riesgo",
+            detail: mode === "direct"
+              ? `${trackedRacer.racer.participant.name} toma la punta`
+              : `${trackedRacer.racer.participant.name} marcha en último lugar`,
+            tone: mode === "direct" ? "race" : "risk",
+          } satisfies RaceEvent : null;
+        trackedPositionRef.current = trackedRacer.racer.id;
+        const newEvents = orderedRacers.flatMap(({ racer, powerActive }) => {
           if (!racer.power || triggeredPowersRef.current.has(racer.id)) return [];
-          const state = getMarbleProgress(racer, Math.max(0, elapsed - MARBLE_CAMERA_INTRO_MS), race.track);
-          if (!state.powerActive) return [];
+          if (!powerActive) return [];
           triggeredPowersRef.current.add(racer.id);
           return [{
             id: `${racer.id}-${elapsed}`,
-            participantName: racer.participant.name,
-            power: racer.power,
-          } satisfies PowerEvent];
+            title: `${racer.participant.name} · ${powerLabels[racer.power]}`,
+            detail: powerDescriptions[racer.power],
+            tone: racer.power,
+          } satisfies RaceEvent];
         }).slice(0, 3);
+        if (positionEvent || newEvents.length > 0) {
+          setRaceEvents((current) => [...newEvents, ...(positionEvent ? [positionEvent] : []), ...current].slice(0, 4));
+        }
         if (newEvents.length > 0) {
-          setPowerEvents((current) => [...newEvents, ...current].slice(0, 3));
           fortunaAudio.playMarblePower();
         }
         lastUiUpdate = now;
@@ -871,9 +975,17 @@ export function MarbleRace({
         frameCount = 0;
       }
 
-      if (elapsed >= finishAt + MARBLE_CAMERA_INTRO_MS) {
+      if (elapsed >= finishAt + cameraIntroMs) {
         setPhase("finished");
-        paint(finishAt + MARBLE_CAMERA_INTRO_MS, "finished");
+        setRaceEvents((current) => [({
+          id: `finish-${race.selected.id}`,
+          title: "Resultado en meta",
+          detail: mode === "direct"
+            ? `${race.selected.participant.name} cruza primero`
+            : `${race.selected.participant.name} cruza en último lugar`,
+          tone: "finish",
+        } satisfies RaceEvent), ...current].slice(0, 4));
+        paint(finishAt + cameraIntroMs, "finished");
         fortunaAudio.playMarbleFinish();
         const resultLabel = mode === "direct"
           ? `Canica #${race.selected.number} · llegó primera`
@@ -890,7 +1002,23 @@ export function MarbleRace({
     frameRef.current = window.requestAnimationFrame(tick);
   };
 
-  const status = phase === "ready" ? "Participantes en cámara" : phase === "racing" ? "Carrera en vivo" : "Resultado confirmado";
+  const status = phase === "ready" ? "Pista lista" : phase === "racing" ? "Carrera en vivo" : "Resultado confirmado";
+  const statusDetail = phase === "ready"
+    ? `${race.track.name} · compromiso ${race.track.signature.toUpperCase()}`
+    : mode === "direct"
+      ? "La primera canica en meta gana"
+      : "La última canica en meta queda eliminada";
+  const displayedRanking: RankingItem[] = ranking.length > 0
+    ? ranking
+    : compactRanking(race.racers.map((racer, index) => ({
+        racer,
+        progress: 0,
+        finished: false,
+        powerActive: false,
+        position: index + 1,
+      })));
+  const omittedRankingCount = Math.max(0, race.racers.length - displayedRanking.length);
+  const recentRaceEvents = raceEvents.slice(0, 3);
 
   return (
     <div
@@ -906,77 +1034,149 @@ export function MarbleRace({
       data-track-width={race.track.trackWidth}
       data-obstacles={race.track.obstacles.length}
       data-power-zones={race.track.powerZones.length}
+      data-camera-target={cameraTargetId ?? "overview"}
     >
       <div className="marble-race-status" aria-live="polite">
         <span className="marble-race-status__icon">{phase === "racing" ? <Gauge size={18} /> : <Gem size={18} />}</span>
-        <div><strong>{status}</strong><small>{race.track.name} · semilla {race.track.signature.toUpperCase()}</small></div>
+        <div className="marble-race-status__copy"><strong>{status}</strong><small>{statusDetail}</small></div>
         <div className="marble-race-status__metrics">
-          <span>{race.track.sections.length} secciones</span>
-          <span>{race.track.sections.filter((section) => section.bridgeLift > 0).length} cruces elevados</span>
-          <span>{race.track.zones.length} zonas</span>
-          <span>{race.track.obstacles.length} trampas</span>
-          <span>{race.track.powerZones.length} {race.track.powerZones.length === 1 ? "poder" : "poderes"}</span>
+          <span className="is-primary">{difficultyLabels[difficulty]}</span>
+          <span>Riesgo {race.track.risk}/5</span>
+          <span>{race.track.powerZones.length} poderes</span>
           <span>{phase === "racing" ? `${fps} FPS` : `${participants.length} canicas`}</span>
         </div>
       </div>
 
       <div className="marble-arena">
-        <canvas
-          ref={canvasRef}
-          aria-label={`Escenario 3D ${race.track.name}, dificultad ${difficultyLabels[difficulty]}, ${race.track.sections.length} secciones y ${participants.length} canicas`}
-        />
+        <div className="marble-canvas-stack">
+          <canvas
+            ref={webglCanvasRef}
+            className={`marble-canvas marble-canvas--webgl ${renderMode === "webgl" ? "is-active" : "is-inactive"}`}
+            aria-hidden={renderMode !== "webgl"}
+            aria-label={renderMode === "webgl" ? `Escenario 3D ${race.track.name}, dificultad ${difficultyLabels[difficulty]}, ${race.track.sections.length} secciones y ${participants.length} canicas` : undefined}
+          />
+          <canvas
+            ref={fallbackCanvasRef}
+            className={`marble-canvas marble-canvas--fallback ${renderMode === "fallback" ? "is-active" : "is-inactive"}`}
+            aria-hidden={renderMode !== "fallback"}
+            aria-label={renderMode === "fallback" ? `Vista compatible 2D de ${race.track.name}, dificultad ${difficultyLabels[difficulty]}, ${race.track.sections.length} secciones y ${participants.length} canicas` : undefined}
+          />
+        </div>
 
-        <div className="marble-render-badge"><span /> ESCENA 3D</div>
+        <div className={`marble-render-badge marble-render-badge--${renderMode}`} role="status" aria-live="polite">
+          <span /> {renderMode === "fallback" ? "VISTA COMPATIBLE 2D" : phase === "racing" && cameraTargetId ? "CÁMARA CANICA EN VIVO" : phase === "racing" ? "CARRERA 3D EN VIVO" : "PISTA 3D VALIDADA"}
+        </div>
 
-        {(phase === "racing" || phase === "finished") && (
-          <div className="marble-live-ranking">
-            <div><Gauge size={14} /> Clasificación en vivo</div>
-            {ranking.map((item, index) => (
-              <span key={item.racer.id}>
-                <b>{index + 1}</b><i style={{ background: item.racer.accent }} />
-                <strong>{item.racer.participant.name}{item.racer.previousWinner && <Crown size={10} fill="currentColor" aria-label="Ganador anterior" />}</strong><em>{item.finished ? "META" : `${Math.round(item.progress * 100)}%`}</em>
-              </span>
-            ))}
+        <div className="marble-camera-control">
+          <Camera size={16} aria-hidden="true" />
+          <span><strong>CÁMARA CINEMÁTICA</strong><small>{cameraTargetId ? "Seguimiento estabilizado" : "Vista general"}</small></span>
+          <div className="marble-camera-control__switcher">
+            <button type="button" onClick={() => stepCameraTarget(-1)} disabled={renderMode === "fallback"} aria-label="Seguir la canica anterior"><ChevronLeft size={15} /></button>
+            <select
+              aria-label="Seguir a un participante desde su canica"
+              value={cameraTargetId ?? ""}
+              onChange={(event) => changeCameraTarget(event.target.value)}
+              disabled={renderMode === "fallback"}
+            >
+              <option value="">Vista general</option>
+              {race.racers.map((racer) => (
+                <option key={racer.id} value={racer.id}>{racer.number}. {racer.participant.name}</option>
+              ))}
+            </select>
+            <button type="button" onClick={() => stepCameraTarget(1)} disabled={renderMode === "fallback"} aria-label="Seguir la canica siguiente"><ChevronRight size={15} /></button>
           </div>
-        )}
+        </div>
 
-        {powerEvents.length > 0 && (
-          <div className="marble-power-feed">
-            {powerEvents.map((event) => (
-              <span key={event.id}><WandSparkles size={12} /><strong>{event.participantName}</strong> · {powerLabels[event.power]}</span>
-            ))}
+        <aside className="marble-live-ranking" aria-label="Clasificación de la carrera">
+          <div className="marble-live-ranking__heading">
+            <span><Gauge size={14} /> {phase === "ready" ? "Participantes listos" : "Clasificación"}</span>
+            <small>{mode === "direct" ? "LÍDER GANA" : "ÚLTIMO EN RIESGO"}</small>
           </div>
-        )}
+          <div className="marble-live-ranking__list" role="list">
+            {displayedRanking.map((item, index) => {
+              const isAtRisk = mode === "elimination" && item.position === race.racers.length;
+              return (
+                <Fragment key={item.racer.id}>
+                  {omittedRankingCount > 0 && index === displayedRanking.length - 1 && (
+                    <span
+                      className="marble-ranking-omitted"
+                      role="separator"
+                      aria-label={`${omittedRankingCount} posiciones intermedias ocultas`}
+                    >
+                      <i aria-hidden="true" /> {omittedRankingCount} posiciones ocultas <i aria-hidden="true" />
+                    </span>
+                  )}
+                  <span className={isAtRisk ? "is-at-risk" : ""} role="listitem">
+                    <b>{item.position}</b><i style={{ background: item.racer.accent }} />
+                    <strong>{item.racer.participant.name}{item.racer.previousWinner && <Crown size={10} fill="currentColor" aria-label="Ganador anterior" />}</strong>
+                    <small className={`marble-ranking-power marble-ranking-power--${item.racer.power ?? "none"}`}>
+                      {item.powerActive && item.racer.power ? powerLabels[item.racer.power] : item.racer.power ? `Tiene ${powerLabels[item.racer.power]}` : "Sin poder"}
+                    </small>
+                    <em>{isAtRisk ? "RIESGO" : item.finished ? "META" : phase === "ready" ? "LISTO" : `${Math.round(item.progress * 100)}%`}</em>
+                  </span>
+                </Fragment>
+              );
+            })}
+          </div>
+        </aside>
 
-        <div className="marble-map-stamp">
-          <span>MAPA ALEATORIO</span>
-          <strong>{difficultyLabels[difficulty]}</strong>
-          <small>{race.track.lengthRating} · riesgo {race.track.risk}/5 · 100% conectado</small>
+        <section className={`marble-event-feed ${recentRaceEvents.length ? "has-event" : ""}`} aria-live="polite" aria-atomic="false">
+          <span className="marble-event-feed__label"><WandSparkles size={12} /> Eventos de carrera</span>
+          {recentRaceEvents.length ? (
+            <div className="marble-event-feed__list">
+              {recentRaceEvents.map((event) => (
+                <strong key={event.id} className={`marble-event-feed__event marble-event-feed__event--${event.tone}`}>
+                  {event.title}
+                  <small>{event.detail}</small>
+                </strong>
+              ))}
+            </div>
+          ) : (
+            <strong className="marble-event-feed__empty">Sin eventos de poder todavía</strong>
+          )}
+        </section>
+
+        <div className="marble-map-hud">
+          <span>MAPA ACTUAL</span>
+          <strong>{race.track.name}</strong>
+          <div><small>{difficultyLabels[difficulty]}</small><small>{race.track.lengthRating}</small><small>Riesgo {race.track.risk}/5</small></div>
         </div>
       </div>
 
+      <div className="marble-power-quick-legend" aria-label="Poderes disponibles en esta dificultad">
+        <span><WandSparkles size={13} /> Poderes</span>
+        {race.track.powerZones.map((zone) => zone.power).filter((power, index, powers) => powers.indexOf(power) === index).map((power) => (
+          <small className={`marble-power-quick marble-power-quick--${power}`} key={power} title={powerDescriptions[power]} aria-label={`${powerLabels[power]}: ${powerDescriptions[power]}`}>
+            <i /> {powerLabels[power]}
+          </small>
+        ))}
+      </div>
+
       <div className="marble-controls">
-        <div className="marble-difficulty-switch" aria-label="Dificultad de la pista">
+        <div className="marble-difficulty-switch" role="radiogroup" aria-label="Dificultad de la pista">
+          <span>Dificultad</span>
           {(["easy", "medium", "hard"] as const).map((level) => (
             <button
               type="button"
+              role="radio"
+              aria-checked={difficulty === level}
               key={level}
               className={difficulty === level ? "is-active" : ""}
               onClick={() => changeDifficulty(level)}
-              disabled={phase === "racing" || phase === "finished"}
+              disabled={phase !== "ready" || resumedSeed}
             >
               {difficultyLabels[level]}
             </button>
           ))}
         </div>
-        <button type="button" className="start-button marble-start-button" onClick={startRace} disabled={disabled || phase === "racing" || phase === "finished"}>
+        <button type="button" className="start-button marble-start-button" onClick={startRace} disabled={disabled || phase !== "ready"} aria-describedby="marble-race-help">
           {phase === "racing" ? <><span className="spinner-dot" /> Carrera en curso…</> : phase === "finished" ? <><Flag size={18} /> Carrera finalizada</> : <><Play size={19} fill="currentColor" /> Iniciar carrera</>}
         </button>
-        <button type="button" className="text-button marble-regenerate" onClick={regenerateTrack} disabled={phase === "racing"}>
+        <button type="button" className="text-button marble-regenerate" onClick={regenerateTrack} disabled={phase !== "ready" || resumedSeed}>
           <RefreshCw size={15} /> Generar otro mapa
         </button>
       </div>
-      <small className="marble-generation-note"><Sparkles size={11} /> Cada semilla ensambla zonas y secciones compatibles; la ruta se valida antes de abrir la compuerta.</small>
+      <small id="marble-race-help" className="marble-generation-note"><Sparkles size={11} /> {commitError ?? (resumedSeed ? "Ronda recuperada: mapa y dificultad quedan bloqueados para conservar el compromiso." : "Mapa validado; puedes cambiar dificultad o generar otro antes de iniciar.")}</small>
     </div>
   );
 }
