@@ -149,6 +149,7 @@ export const createDuckHunt3D = (
   );
   renderer.setPixelRatio(maximumPixelRatio);
   canvas.dataset.renderQuality = "high";
+  canvas.dataset.environment = "forest-pond-elevated";
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.06;
@@ -182,6 +183,9 @@ export const createDuckHunt3D = (
   sun.shadow.camera.top = 13;
   sun.shadow.camera.bottom = -8;
   scene.add(sun);
+  const moonRim = new THREE.PointLight("#76dcff", 22, 28, 1.8);
+  moonRim.position.set(-8.8, 8.2, -5.8);
+  scene.add(moonRim);
 
   const ground = new THREE.Mesh(
     new THREE.PlaneGeometry(44, 28),
@@ -191,6 +195,30 @@ export const createDuckHunt3D = (
   ground.position.set(0, -0.05, -2);
   ground.receiveShadow = true;
   scene.add(ground);
+
+  const moundCount = 18;
+  const mounds = new THREE.InstancedMesh(
+    new THREE.IcosahedronGeometry(1, 2),
+    new THREE.MeshStandardMaterial({ color: "#173b22", roughness: 1, metalness: 0 }),
+    moundCount,
+  );
+  for (let index = 0; index < moundCount; index += 1) {
+    const back = index < 10;
+    const side = index % 2 === 0 ? -1 : 1;
+    const x = back ? -12.8 + index * 2.82 : side * (9.1 + (index % 4) * 0.72);
+    const z = back ? -7.8 - (index % 3) * 0.62 : -4.8 + (index % 7) * 1.6;
+    const scale = 0.82 + (index % 5) * 0.09;
+    setInstanceTransform(
+      mounds,
+      index,
+      new THREE.Vector3(x, -0.22, z),
+      new THREE.Euler(0, index * 0.77, 0),
+      new THREE.Vector3(2.7 * scale, 0.58 * scale, 1.5 * scale),
+    );
+  }
+  mounds.instanceMatrix.needsUpdate = true;
+  mounds.receiveShadow = true;
+  scene.add(mounds);
 
   const pond = new THREE.Mesh(
     new THREE.CircleGeometry(6.8, 64),
@@ -217,6 +245,63 @@ export const createDuckHunt3D = (
   pondRing.scale.set(1.55, 0.72, 1);
   pondRing.position.copy(pond.position).setY(0.006);
   scene.add(pondRing);
+
+  const rippleCount = 7;
+  const ripples = new THREE.InstancedMesh(
+    new THREE.RingGeometry(0.72, 0.77, 28),
+    new THREE.MeshBasicMaterial({ color: "#72dff2", transparent: true, opacity: 0.2, depthWrite: false, side: THREE.DoubleSide }),
+    rippleCount,
+  );
+  for (let index = 0; index < rippleCount; index += 1) {
+    const angle = index * 2.37;
+    const radius = 1.1 + (index % 4) * 0.92;
+    setInstanceTransform(
+      ripples,
+      index,
+      new THREE.Vector3(Math.cos(angle) * radius, 0.035, 0.8 + Math.sin(angle) * radius * 0.46),
+      new THREE.Euler(-Math.PI / 2, 0, angle),
+      new THREE.Vector3(0.7 + (index % 3) * 0.32, 0.7 + (index % 3) * 0.32, 1),
+    );
+  }
+  ripples.instanceMatrix.needsUpdate = true;
+  scene.add(ripples);
+
+  const lilyPadCount = 18;
+  const lilyPadPositions: THREE.Vector3[] = [];
+  const lilyPads = new THREE.InstancedMesh(
+    new THREE.CircleGeometry(0.42, 14),
+    new THREE.MeshStandardMaterial({ color: "#3f8d45", roughness: 0.84, metalness: 0.03, side: THREE.DoubleSide }),
+    lilyPadCount,
+  );
+  for (let index = 0; index < lilyPadCount; index += 1) {
+    const angle = index * 2.19 + (index % 3) * 0.31;
+    const radius = 1.1 + (index % 6) * 0.72;
+    const position = new THREE.Vector3(Math.cos(angle) * radius * 1.42, 0.055, 0.8 + Math.sin(angle) * radius * 0.62);
+    lilyPadPositions.push(position);
+    const scale = 0.58 + (index % 5) * 0.09;
+    setInstanceTransform(lilyPads, index, position, new THREE.Euler(-Math.PI / 2, 0, angle), new THREE.Vector3(scale * 1.28, scale, 1));
+  }
+  lilyPads.instanceMatrix.needsUpdate = true;
+  scene.add(lilyPads);
+
+  const lilyFlowerCount = 6;
+  const lilyFlowers = new THREE.InstancedMesh(
+    new THREE.SphereGeometry(0.13, 7, 5),
+    new THREE.MeshStandardMaterial({ color: "#f8c7de", emissive: "#6d183f", emissiveIntensity: 0.24, roughness: 0.66 }),
+    lilyFlowerCount,
+  );
+  for (let index = 0; index < lilyFlowerCount; index += 1) {
+    const padPosition = lilyPadPositions[index * 3];
+    setInstanceTransform(
+      lilyFlowers,
+      index,
+      new THREE.Vector3(padPosition.x + 0.08, 0.14, padPosition.z - 0.05),
+      new THREE.Euler(0, index * 1.4, 0),
+      new THREE.Vector3(1, 0.62, 1),
+    );
+  }
+  lilyFlowers.instanceMatrix.needsUpdate = true;
+  scene.add(lilyFlowers);
 
   const horizon = new THREE.Mesh(
     new THREE.PlaneGeometry(45, 15),
@@ -341,6 +426,85 @@ export const createDuckHunt3D = (
   shrubs.castShadow = renderer.shadowMap.enabled;
   scene.add(shrubs);
 
+  const reedCount = 84;
+  const reeds = new THREE.InstancedMesh(
+    new THREE.CylinderGeometry(0.018, 0.03, 0.82, 5),
+    new THREE.MeshStandardMaterial({ color: "#789b37", roughness: 0.92 }),
+    reedCount,
+  );
+  for (let index = 0; index < reedCount; index += 1) {
+    const angle = (index / reedCount) * Math.PI * 2;
+    const radius = 6.65 + (index % 5) * 0.16;
+    const x = Math.cos(angle) * radius * 1.54;
+    const z = 0.8 + Math.sin(angle) * radius * 0.71;
+    const height = 0.72 + (index % 7) * 0.07;
+    setInstanceTransform(
+      reeds,
+      index,
+      new THREE.Vector3(x, height * 0.46, z),
+      new THREE.Euler(Math.sin(index * 0.8) * 0.08, angle, Math.cos(index * 0.61) * 0.08),
+      new THREE.Vector3(1, height, 1),
+    );
+  }
+  reeds.instanceMatrix.needsUpdate = true;
+  reeds.castShadow = renderer.shadowMap.enabled;
+  scene.add(reeds);
+
+  const cattailCount = 30;
+  const cattails = new THREE.InstancedMesh(
+    new THREE.CylinderGeometry(0.055, 0.065, 0.28, 7),
+    new THREE.MeshStandardMaterial({ color: "#6b3b1d", roughness: 0.9 }),
+    cattailCount,
+  );
+  for (let index = 0; index < cattailCount; index += 1) {
+    const angle = (index / cattailCount) * Math.PI * 2 + 0.13;
+    const radius = 6.75 + (index % 4) * 0.13;
+    const x = Math.cos(angle) * radius * 1.54;
+    const z = 0.8 + Math.sin(angle) * radius * 0.71;
+    setInstanceTransform(cattails, index, new THREE.Vector3(x, 0.93 + (index % 5) * 0.04, z), new THREE.Euler(), new THREE.Vector3(1, 1 + (index % 3) * 0.08, 1));
+  }
+  cattails.instanceMatrix.needsUpdate = true;
+  scene.add(cattails);
+
+  const rockCount = 28;
+  const rocks = new THREE.InstancedMesh(
+    new THREE.DodecahedronGeometry(0.34, 0),
+    new THREE.MeshStandardMaterial({ color: "#58635e", roughness: 0.88, metalness: 0.08 }),
+    rockCount,
+  );
+  for (let index = 0; index < rockCount; index += 1) {
+    const side = index % 2 === 0 ? -1 : 1;
+    const x = side * (7.4 + ((index * 19) % 31) / 10);
+    const z = -5.5 + ((index * 23) % 97) / 8.5;
+    const scale = 0.58 + (index % 6) * 0.1;
+    setInstanceTransform(
+      rocks,
+      index,
+      new THREE.Vector3(x, 0.2 * scale, z),
+      new THREE.Euler(index * 0.29, index * 0.83, index * 0.17),
+      new THREE.Vector3(scale * 1.25, scale * 0.72, scale),
+    );
+  }
+  rocks.instanceMatrix.needsUpdate = true;
+  rocks.castShadow = renderer.shadowMap.enabled;
+  rocks.receiveShadow = true;
+  scene.add(rocks);
+
+  const fireflyCount = 72;
+  const fireflyPositions = new Float32Array(fireflyCount * 3);
+  for (let index = 0; index < fireflyCount; index += 1) {
+    fireflyPositions[index * 3] = -11 + (((index * 47) % 73) / 72) * 22;
+    fireflyPositions[index * 3 + 1] = 0.8 + ((index * 31) % 41) / 12;
+    fireflyPositions[index * 3 + 2] = -7.8 + ((index * 59) % 83) / 9;
+  }
+  const fireflyGeometry = new THREE.BufferGeometry();
+  fireflyGeometry.setAttribute("position", new THREE.BufferAttribute(fireflyPositions, 3));
+  const fireflies = new THREE.Points(
+    fireflyGeometry,
+    new THREE.PointsMaterial({ color: "#d8ff72", size: 0.075, transparent: true, opacity: 0.78, depthWrite: false, blending: THREE.AdditiveBlending }),
+  );
+  scene.add(fireflies);
+
   const body = new THREE.InstancedMesh(
     new THREE.SphereGeometry(0.55, denseFlock ? 8 : 12, denseFlock ? 5 : 8),
     new THREE.MeshStandardMaterial({ roughness: 0.55, metalness: 0.04 }),
@@ -363,6 +527,16 @@ export const createDuckHunt3D = (
   const eye = new THREE.InstancedMesh(
     new THREE.SphereGeometry(0.055, denseFlock ? 4 : 7, denseFlock ? 3 : 5),
     new THREE.MeshBasicMaterial({ color: "#eaffff" }),
+    maxCount,
+  );
+  const farEye = new THREE.InstancedMesh(
+    new THREE.SphereGeometry(0.052, denseFlock ? 4 : 7, denseFlock ? 3 : 5),
+    new THREE.MeshBasicMaterial({ color: "#dff9ff" }),
+    maxCount,
+  );
+  const chest = new THREE.InstancedMesh(
+    new THREE.SphereGeometry(0.42, denseFlock ? 7 : 10, denseFlock ? 5 : 7),
+    new THREE.MeshStandardMaterial({ color: "#e7eee0", roughness: 0.68 }),
     maxCount,
   );
   const tail = new THREE.InstancedMesh(
@@ -390,7 +564,7 @@ export const createDuckHunt3D = (
     new THREE.MeshBasicMaterial({ color: "#ffffff", transparent: true, opacity: 0.7, depthWrite: false }),
     maxCount,
   );
-  const coreDuckMeshes = [body, head, leftWing, rightWing, beak, eye, tail, ...(!denseFlock ? [neckRing] : []), powerSigils];
+  const coreDuckMeshes = [body, chest, head, leftWing, rightWing, beak, eye, farEye, tail, ...(!denseFlock ? [neckRing] : []), powerSigils];
   const duckMeshes = [...coreDuckMeshes, winnerCrown, shields];
   duckMeshes.forEach((mesh, index) => {
     mesh.name = `SM_DuckPart_${index}`;
@@ -609,6 +783,9 @@ export const createDuckHunt3D = (
 
       bodyScale.set(1.35, 0.82, 0.78).multiplyScalar(scale);
       setInstanceTransform(body, index, position, baseRotation, bodyScale);
+      partPosition.copy(position).set(position.x + 0.2 * scale, position.y - 0.12 * scale, position.z + 0.31 * scale);
+      headScale.set(0.92, 0.72, 0.62).multiplyScalar(scale);
+      setInstanceTransform(chest, index, partPosition, baseRotation, headScale);
       const headPosition = partPosition.copy(position);
       headPosition.x += 0.66 * scale;
       headPosition.y += 0.25 * scale;
@@ -630,6 +807,8 @@ export const createDuckHunt3D = (
       unitScale.setScalar(scale);
       partPosition.copy(position).set(position.x + 0.88 * scale, position.y + 0.37 * scale, position.z + 0.27 * scale);
       setInstanceTransform(eye, index, partPosition, baseRotation, unitScale);
+      partPosition.copy(position).set(position.x + 0.88 * scale, position.y + 0.37 * scale, position.z - 0.27 * scale);
+      setInstanceTransform(farEye, index, partPosition, baseRotation, unitScale);
       tailRotation.set(0, 0, Math.PI / 2);
       tailScale.set(0.82, 1.05, 0.82).multiplyScalar(scale);
       partPosition.copy(position).set(position.x - 0.72 * scale, position.y + 0.04 * scale, position.z);
@@ -673,7 +852,7 @@ export const createDuckHunt3D = (
     if (labelSprite && resetState) {
       const targetPosition = currentPositions.get(resetState.targetId);
       if (targetPosition) labelSprite.position.copy(targetPosition).add(labelOffset);
-      labelSprite.visible = resetElapsed < 1780;
+      labelSprite.visible = resetElapsed < 1780 && !hiddenContestantIds.has(resetState.targetId);
     }
     if (powerPulseUntil <= now) powerCasterId = null;
     if (resetState && resetElapsed >= resetDuration) {
@@ -716,8 +895,38 @@ export const createDuckHunt3D = (
       : 0;
     camera.position.lerpVectors(readyCameraPosition, overviewCameraPosition, cameraBlend);
     cameraTarget.lerpVectors(readyCameraTarget, overviewCameraTarget, cameraBlend);
+    if (running && !reducedMotion) {
+      const cameraDrift = Math.sin(now / 2_700) * 0.16;
+      camera.position.x += cameraDrift;
+      camera.position.y += Math.cos(now / 3_100) * 0.07;
+      cameraTarget.x += cameraDrift * 0.32;
+    }
+    const reactiveTargetId = resetState?.targetId ?? (powerPulseUntil > now ? powerCasterId : null);
+    const reactiveTarget = reactiveTargetId ? currentPositions.get(reactiveTargetId) : null;
+    if (reactiveTarget && running) {
+      const focusStrength = resetState ? 0.34 : 0.2;
+      cameraTarget.lerp(reactiveTarget, focusStrength);
+      camera.position.x += THREE.MathUtils.clamp(reactiveTarget.x * 0.035, -0.38, 0.38);
+      camera.position.y += resetState ? 0.25 : 0.08;
+      canvas.dataset.cameraFocus = resetState ? "impact" : "power";
+    } else {
+      canvas.dataset.cameraFocus = running ? "flock" : "overview";
+    }
+    const desiredFov = reactiveTarget && running ? 39.5 : renderHeight < 560 ? 47 : 42;
+    if (Math.abs(camera.fov - desiredFov) > 0.04) {
+      camera.fov = THREE.MathUtils.lerp(camera.fov, desiredFov, reducedMotion ? 1 : 0.09);
+      camera.updateProjectionMatrix();
+    }
     camera.lookAt(cameraTarget);
     pond.rotation.z = reducedMotion ? 0 : Math.sin(now / 2200) * 0.012;
+    if (!reducedMotion) {
+      clouds.position.x = Math.sin(now / 6_600) * 0.42;
+      ripples.rotation.y = Math.sin(now / 3_100) * 0.025;
+      lilyPads.rotation.y = Math.sin(now / 4_200) * 0.018;
+      lilyFlowers.rotation.y = lilyPads.rotation.y;
+      fireflies.rotation.y = Math.sin(now / 4_800) * 0.08;
+      (fireflies.material as THREE.PointsMaterial).opacity = 0.66 + Math.sin(now / 540) * 0.14;
+    }
     const flashMaterial = flash.material as THREE.SpriteMaterial;
     flashMaterial.opacity = shotFlashUntil > now ? Math.max(0, (shotFlashUntil - now) / 120) : 0;
     renderer.render(scene, camera);

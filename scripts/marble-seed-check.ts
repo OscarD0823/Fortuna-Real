@@ -50,6 +50,7 @@ const verifyMotionContracts = () => {
   const failures: string[] = [];
   let checkedSamples = 0;
   let checkedScenarios = 0;
+  let recoverySamples = 0;
 
   difficulties.forEach((difficulty) => {
     const track = generateMarbleTrack(`fortuna-motion-${difficulty}`, difficulty);
@@ -70,6 +71,13 @@ const verifyMotionContracts = () => {
           durationMs,
           power,
           powerAt,
+          powerTargetId: null,
+          incomingPower: null,
+          incomingPowerAt: 2,
+          incomingPowerSourceId: null,
+          comebackChance: 0.5,
+          recoveryAt: 2,
+          recoveryDirection: 1,
           lane: 0,
           previousWinner: false,
         };
@@ -138,6 +146,51 @@ const verifyMotionContracts = () => {
         checkedScenarios += 1;
       });
     });
+
+    const recoveryDurationMs = 22_000;
+    const recoveryRacer: MarbleRacer = {
+      id: `recovery-${difficulty}`,
+      number: 99,
+      participant: { id: `recovery-participant-${difficulty}`, name: "Prueba rescate", color: "#ff793d" },
+      color: "#ff793d",
+      accent: "#ffb04c",
+      durationMs: recoveryDurationMs,
+      power: "boost",
+      powerAt: 0.2,
+      powerTargetId: null,
+      incomingPower: null,
+      incomingPowerAt: 2,
+      incomingPowerSourceId: null,
+      comebackChance: 0.9,
+      recoveryAt: 0.48,
+      recoveryDirection: -1,
+      lane: 0,
+      previousWinner: false,
+    };
+    let previousRecovery = getMarbleMotion(recoveryRacer, track, 0);
+    let sawRecovery = false;
+    let sawVisibleDrop = false;
+    let sawReturnNearStart = false;
+    for (let sample = 1; sample <= motionSamples; sample += 1) {
+      const motion = getMarbleMotion(recoveryRacer, track, recoveryDurationMs * sample / motionSamples);
+      const delta = motion.progress - previousRecovery.progress;
+      if (motion.recovering) {
+        sawRecovery = true;
+        recoverySamples += 1;
+        if (motion.recoveryDrop > 0.25 && Math.abs(motion.lateralImpulse) > 1) sawVisibleDrop = true;
+      }
+      if (sawRecovery && motion.progress < 0.035) sawReturnNearStart = true;
+      if (Math.abs(delta) > maximumContinuousStep) {
+        failures.push(`${difficulty}/rescate, muestra ${sample}/${motionSamples}: salto discontinuo de ${delta}.`);
+        break;
+      }
+      previousRecovery = motion;
+    }
+    const recoveryFinish = getMarbleMotion(recoveryRacer, track, recoveryDurationMs);
+    if (!sawRecovery || !sawVisibleDrop || !sawReturnNearStart || !recoveryFinish.finished || recoveryFinish.progress !== 1) {
+      failures.push(`${difficulty}/rescate: no completó caída visible, retorno al inicio y llegada final.`);
+    }
+    checkedScenarios += 1;
   });
 
   if (failures.length > 0) {
@@ -148,6 +201,7 @@ const verifyMotionContracts = () => {
     scenarios: checkedScenarios,
     samples: checkedSamples,
     powers: motionPowers,
+    recoverySamples,
     maximumContinuousStep,
     finishAtDurationMs: true,
   };

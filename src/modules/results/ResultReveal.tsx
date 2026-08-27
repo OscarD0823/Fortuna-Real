@@ -174,10 +174,10 @@ export function ResultReveal({
             <p id={descriptionId}>
               {isWinner
                 ? isDuckGame
-                  ? <>Es el último participante con vida y se lleva <strong>{result.prize || "Premio del sorteo"}</strong>. Podrás habilitarlo otra vez sin perder este premio.</>
+                  ? <>Es la última persona con vida y se lleva <strong>{result.prize || "Premio del sorteo"}</strong>. Podrás habilitarla otra vez sin perder este premio.</>
                   : result.selectedParticipantName
                   ? <>Tras salir <strong>{result.selectedParticipantName}</strong>, se convierte en ganador final y recibe <strong>{result.prize || "Premio del sorteo"}</strong>.</>
-                  : <>Se lleva <strong>{result.prize || "Premio del sorteo"}</strong>. Quedará fuera hasta que decidas habilitarlo nuevamente.</>
+                  : <>Se lleva <strong>{result.prize || "Premio del sorteo"}</strong>. Esta persona quedará fuera hasta que decidas habilitarla nuevamente.</>
                 : isCardGame
                   ? "Su carta sale del mazo y el nombre queda marcado como eliminado para la siguiente ronda."
                   : isPinballGame

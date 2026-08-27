@@ -6,7 +6,7 @@ import { Download, RefreshCw, ShieldCheck, X } from "lucide-react";
 
 type UpdateStatus = "available" | "downloading" | "restarting" | "error";
 
-export function AppUpdater() {
+export function AppUpdater({ blocked = false }: { blocked?: boolean }) {
   const updateRef = useRef<Update | null>(null);
   const dialogRef = useRef<HTMLElement | null>(null);
   const [visible, setVisible] = useState(false);
@@ -15,6 +15,7 @@ export function AppUpdater() {
   const [notes, setNotes] = useState("");
   const [progress, setProgress] = useState(0);
   const [errorMessage, setErrorMessage] = useState("");
+  const presented = visible && !blocked;
 
   const checkForUpdate = useCallback(async () => {
     if (navigator.onLine === false) return;
@@ -49,7 +50,7 @@ export function AppUpdater() {
   }, [checkForUpdate]);
 
   useEffect(() => {
-    if (!visible) return;
+    if (!presented) return;
     const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const focusFrame = window.requestAnimationFrame(() => {
       dialogRef.current?.querySelector<HTMLElement>("button:not([disabled])")?.focus();
@@ -80,7 +81,7 @@ export function AppUpdater() {
       document.removeEventListener("keydown", trapFocus);
       if (previousFocus?.isConnected && previousFocus !== document.body) previousFocus.focus();
     };
-  }, [visible]);
+  }, [presented]);
 
   const installUpdate = async () => {
     const update = updateRef.current;
@@ -118,7 +119,7 @@ export function AppUpdater() {
     }
   };
 
-  if (!visible) return null;
+  if (!presented) return null;
 
   return (
     <div className="update-overlay" role="dialog" aria-modal="true" aria-labelledby="update-title">

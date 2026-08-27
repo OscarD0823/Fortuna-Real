@@ -13,6 +13,7 @@ import {
 import { createMarbleTrackPiece3D } from "./marbleTrackPieceKit";
 
 export type MarbleRaceVisualPhase = "ready" | "racing" | "finished";
+export type MarbleFollowCameraStyle = "chase" | "onboard" | "aerial";
 
 interface TrackWorldPoint {
   position: THREE.Vector3;
@@ -39,6 +40,7 @@ interface MarbleSceneState {
   racerShadows: THREE.InstancedMesh;
   racerGlow: THREE.Points;
   racerLabels: THREE.Sprite[];
+  trackLabels: THREE.Sprite[];
   winnerLabel: THREE.Sprite | null;
   winnerCrowns: THREE.InstancedMesh;
   selectedRing: THREE.Mesh;
@@ -46,6 +48,7 @@ interface MarbleSceneState {
   trackSamples: TrackWorldPoint[];
   startPoint: TrackWorldPoint;
   motionPoint: TrackWorldPoint;
+  lookAheadPoint: TrackWorldPoint;
   matrix: THREE.Matrix4;
   quaternion: THREE.Quaternion;
   scaleVector: THREE.Vector3;
@@ -60,6 +63,7 @@ interface MarbleSceneState {
   cameraTarget: THREE.Vector3;
   followCameraTarget: THREE.Vector3;
   followCameraUp: THREE.Vector3;
+  followCameraForward: THREE.Vector3;
   racerPositions: THREE.Vector3[];
   activeFollowRacerId: string | null;
   readyZoom: number;
@@ -723,6 +727,7 @@ const addZoneFeature = (
 
   if (zone.type === "launch" && labelIndex === 0) {
     const label = createLabelSprite(zone.label, zone.color, true, true);
+    label.userData.trackLabel = true;
     label.position.set(
       -factorySide * width * (0.72 + (labelIndex % 2) * 0.18),
       (2.02 + (labelIndex % 3) * 0.22) * scale,
@@ -880,6 +885,7 @@ const addPowerZone = (
   const halo = addMesh(group, new THREE.TorusGeometry(0.28, 0.035, 6, 20), material, [0, 0.72, 0]);
   if (showLabel) {
     const label = createLabelSprite(labelText, color, true, true);
+    label.userData.trackLabel = true;
     label.position.set(0.5, 1.22, 0);
     label.scale.multiplyScalar(0.5);
     group.add(label);
@@ -940,6 +946,7 @@ const addStartFinishAndBay = (scene: THREE.Scene, race: PreparedMarbleRace) => {
   [-1, 1].forEach((side) => addMesh(finishGroup, new THREE.CylinderGeometry(0.12, 0.16, 1.65, 8), metalMaterial(GOLD, 0.18), [side * width * 0.62, 0.75, 0]));
   addMesh(finishGroup, new THREE.BoxGeometry(width * 1.4, 0.18, 0.25), glowMaterial(0xf6bd35, 0.9), [0, 1.52, 0]);
   const finishLabel = createLabelSprite("META IMPERIAL", "#f6bd35", true);
+  finishLabel.userData.trackLabel = true;
   finishLabel.position.set(0, 2.05, 0);
   finishGroup.add(finishLabel);
 };
@@ -1480,6 +1487,10 @@ const buildScene = (renderer: THREE.WebGLRenderer, race: PreparedMarbleRace, key
       return label;
     })
     : [];
+  const trackLabels: THREE.Sprite[] = [];
+  scene.traverse((object) => {
+    if (object instanceof THREE.Sprite && object.userData.trackLabel === true) trackLabels.push(object);
+  });
 
   const winnerLabel = count > 18
     ? createLabelSprite(`♛  ${race.selected.number}  ${race.selected.participant.name}`, race.selected.accent, false)
@@ -1538,6 +1549,7 @@ const buildScene = (renderer: THREE.WebGLRenderer, race: PreparedMarbleRace, key
     racerShadows,
     racerGlow,
     racerLabels,
+    trackLabels,
     winnerLabel,
     winnerCrowns,
     selectedRing,
@@ -1545,6 +1557,7 @@ const buildScene = (renderer: THREE.WebGLRenderer, race: PreparedMarbleRace, key
     trackSamples: samples,
     startPoint: samples[0],
     motionPoint: createEmptyWorldPoint(),
+    lookAheadPoint: createEmptyWorldPoint(),
     matrix: new THREE.Matrix4(),
     quaternion: new THREE.Quaternion(),
     scaleVector: new THREE.Vector3(),
@@ -1559,6 +1572,7 @@ const buildScene = (renderer: THREE.WebGLRenderer, race: PreparedMarbleRace, key
     cameraTarget: new THREE.Vector3(),
     followCameraTarget: new THREE.Vector3(),
     followCameraUp: new THREE.Vector3(0, 1, 0),
+    followCameraForward: new THREE.Vector3(0, 0, 1),
     racerPositions: race.racers.map(() => new THREE.Vector3()),
     activeFollowRacerId: null,
     readyZoom: 1.16,
@@ -1722,7 +1736,7 @@ const updateRacers = (
     const radius = baseRadius * marbleState.radiusScale;
     const racingPosition = state.positionVector.copy(trackPoint.position)
       .addScaledVector(trackPoint.normal, laneOffset)
-      .addScaledVector(trackPoint.up, radius + 0.17 + marbleState.verticalOffset);
+      .addScaledVector(trackPoint.up, radius + 0.17 + marbleState.verticalOffset - marbleState.recoveryDrop);
     const stagingPosition = state.stagingVector.copy(start.position)
       .addScaledVector(start.normal, (column - (columns - 1) / 2) * spacing)
       .addScaledVector(start.tangent, -(row + 0.75) * spacing)
@@ -1803,6 +1817,7 @@ export const drawMarbleRace3D = (
   elapsedMs: number,
   phase: MarbleRaceVisualPhase,
   followRacerId: string | null = null,
+  followCameraStyle: MarbleFollowCameraStyle = "chase",
 ) => {
   let state: MarbleSceneState | undefined;
   try {
@@ -1856,22 +1871,52 @@ export const drawMarbleRace3D = (
       const raceElapsed = Math.max(0, elapsedMs - introMs);
       const motion = getMarbleMotion(followedRacer, race.track, raceElapsed);
       const trackPoint = sampleWorldPoint(state.trackSamples, motion.progress, state.motionPoint);
+      const lookAheadProgress = THREE.MathUtils.clamp(
+        motion.progress + 0.018 + THREE.MathUtils.clamp(motion.velocity * 0.12, 0, 0.035),
+        0,
+        1,
+      );
+      const lookAheadPoint = sampleWorldPoint(state.trackSamples, lookAheadProgress, state.lookAheadPoint);
       const baseRadius = race.racers.length > 150 ? 0.085 : race.racers.length > 90 ? 0.105 : race.racers.length > 48 ? 0.13 : race.racers.length > 22 ? 0.16 : 0.22;
       const followedRadius = baseRadius * motion.radiusScale;
       const speedBlend = THREE.MathUtils.clamp(motion.velocity * 8, 0, 1);
       const cameraSide = hashText(followedRacer.id) % 2 === 0 ? 1 : -1;
-      const cameraDistance = 3.75 + speedBlend * 1.05;
-      const cameraHeight = 1.9 + followedRadius * 1.25 + speedBlend * 0.42;
-      const cameraShoulder = cameraSide * (0.34 + speedBlend * 0.18);
+      state.followCameraForward.copy(trackPoint.tangent).lerp(lookAheadPoint.tangent, 0.62).normalize();
+      const rescueBlend = motion.recovering ? Math.sin(motion.recoveryPhase * Math.PI) : 0;
+      const cameraDistance = followCameraStyle === "onboard"
+        ? 2.55 + speedBlend * 0.42 + rescueBlend * 2.2
+        : followCameraStyle === "aerial"
+          ? 5.7 + speedBlend * 1.25 + rescueBlend * 0.9
+          : 3.9 + speedBlend * 1.15 + rescueBlend * 1.35;
+      const cameraHeight = followCameraStyle === "onboard"
+        ? 1.78 + followedRadius * 1.2 + speedBlend * 0.2 + rescueBlend * 2.15
+        : followCameraStyle === "aerial"
+          ? 4.7 + speedBlend * 0.8 + rescueBlend * 1.25
+          : 2.05 + followedRadius * 1.3 + speedBlend * 0.48 + rescueBlend * 1.8;
+      const cameraShoulder = followCameraStyle === "onboard"
+        ? 0
+        : cameraSide * (followCameraStyle === "aerial" ? 1.15 : 0.38 + speedBlend * 0.2 + rescueBlend * 0.18);
       const desiredPosition = state.positionVector.copy(state.racerPositions[followIndex])
         .addScaledVector(trackPoint.up, cameraHeight)
-        .addScaledVector(trackPoint.tangent, -cameraDistance)
+        .addScaledVector(state.followCameraForward, -cameraDistance)
         .addScaledVector(trackPoint.normal, cameraShoulder);
+      desiredPosition.y = Math.max(
+        desiredPosition.y,
+        state.racerPositions[followIndex].y + (followCameraStyle === "onboard" ? 1.62 : 1.55),
+        (followCameraStyle === "onboard" ? 2.25 : 2.15) + rescueBlend * 0.8,
+      );
       const desiredTarget = state.stagingVector.copy(state.racerPositions[followIndex])
-        .addScaledVector(trackPoint.tangent, 2.05 + speedBlend * 0.9)
-        .addScaledVector(trackPoint.up, followedRadius * 0.45 + 0.2);
-      state.followCameraUp.copy(Y_AXIS).lerp(trackPoint.up, 0.2).normalize();
-      if (state.activeFollowRacerId !== followRacerId) {
+        .lerp(
+          lookAheadPoint.position,
+          motion.recovering ? 0.16 : followCameraStyle === "onboard" ? 0.84 : followCameraStyle === "aerial" ? 0.2 : 0.28,
+        )
+        .addScaledVector(trackPoint.up, followedRadius * 0.45 + (followCameraStyle === "onboard" ? 0.58 : 0.24) + rescueBlend * 0.32);
+      state.followCameraUp.copy(Y_AXIS).lerp(
+        trackPoint.up,
+        motion.recovering ? 0.08 : followCameraStyle === "onboard" ? 0.42 : 0.18,
+      ).normalize();
+      const followIdentity = `${followRacerId}:${followCameraStyle}`;
+      if (state.activeFollowRacerId !== followIdentity) {
         state.followCamera.position.copy(desiredPosition);
         state.followCameraTarget.copy(desiredTarget);
         state.followCamera.up.copy(state.followCameraUp);
@@ -1879,12 +1924,16 @@ export const drawMarbleRace3D = (
       } else {
         const cameraResponse = state.reducedMotion
           ? 1
-          : 1 - Math.exp(-THREE.MathUtils.clamp(state.averageFrameMs, 8, 34) / 88);
+          : 1 - Math.exp(-THREE.MathUtils.clamp(state.averageFrameMs, 8, 34) / (motion.recovering ? 72 : 94));
         state.followCamera.position.lerp(desiredPosition, cameraResponse);
         state.followCameraTarget.lerp(desiredTarget, Math.min(1, cameraResponse * 1.28));
         state.followCamera.up.lerp(state.followCameraUp, cameraResponse * 0.7).normalize();
       }
-      const desiredFov = 60 + speedBlend * 4;
+      const desiredFov = followCameraStyle === "onboard"
+        ? 66 + speedBlend * 4 + rescueBlend * 2
+        : followCameraStyle === "aerial"
+          ? 48 + speedBlend * 2 + rescueBlend * 2
+          : 59 + speedBlend * 4.5 + rescueBlend * 2;
       if (Math.abs(state.followCamera.fov - desiredFov) > 0.05) {
         state.followCamera.fov = desiredFov;
         state.followCamera.updateProjectionMatrix();
@@ -1893,18 +1942,25 @@ export const drawMarbleRace3D = (
       state.racerRings.visible = false;
       state.racerShadows.visible = false;
       state.racerGlow.visible = false;
-      state.selectedRing.visible = true;
+      if (followCameraStyle === "onboard") {
+        state.racerLabels.forEach((label) => { label.visible = false; });
+      }
+      state.selectedRing.visible = followCameraStyle !== "onboard";
       state.selectedRing.position.copy(state.racerPositions[followIndex]).addScaledVector(trackPoint.up, -(followedRadius + 0.1));
       state.selectedRing.quaternion.setFromUnitVectors(Z_AXIS, trackPoint.up);
       state.selectedRing.scale.setScalar(0.82 + speedBlend * 0.12);
-      state.followBeacon.visible = true;
+      state.followBeacon.visible = followCameraStyle !== "onboard";
       state.followBeacon.position.copy(state.racerPositions[followIndex]);
       state.followBeacon.scale.setScalar(Math.max(0.22, followedRadius * 2.5));
       state.followBeacon.rotation.y = elapsedSeconds * 1.4;
-      state.activeFollowRacerId = followRacerId;
+      const beaconMaterial = state.followBeacon.material as THREE.MeshBasicMaterial;
+      beaconMaterial.color.setHex(motion.recovering ? 0xff7a3d : 0x5ffff7);
+      state.activeFollowRacerId = followIdentity;
       renderCamera = state.followCamera;
-      if (canvas.dataset.cameraStyle !== "cinematic-chase") canvas.dataset.cameraStyle = "cinematic-chase";
-      const cameraMode = `marble-${followedRacer.participant.id}`;
+      const cameraStyleLabel = followCameraStyle === "onboard" ? "onboard-marble" : followCameraStyle === "aerial" ? "aerial-follow" : "cinematic-chase";
+      if (canvas.dataset.cameraStyle !== cameraStyleLabel) canvas.dataset.cameraStyle = cameraStyleLabel;
+      canvas.dataset.cameraRecovery = motion.recovering ? "active" : "none";
+      const cameraMode = `marble-${followedRacer.participant.id}-${followCameraStyle}`;
       if (canvas.dataset.cameraMode !== cameraMode) canvas.dataset.cameraMode = cameraMode;
     } else {
       const cameraBlendRaw = phase === "ready" ? 0 : state.reducedMotion || phase === "finished" ? 1 : Math.min(1, elapsedMs / 1400);
@@ -1922,8 +1978,11 @@ export const drawMarbleRace3D = (
       state.activeFollowRacerId = null;
       if (canvas.dataset.cameraStyle !== "overview") canvas.dataset.cameraStyle = "overview";
       if (canvas.dataset.cameraMode !== "overview") canvas.dataset.cameraMode = "overview";
+      canvas.dataset.cameraRecovery = "none";
     }
     if (state.renderer.shadowMap.enabled && !state.shadowReady) state.renderer.shadowMap.needsUpdate = true;
+    const showTrackLabels = renderCamera === state.camera;
+    state.trackLabels.forEach((label) => { label.visible = showTrackLabels; });
     state.renderer.render(state.scene, renderCamera);
     if (renderAt < state.lastMetricsAt || renderAt - state.lastMetricsAt >= 500 || phase !== "racing") {
       canvas.dataset.renderCalls = String(state.renderer.info.render.calls);

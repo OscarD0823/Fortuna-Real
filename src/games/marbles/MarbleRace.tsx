@@ -17,7 +17,7 @@ import {
   type TrackSectionType,
   type TrackZoneType,
 } from "./marbleRaceEngine";
-import { disposeMarbleRace3D, drawMarbleRace3D } from "./marbleRace3d";
+import { disposeMarbleRace3D, drawMarbleRace3D, type MarbleFollowCameraStyle } from "./marbleRace3d";
 
 type RacePhase = "ready" | "racing" | "finished";
 const getMarbleCameraIntroMs = () =>
@@ -25,12 +25,20 @@ const getMarbleCameraIntroMs = () =>
 
 const failedWebglCanvases = new WeakSet<HTMLCanvasElement>();
 type MarbleRenderMode = "webgl" | "fallback";
+const cameraStyleLabels: Record<MarbleFollowCameraStyle, string> = {
+  chase: "PERSECUCIÓN",
+  onboard: "A BORDO",
+  aerial: "AÉREA",
+};
 
 interface RankingItem {
   racer: MarbleRacer;
   progress: number;
   finished: boolean;
   powerActive: boolean;
+  incomingPowerActive: boolean;
+  activePower: MarblePower | null;
+  recovering: boolean;
   position: number;
 }
 
@@ -44,11 +52,11 @@ interface RaceEvent {
 const powerDescriptions: Record<MarblePower, string> = {
   boost: "acelera",
   shield: "protege",
-  freeze: "congela rivales",
-  reverse: "invierte impulso",
+  freeze: "congela a un rival que va adelante",
+  reverse: "invierte el impulso de un rival que va adelante",
   giant: "aumenta tamaño",
-  tiny: "reduce tamaño",
-  restart: "reinicia tramo",
+  tiny: "reduce a un rival que va adelante",
+  restart: "envía a un rival delantero al inicio",
 };
 
 const compactRanking = <T extends { racer: MarbleRacer }>(items: T[]) => {
@@ -618,10 +626,11 @@ const drawRace = (
   elapsedMs: number,
   phase: RacePhase,
   followRacerId: string | null,
+  followCameraStyle: MarbleFollowCameraStyle,
 ): MarbleRenderMode => {
   if (!failedWebglCanvases.has(webglCanvas)) {
     try {
-      drawMarbleRace3D(webglCanvas, race, elapsedMs, phase, followRacerId);
+      drawMarbleRace3D(webglCanvas, race, elapsedMs, phase, followRacerId, followCameraStyle);
       return "webgl";
     } catch (error) {
       failedWebglCanvases.add(webglCanvas);
@@ -701,7 +710,12 @@ const drawRace = (
     const collisionWobble = nearbyObstacle
       ? Math.sin(elapsedMs / 43 + racer.number * 1.71) * 10 * nearbyObstacle.scale * (1 - Math.abs(nearbyObstacle.progress - state.progress) / 0.018)
       : 0;
-    const offset = racer.lane * Math.min(race.track.trackWidth * 0.34, 12 + count * 0.08) + collisionWobble;
+    const recoveryOffset = state.recovering
+      ? state.recoveryDirection * Math.sin(state.recoveryPhase * Math.PI) * Math.min(race.track.trackWidth * 0.76, 38)
+      : 0;
+    const offset = racer.lane * Math.min(race.track.trackWidth * 0.34, 12 + count * 0.08)
+      + collisionWobble
+      + recoveryOffset;
     const trackX = scaled.x - point.tangentY * offset;
     const trackY = scaled.y + point.tangentX * offset;
     const stagingIndex = racer.number - 1;
@@ -712,12 +726,12 @@ const drawRace = (
     const launchBlend = phase === "ready" ? 0 : Math.min(1, elapsedMs / 760);
     const smoothLaunch = launchBlend * launchBlend * (3 - 2 * launchBlend);
     const x = stagingX + (trackX - stagingX) * smoothLaunch;
-    const y = stagingY + (trackY - stagingY) * smoothLaunch;
+    const y = stagingY + (trackY - stagingY) * smoothLaunch + state.recoveryDrop * 10;
     const radius = baseRadius * state.radiusScale;
 
     context.save();
-    if (state.powerActive) {
-      context.shadowColor = racer.accent;
+    if (state.activePower || state.recovering) {
+      context.shadowColor = state.recovering ? "#ff793d" : racer.accent;
       context.shadowBlur = 16;
     }
     if (racer.id === selectedId) {
@@ -788,7 +802,7 @@ export function MarbleRace({
   onFinish: (racer: MarbleRacer, label: string) => void;
 }) {
   const [seed, setSeed] = useState(() => initialSeed?.trim() || createMarbleSeed());
-  const resumedSeed = Boolean(initialSeed?.trim());
+  const [resumedSeed] = useState(() => Boolean(initialSeed?.trim()));
   const [roundParticipants] = useState(() => participants);
   const [roundPreviousWinnerIds] = useState(() => new Set(previousWinnerIds));
   const [phase, setPhase] = useState<RacePhase>("ready");
@@ -798,8 +812,10 @@ export function MarbleRace({
   const [fps, setFps] = useState(60);
   const [renderMode, setRenderMode] = useState<MarbleRenderMode>("webgl");
   const [cameraTargetId, setCameraTargetId] = useState<string | null>(null);
+  const [cameraStyle, setCameraStyle] = useState<MarbleFollowCameraStyle>("chase");
   const renderModeRef = useRef<MarbleRenderMode>("webgl");
   const cameraTargetRef = useRef<string | null>(null);
+  const cameraStyleRef = useRef<MarbleFollowCameraStyle>("chase");
   const webglCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const fallbackCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const frameRef = useRef(0);
@@ -816,7 +832,7 @@ export function MarbleRace({
     const webglCanvas = webglCanvasRef.current;
     const fallbackCanvas = fallbackCanvasRef.current;
     if (!webglCanvas || !fallbackCanvas) return;
-    const nextRenderMode = drawRace(webglCanvas, fallbackCanvas, race, elapsedMs, currentPhase, cameraTargetRef.current);
+    const nextRenderMode = drawRace(webglCanvas, fallbackCanvas, race, elapsedMs, currentPhase, cameraTargetRef.current, cameraStyleRef.current);
     if (nextRenderMode !== renderModeRef.current) {
       renderModeRef.current = nextRenderMode;
       setRenderMode(nextRenderMode);
@@ -876,6 +892,14 @@ export function MarbleRace({
     changeCameraTarget(race.racers[nextIndex].id);
   };
 
+  const cycleCameraStyle = () => {
+    const styles: MarbleFollowCameraStyle[] = ["chase", "onboard", "aerial"];
+    const nextStyle = styles[(styles.indexOf(cameraStyle) + 1) % styles.length];
+    cameraStyleRef.current = nextStyle;
+    setCameraStyle(nextStyle);
+    fortunaAudio.playClick();
+  };
+
   const regenerateTrack = () => {
     if (phase !== "ready" || resumedSeed) return;
     fortunaAudio.playClick();
@@ -928,7 +952,15 @@ export function MarbleRace({
         const orderedRacers = race.racers
           .map((racer) => {
             const state = getMarbleProgress(racer, Math.max(0, elapsed - cameraIntroMs), race.track);
-            return { racer, progress: state.progress, finished: state.finished, powerActive: state.powerActive };
+            return {
+              racer,
+              progress: state.progress,
+              finished: state.finished,
+              powerActive: state.powerActive,
+              incomingPowerActive: state.incomingPowerActive,
+              activePower: state.activePower,
+              recovering: state.recovering,
+            };
           })
           .sort((first, second) => second.progress - first.progress)
           .map((item, index) => ({ ...item, position: index + 1 }));
@@ -949,16 +981,34 @@ export function MarbleRace({
             tone: mode === "direct" ? "race" : "risk",
           } satisfies RaceEvent : null;
         trackedPositionRef.current = trackedRacer.racer.id;
-        const newEvents = orderedRacers.flatMap(({ racer, powerActive }) => {
-          if (!racer.power || triggeredPowersRef.current.has(racer.id)) return [];
-          if (!powerActive) return [];
-          triggeredPowersRef.current.add(racer.id);
-          return [{
-            id: `${racer.id}-${elapsed}`,
-            title: `${racer.participant.name} · ${powerLabels[racer.power]}`,
-            detail: powerDescriptions[racer.power],
-            tone: racer.power,
-          } satisfies RaceEvent];
+        const newEvents = orderedRacers.flatMap(({ racer, powerActive, recovering }) => {
+          const events: RaceEvent[] = [];
+          const powerEventId = `power-${racer.id}`;
+          if (racer.power && powerActive && !triggeredPowersRef.current.has(powerEventId)) {
+            triggeredPowersRef.current.add(powerEventId);
+            const target = racer.powerTargetId
+              ? race.racers.find((candidate) => candidate.id === racer.powerTargetId)
+              : null;
+            events.push({
+              id: `${powerEventId}-${elapsed}`,
+              title: `${racer.participant.name} · ${powerLabels[racer.power]}`,
+              detail: target
+                ? `${powerDescriptions[racer.power]}: ${target.participant.name}`
+                : powerDescriptions[racer.power],
+              tone: racer.power,
+            });
+          }
+          const recoveryEventId = `recovery-${racer.id}`;
+          if (recovering && !triggeredPowersRef.current.has(recoveryEventId)) {
+            triggeredPowersRef.current.add(recoveryEventId);
+            events.push({
+              id: `${recoveryEventId}-${elapsed}`,
+              title: `${racer.participant.name} · rescate automático`,
+              detail: "Salió del canal y vuelve de forma segura a la compuerta inicial",
+              tone: "risk",
+            });
+          }
+          return events;
         }).slice(0, 3);
         if (positionEvent || newEvents.length > 0) {
           setRaceEvents((current) => [...newEvents, ...(positionEvent ? [positionEvent] : []), ...current].slice(0, 4));
@@ -1015,10 +1065,18 @@ export function MarbleRace({
         progress: 0,
         finished: false,
         powerActive: false,
+        incomingPowerActive: false,
+        activePower: null,
+        recovering: false,
         position: index + 1,
       })));
   const omittedRankingCount = Math.max(0, race.racers.length - displayedRanking.length);
   const recentRaceEvents = raceEvents.slice(0, 3);
+  const maximumTrackHeight = Math.max(
+    ...race.track.points.map((point) => point.elevation ?? 0),
+    ...race.track.sections.map((section) => section.bridgeLift),
+  );
+  const followedState = ranking.find((item) => item.racer.id === cameraTargetId);
 
   return (
     <div
@@ -1034,7 +1092,11 @@ export function MarbleRace({
       data-track-width={race.track.trackWidth}
       data-obstacles={race.track.obstacles.length}
       data-power-zones={race.track.powerZones.length}
+      data-comeback-powers={race.racers.filter((racer) => racer.powerTargetId).length}
+      data-recovery-racers={race.racers.filter((racer) => racer.recoveryAt < 1).length}
       data-camera-target={cameraTargetId ?? "overview"}
+      data-camera-style={cameraTargetId ? cameraStyle : "overview"}
+      data-release-stage="beta"
     >
       <div className="marble-race-status" aria-live="polite">
         <span className="marble-race-status__icon">{phase === "racing" ? <Gauge size={18} /> : <Gem size={18} />}</span>
@@ -1043,6 +1105,7 @@ export function MarbleRace({
           <span className="is-primary">{difficultyLabels[difficulty]}</span>
           <span>Riesgo {race.track.risk}/5</span>
           <span>{race.track.powerZones.length} poderes</span>
+          <span>Altura {maximumTrackHeight.toFixed(1)} m</span>
           <span>{phase === "racing" ? `${fps} FPS` : `${participants.length} canicas`}</span>
         </div>
       </div>
@@ -1069,7 +1132,7 @@ export function MarbleRace({
 
         <div className="marble-camera-control">
           <Camera size={16} aria-hidden="true" />
-          <span><strong>CÁMARA CINEMÁTICA</strong><small>{cameraTargetId ? "Seguimiento estabilizado" : "Vista general"}</small></span>
+          <span><strong>CÁMARA CINEMÁTICA</strong><small>{followedState?.recovering ? "Rescate automático en cámara" : cameraTargetId ? `${cameraStyleLabels[cameraStyle]} · seguimiento estabilizado` : "Vista general"}</small></span>
           <div className="marble-camera-control__switcher">
             <button type="button" onClick={() => stepCameraTarget(-1)} disabled={renderMode === "fallback"} aria-label="Seguir la canica anterior"><ChevronLeft size={15} /></button>
             <select
@@ -1080,11 +1143,28 @@ export function MarbleRace({
             >
               <option value="">Vista general</option>
               {race.racers.map((racer) => (
-                <option key={racer.id} value={racer.id}>{racer.number}. {racer.participant.name}</option>
+                <option
+                  key={racer.id}
+                  value={racer.id}
+                  data-recovery-at={racer.recoveryAt < 1 ? racer.recoveryAt.toFixed(3) : "none"}
+                  data-comeback-chance={racer.comebackChance.toFixed(3)}
+                  data-power-target={racer.powerTargetId ?? "none"}
+                >
+                  {racer.number}. {racer.participant.name}
+                </option>
               ))}
             </select>
             <button type="button" onClick={() => stepCameraTarget(1)} disabled={renderMode === "fallback"} aria-label="Seguir la canica siguiente"><ChevronRight size={15} /></button>
           </div>
+          <button
+            type="button"
+            className="marble-camera-control__mode"
+            onClick={cycleCameraStyle}
+            disabled={renderMode === "fallback" || !cameraTargetId}
+            aria-label={`Cambiar estilo de cámara. Estilo actual: ${cameraStyleLabels[cameraStyle]}`}
+          >
+            <Camera size={13} /> {cameraStyleLabels[cameraStyle]}
+          </button>
         </div>
 
         <aside className="marble-live-ranking" aria-label="Clasificación de la carrera">
@@ -1109,8 +1189,16 @@ export function MarbleRace({
                   <span className={isAtRisk ? "is-at-risk" : ""} role="listitem">
                     <b>{item.position}</b><i style={{ background: item.racer.accent }} />
                     <strong>{item.racer.participant.name}{item.racer.previousWinner && <Crown size={10} fill="currentColor" aria-label="Ganador anterior" />}</strong>
-                    <small className={`marble-ranking-power marble-ranking-power--${item.racer.power ?? "none"}`}>
-                      {item.powerActive && item.racer.power ? powerLabels[item.racer.power] : item.racer.power ? `Tiene ${powerLabels[item.racer.power]}` : "Sin poder"}
+                    <small className={`marble-ranking-power marble-ranking-power--${item.activePower ?? item.racer.power ?? "none"}`}>
+                      {item.recovering
+                        ? "Rescate al inicio"
+                        : item.incomingPowerActive && item.racer.incomingPower
+                          ? `Bajo ${powerLabels[item.racer.incomingPower]}`
+                          : item.powerActive && item.racer.power
+                            ? `${item.racer.powerTargetId ? "Lanza" : "Activa"} ${powerLabels[item.racer.power]}`
+                            : item.racer.power
+                              ? `Tiene ${powerLabels[item.racer.power]}`
+                              : "Sin poder"}
                     </small>
                     <em>{isAtRisk ? "RIESGO" : item.finished ? "META" : phase === "ready" ? "LISTO" : `${Math.round(item.progress * 100)}%`}</em>
                   </span>
@@ -1139,7 +1227,7 @@ export function MarbleRace({
         <div className="marble-map-hud">
           <span>MAPA ACTUAL</span>
           <strong>{race.track.name}</strong>
-          <div><small>{difficultyLabels[difficulty]}</small><small>{race.track.lengthRating}</small><small>Riesgo {race.track.risk}/5</small></div>
+          <div><small>{difficultyLabels[difficulty]}</small><small>{race.track.lengthRating}</small><small>Altura {maximumTrackHeight.toFixed(1)} m</small><small>Riesgo {race.track.risk}/5</small></div>
         </div>
       </div>
 

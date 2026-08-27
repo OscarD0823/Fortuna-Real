@@ -16,19 +16,50 @@ reconstruir exactamente su asignación, distribución o pista después de reinic
 Los usuarios reciben solamente este archivo:
 
 ```text
-Fortuna-Real-1.0.0-Instalador.exe
+Fortuna-Real-1.0.2-Instalador.exe
 ```
 
 El instalador configura Fortuna Real, crea los accesos de Windows e instala
-WebView2 silenciosamente si el equipo no lo tiene. El usuario no necesita
-Node.js, Rust, Visual Studio ni conocimientos de programación.
+WebView2 silenciosamente si el equipo no lo tiene, con el paquete sin conexión
+incluido. Está preparado para Windows 10/11 x64. El usuario no necesita Internet
+para instalar/jugar, Node.js, Rust, Visual Studio ni copiar el código del proyecto.
+Internet solo se utiliza para buscar o descargar actualizaciones. La voz disponible
+depende de las voces instaladas en Windows; los juegos también funcionan sin voz.
+
+## Inicio guiado y demos
+
+La primera entrada muestra una guía breve sobre los controles reales. La barra
+numerada permite saltar directamente a participantes, juego, modo o inicio. El
+botón **Guía** vuelve a abrir la ayuda en cualquier juego.
+
+Los cinco juegos incluyen demostraciones de cuatro pasos desde **Ver demo paso
+a paso**. La de Ruleta permite practicar la carga de nombres; la de Cartas permite
+revelar un reverso de ejemplo. Ninguna práctica modifica participantes, premios,
+historial ni resultados reales. Pinball, Canicas y Patos conservan su etiqueta BETA
+y tienen guías específicas de controles, cámaras, poderes y recuperación.
+
+Puedes avanzar con las flechas, salir con Escape y escuchar cada paso si la
+locución está activada y el volumen es mayor que cero. Al cerrar la guía inicial,
+el campo de nombres queda listo para escribir. La ayuda se recuerda por juego y
+se muestra automáticamente solo la primera vez.
 
 ## Crear el instalador
 
 Abre `Crear instalador Fortuna Real.cmd` con doble clic. La primera vez, Windows
 pedirá permiso de administrador para instalar automáticamente cualquier
-herramienta de desarrollo que falte. Después generará el archivo distribuible
-dentro de la carpeta `instaladores`.
+herramienta de desarrollo que falte y solicitará la contraseña de firma. Cuando
+la contraseña sea correcta se guarda cifrada con DPAPI, ligada a tu usuario de
+Windows. Los siguientes instaladores se crean con un solo doble clic y al terminar
+se abre la carpeta `instaladores` con el archivo nuevo seleccionado.
+
+El creador conserva una huella local de las dependencias y de la última validación.
+Solo repite `npm ci` cuando cambian los paquetes de `package-lock.json` (no cuando
+solo se incrementa la versión del producto), y solo repite toda la batería
+de pruebas cuando cambia el código. La compilación firmada siempre se realiza.
+Al terminar se verifica criptográficamente el instalador distribuido contra la
+clave pública incorporada en la aplicación, además de comprobar `latest.json`.
+La firma del actualizador no es un certificado Authenticode: Windows puede mostrar
+un aviso de editor desconocido. El instructivo se copia junto al instalador.
 
 ## Modo de desarrollo
 
@@ -70,10 +101,11 @@ participantes. Vaciar la lista no borra el historial de ganadores.
 
 ## Actualizaciones automáticas
 
-La versión 1.0.0 incluye el actualizador. Los usuarios de una versión sin
-actualizador deben instalar 1.0.0 una sola vez. A partir de ahí, Fortuna Real
+Las versiones desde 1.0.1 incluyen el actualizador. Los usuarios de una versión sin
+actualizador deben instalar la versión actual una sola vez. A partir de ahí, Fortuna Real
 comprueba al iniciar si existe una versión más reciente, muestra sus notas,
-descarga el paquete firmado, lo instala y reinicia la aplicación.
+descarga el paquete firmado, lo instala y reinicia la aplicación. Los avisos
+esperan a que regreses al inicio y cierres cualquier guía o demo.
 
 Las actualizaciones se publican en GitHub Releases del repositorio
 `OscarD0823/Fortuna-Real`. La clave privada de firma está fuera del proyecto:
@@ -83,34 +115,34 @@ C:\Users\odcon\.tauri\fortuna-real.key
 C:\Users\odcon\.tauri\fortuna-real.key.password.dpapi
 ```
 
-La contraseña local se guarda cifrada con DPAPI y solo la cuenta de Windows que
-la creó puede recuperarla. La clave, el archivo `.password.dpapi` y la
-contraseña original no se comparten ni se suben a GitHub. Debe conservarse una
-copia de seguridad segura; sin ella no se pueden entregar actualizaciones a
+Si existe el archivo `.password.dpapi`, la contraseña local se recupera cifrada
+con DPAPI y solo desde la cuenta de Windows que la creó. Si no existe, el script
+la solicita, la valida antes de compilar y permite tres intentos. Tras el primer
+acierto crea automáticamente el archivo DPAPI; nunca conserva texto plano. La clave,
+ese archivo local y la contraseña original no se comparten ni se suben a GitHub. Debe conservarse
+una copia de seguridad segura; sin ella no se pueden entregar actualizaciones a
 quienes ya tengan el programa instalado.
 
-Para publicar desde GitHub Actions, crea una vez el secreto del repositorio
-`TAURI_SIGNING_PRIVATE_KEY` con el contenido de esa clave privada y el secreto
-`TAURI_SIGNING_PRIVATE_KEY_PASSWORD` con la contraseña original (no con el
-archivo DPAPI, que no es portable fuera de esa cuenta de Windows).
-Después:
+La publicación recomendada mantiene la clave exclusivamente en este computador:
 
-1. Aumenta la versión en `package.json`, `src-tauri/Cargo.toml` y
-   `src-tauri/tauri.conf.json`.
-2. Crea y sube una etiqueta con el mismo número, por ejemplo `v0.3.0`.
-3. El flujo `Publicar Fortuna Real` genera el instalador firmado y `latest.json`.
+1. Aumenta la versión en `package.json`, `package-lock.json`, `src-tauri/Cargo.toml`,
+   `src-tauri/Cargo.lock` y `src-tauri/tauri.conf.json`.
+2. Confirma que GitHub CLI tiene sesión mediante `gh auth status`.
+3. Ejecuta `npm run publicar-actualizacion`.
+4. Escribe la contraseña únicamente si es el primer uso o cambió la clave.
+5. El script valida el proyecto, genera el instalador, `.sig` y `latest.json`,
+   crea la etiqueta/Release y comprueba el manifiesto remoto.
 
-El flujo detiene la publicación si fallan los tipos, las pruebas de dominio y
+El script detiene la publicación si fallan los tipos, las pruebas de dominio y
 persistencia, la compilación, `cargo test`, Clippy o la coherencia de versiones.
-Después de publicar también comprueba que el endpoint `latest.json`, el instalador
-y su archivo `.sig` respondan correctamente. `GITHUB_TOKEN` lo proporciona GitHub;
-las dos variables `TAURI_SIGNING_*` son secretos obligatorios y no deben guardarse
-en archivos versionados.
+Después de publicar también comprueba que el endpoint `latest.json` informe la
+versión recién creada. La sesión local de `gh` publica los archivos; la clave de
+firma nunca sale del computador.
 
-Hasta que exista y se publique el tag correspondiente (por ejemplo `v1.0.0`), el
-endpoint `/releases/latest/download/latest.json` devolverá 404. No se debe distribuir
-un instalador con actualización automática antes de que esa comprobación final pase.
+Hasta publicar el Release correspondiente (por ejemplo `v1.0.2`), la versión local
+no se ofrecerá como actualización automática. Si no hay ningún Release publicado,
+el endpoint devolverá 404 sin bloquear el programa. El instalador local funciona
+igualmente sin conexión; publicar y verificar el Release es un paso separado.
 
-Como alternativa local, `Crear instalador Fortuna Real.cmd` produce dentro de
-`instaladores` el instalador, su archivo `.sig` y `latest.json`, listos para
-subir a una versión de GitHub con la etiqueta indicada.
+`Crear instalador Fortuna Real.cmd` o `npm run crear-instalador` producen dentro
+de `instaladores` el instalador, su archivo `.sig` y `latest.json` sin publicarlos.

@@ -1,7 +1,9 @@
 [CmdletBinding()]
 param(
     [switch]$CheckOnly,
-    [switch]$Elevated
+    [switch]$Elevated,
+    [switch]$Publish,
+    [switch]$FullValidation
 )
 
 $ErrorActionPreference = "Stop"
@@ -10,10 +12,48 @@ $InstallerOutput = Join-Path $ProjectRoot "instaladores"
 $SigningKeyPath = Join-Path $env:USERPROFILE ".tauri\fortuna-real.key"
 $SigningPasswordPath = "$SigningKeyPath.password.dpapi"
 $ReleaseRepository = "OscarD0823/Fortuna-Real"
+$BuildCache = Join-Path $ProjectRoot ".fortuna-cache"
+$DependencyStampPath = Join-Path $BuildCache "package-lock.sha256"
+$ValidationStampPath = Join-Path $BuildCache "validation.sha256"
 
 function Write-Step {
     param([string]$Message)
     Write-Host "`n  $Message" -ForegroundColor Cyan
+}
+
+function Get-DependencyFingerprint {
+    # Node también admite la clave vacía de package-lock.json en PowerShell 5.1.
+    $dependencyHash = & node.exe (Join-Path $ProjectRoot "scripts\dependency-fingerprint.mjs")
+    if ($LASTEXITCODE -ne 0) { throw "No se pudo comprobar la huella de dependencias." }
+    return $dependencyHash.Trim()
+}
+
+function Get-ValidationFingerprint {
+    $inputFiles = @(
+        Get-ChildItem -LiteralPath (Join-Path $ProjectRoot "src") -File -Recurse
+        Get-ChildItem -LiteralPath (Join-Path $ProjectRoot "scripts") -File -Recurse
+        Get-ChildItem -LiteralPath (Join-Path $ProjectRoot "src-tauri\src") -File -Recurse
+        Get-ChildItem -LiteralPath (Join-Path $ProjectRoot "src-tauri\examples") -File -Recurse
+        Get-Item -LiteralPath $PSCommandPath
+        Get-Item -LiteralPath (Join-Path $ProjectRoot "package.json")
+        Get-Item -LiteralPath (Join-Path $ProjectRoot "package-lock.json")
+        Get-Item -LiteralPath (Join-Path $ProjectRoot "src-tauri\Cargo.toml")
+        Get-Item -LiteralPath (Join-Path $ProjectRoot "src-tauri\Cargo.lock")
+        Get-Item -LiteralPath (Join-Path $ProjectRoot "src-tauri\tauri.conf.json")
+    ) | Sort-Object FullName -Unique
+
+    $fingerprintSource = ($inputFiles | ForEach-Object {
+        $relativePath = $_.FullName.Substring($ProjectRoot.Length).TrimStart("\")
+        "$relativePath|$((Get-FileHash -Algorithm SHA256 -LiteralPath $_.FullName).Hash)"
+    }) -join "`n"
+    $fingerprintBytes = [Text.Encoding]::UTF8.GetBytes($fingerprintSource)
+    $fingerprintHasher = [Security.Cryptography.SHA256]::Create()
+    try {
+        return ([BitConverter]::ToString($fingerprintHasher.ComputeHash($fingerprintBytes))).Replace("-", "")
+    }
+    finally {
+        $fingerprintHasher.Dispose()
+    }
 }
 
 function ConvertFrom-ProtectedString {
@@ -117,21 +157,35 @@ try {
     $hasNode = [bool](Get-Command npm.cmd -ErrorAction SilentlyContinue)
     $hasRust = [bool](Get-Command cargo.exe -ErrorAction SilentlyContinue)
     $hasNativeTools = Import-VisualStudioEnvironment
+    $hasGitHubCli = [bool](Get-Command gh.exe -ErrorAction SilentlyContinue)
 
     Write-Host ""
     Write-Host "  Node.js:            $(if ($hasNode) { 'OK' } else { 'FALTA' })"
     Write-Host "  Rust:               $(if ($hasRust) { 'OK' } else { 'FALTA' })"
     Write-Host "  Compilador Windows: $(if ($hasNativeTools) { 'OK' } else { 'FALTA' })"
+    if ($Publish) {
+        Write-Host "  GitHub CLI:          $(if ($hasGitHubCli) { 'OK' } else { 'FALTA' })"
+    }
 
     if ($CheckOnly) {
-        if ($hasNode -and $hasRust -and $hasNativeTools) { exit 0 }
+        if ($hasNode -and $hasRust -and $hasNativeTools -and (-not $Publish -or $hasGitHubCli)) { exit 0 }
         exit 2
+    }
+
+    if ($Publish -and -not $hasGitHubCli) {
+        throw "Falta GitHub CLI. Instálalo con 'winget install GitHub.cli' antes de publicar."
     }
 
     $mustInstall = -not ($hasNode -and $hasRust -and $hasNativeTools)
     if ($mustInstall -and -not (Test-Administrator)) {
         Write-Step "Windows pedira permiso para instalar los requisitos que faltan..."
         $arguments = "-NoLogo -NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`" -Elevated"
+        if ($Publish) {
+            $arguments += " -Publish"
+        }
+        if ($FullValidation) {
+            $arguments += " -FullValidation"
+        }
         $elevatedProcess = Start-Process `
             -FilePath "powershell.exe" `
             -ArgumentList $arguments `
@@ -176,32 +230,101 @@ try {
     if (-not (Test-Path -LiteralPath $SigningKeyPath)) {
         throw "Falta la clave privada de actualizaciones en '$SigningKeyPath'. Restaura la copia de seguridad antes de crear una nueva version."
     }
-    $env:TAURI_SIGNING_PRIVATE_KEY = $SigningKeyPath
-    $secureSigningPassword = if (Test-Path -LiteralPath $SigningPasswordPath) {
-        Get-Content -Raw -LiteralPath $SigningPasswordPath | ConvertTo-SecureString
+    # Instalar antes de llamar a Tauri: una instalación nueva o interrumpida
+    # puede no tener todavía disponible su ejecutable de firma.
+    New-Item -ItemType Directory -Force -Path $BuildCache | Out-Null
+    $packageLockHash = Get-DependencyFingerprint
+    $cachedPackageLockHash = if (Test-Path -LiteralPath $DependencyStampPath) {
+        (Get-Content -Raw -LiteralPath $DependencyStampPath).Trim()
+    }
+    else { "" }
+    $dependenciesAreCurrent = (Test-Path -LiteralPath (Join-Path $ProjectRoot "node_modules\.package-lock.json")) -and (Test-Path -LiteralPath (Join-Path $ProjectRoot "node_modules\.bin\tauri.cmd")) -and $cachedPackageLockHash -eq $packageLockHash
+    if ($dependenciesAreCurrent) {
+        Write-Step "Dependencias sin cambios; reutilizando la instalacion local."
     }
     else {
-        Read-Host "Contrasena de la clave de firma (no se guardara en texto plano)" -AsSecureString
+        Write-Step "Actualizando dependencias (solo se repite cuando cambian los paquetes)..."
+        & npm.cmd ci --prefer-offline --no-audit --no-fund
+        if ($LASTEXITCODE -ne 0) {
+            throw "npm ci no pudo completarse. Si aparece EPERM, cierra los servidores de desarrollo que estén usando este proyecto y vuelve a intentarlo. No es necesario borrar el proyecto."
+        }
+        Set-Content -LiteralPath $DependencyStampPath -Value $packageLockHash -Encoding ascii
     }
-    $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = ConvertFrom-ProtectedString $secureSigningPassword
+    $env:TAURI_SIGNING_PRIVATE_KEY_PATH = $SigningKeyPath
+    $usesProtectedPassword = Test-Path -LiteralPath $SigningPasswordPath
+    $maximumPasswordAttempts = if ($usesProtectedPassword) { 1 } else { 3 }
+    $passwordIsValid = $false
 
-    Write-Step "Instalando las dependencias del proyecto..."
-    & npm.cmd ci
-    if ($LASTEXITCODE -ne 0) {
-        throw "npm ci no pudo completarse."
+    for ($passwordAttempt = 1; $passwordAttempt -le $maximumPasswordAttempts; $passwordAttempt++) {
+        $secureSigningPassword = if ($usesProtectedPassword) {
+            (Get-Content -Raw -LiteralPath $SigningPasswordPath).Trim() | ConvertTo-SecureString
+        }
+        else {
+            Read-Host "Contrasena de la clave de firma (intento $passwordAttempt de $maximumPasswordAttempts; no se guardara)" -AsSecureString
+        }
+        $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = ConvertFrom-ProtectedString $secureSigningPassword
+
+        $signingProbe = New-TemporaryFile
+        $signingProbeSignature = "$($signingProbe.FullName).sig"
+        try {
+            [IO.File]::WriteAllText($signingProbe.FullName, "Fortuna Real signing key verification")
+            & npm.cmd run tauri -- signer sign $signingProbe.FullName *> $null
+            $passwordIsValid = $LASTEXITCODE -eq 0
+        }
+        finally {
+            Remove-Item -LiteralPath $signingProbe.FullName -Force -ErrorAction SilentlyContinue
+            Remove-Item -LiteralPath $signingProbeSignature -Force -ErrorAction SilentlyContinue
+        }
+
+        if ($passwordIsValid) {
+            Write-Host "  Clave de firma:      OK" -ForegroundColor Green
+            if (-not $usesProtectedPassword) {
+                New-Item -ItemType Directory -Force -Path (Split-Path -Parent $SigningPasswordPath) | Out-Null
+                $secureSigningPassword | ConvertFrom-SecureString | Set-Content -LiteralPath $SigningPasswordPath -Encoding ascii
+                Write-Host "  Contrasena protegida con tu usuario de Windows para los proximos doble clic." -ForegroundColor DarkGray
+            }
+            break
+        }
+
+        Remove-Item Env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD -ErrorAction SilentlyContinue
+        if ($usesProtectedPassword) {
+            throw "La contrasena protegida guardada no corresponde a la clave privada. Elimina '$SigningPasswordPath' y vuelve a intentarlo para escribirla manualmente."
+        }
+        Write-Host "  Contrasena incorrecta. Vuelve a intentarlo." -ForegroundColor Red
     }
 
-    Write-Step "Ejecutando las mismas puertas de calidad de publicacion..."
-    & npm.cmd run lint
-    if ($LASTEXITCODE -ne 0) { throw "La comprobacion TypeScript fallo." }
-    & npm.cmd test
-    if ($LASTEXITCODE -ne 0) { throw "Las pruebas automatizadas fallaron." }
-    & cargo.exe fmt --manifest-path "src-tauri/Cargo.toml" -- --check
-    if ($LASTEXITCODE -ne 0) { throw "El formato Rust no es valido." }
-    & cargo.exe test --locked --manifest-path "src-tauri/Cargo.toml"
-    if ($LASTEXITCODE -ne 0) { throw "Las pruebas Rust fallaron." }
-    & cargo.exe clippy --locked --manifest-path "src-tauri/Cargo.toml" --all-targets -- -D warnings
-    if ($LASTEXITCODE -ne 0) { throw "Clippy encontro advertencias." }
+    if (-not $passwordIsValid) {
+        throw "La clave no pudo desbloquearse despues de $maximumPasswordAttempts intentos. No se genero ningun instalador firmado."
+    }
+
+    # Tauri 2.11 usa PRIVATE_KEY_PATH en `signer sign`, pero el empaquetador
+    # de actualizaciones espera PRIVATE_KEY. Nunca deben coexistir.
+    Remove-Item Env:TAURI_SIGNING_PRIVATE_KEY_PATH -ErrorAction SilentlyContinue
+    $env:TAURI_SIGNING_PRIVATE_KEY = $SigningKeyPath
+
+    $validationFingerprint = Get-ValidationFingerprint
+    $cachedValidationFingerprint = if (Test-Path -LiteralPath $ValidationStampPath) {
+        (Get-Content -Raw -LiteralPath $ValidationStampPath).Trim()
+    }
+    else { "" }
+    $requiresValidation = $Publish -or $FullValidation -or $validationFingerprint -ne $cachedValidationFingerprint
+    if ($requiresValidation) {
+        Write-Step "Validando los cambios del proyecto..."
+        & npm.cmd run lint
+        if ($LASTEXITCODE -ne 0) { throw "La comprobacion TypeScript fallo." }
+        & npm.cmd test
+        if ($LASTEXITCODE -ne 0) { throw "Las pruebas automatizadas fallaron." }
+        & cargo.exe fmt --manifest-path "src-tauri/Cargo.toml" -- --check
+        if ($LASTEXITCODE -ne 0) { throw "El formato Rust no es valido." }
+        & cargo.exe test --locked --manifest-path "src-tauri/Cargo.toml"
+        if ($LASTEXITCODE -ne 0) { throw "Las pruebas Rust fallaron." }
+        & cargo.exe clippy --locked --manifest-path "src-tauri/Cargo.toml" --all-targets -- -D warnings
+        if ($LASTEXITCODE -ne 0) { throw "Clippy encontro advertencias." }
+        Set-Content -LiteralPath $ValidationStampPath -Value $validationFingerprint -Encoding ascii
+    }
+    else {
+        Write-Step "Codigo sin cambios desde la ultima validacion; omitiendo pruebas repetidas."
+    }
 
     Write-Step "Compilando Fortuna Real y creando el instalador..."
     $buildStartedAt = Get-Date
@@ -253,6 +376,46 @@ try {
     $latestPath = Join-Path $InstallerOutput "latest.json"
     $latestUpdate | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $latestPath -Encoding utf8
 
+    Write-Step "Verificando la firma del instalador con la clave publica de la aplicacion..."
+    & cargo.exe run --release --locked --manifest-path "src-tauri/Cargo.toml" --example verify_installer -- $destination $signatureDestination $latestPath
+    if ($LASTEXITCODE -ne 0) {
+        throw "La firma o el manifiesto del instalador no superaron la verificacion. No distribuyas estos archivos."
+    }
+    Copy-Item -LiteralPath (Join-Path $ProjectRoot "INSTRUCCIONES - LEER PRIMERO.txt") -Destination $InstallerOutput -Force
+
+    if ($Publish) {
+        Write-Step "Comprobando acceso a GitHub..."
+        & gh.exe auth status
+        if ($LASTEXITCODE -ne 0) {
+            throw "GitHub CLI no tiene una sesión válida. Ejecuta 'gh auth login' y vuelve a intentar."
+        }
+
+        & gh.exe release view $releaseTag --repo $ReleaseRepository *> $null
+        if ($LASTEXITCODE -eq 0) {
+            throw "Ya existe el Release $releaseTag. Incrementa la versión antes de publicar otra actualización."
+        }
+
+        Write-Step "Publicando la actualización firmada en GitHub Releases..."
+        & gh.exe release create $releaseTag `
+            $destination `
+            $signatureDestination `
+            $latestPath `
+            --repo $ReleaseRepository `
+            --target main `
+            --title "Fortuna Real $releaseTag" `
+            --notes "Actualización $releaseTag de Fortuna Real. Incluye mejoras visuales, de rendimiento y jugabilidad."
+        if ($LASTEXITCODE -ne 0) {
+            throw "GitHub no pudo crear el Release $releaseTag. Los artefactos locales se conservaron."
+        }
+
+        Write-Step "Verificando el manifiesto remoto..."
+        $remoteManifestUrl = "https://github.com/$ReleaseRepository/releases/latest/download/latest.json"
+        $remoteManifest = Invoke-RestMethod -Uri $remoteManifestUrl -TimeoutSec 30
+        if ($remoteManifest.version -ne $version) {
+            throw "El Release se publicó, pero latest.json informa la versión $($remoteManifest.version) en lugar de $version."
+        }
+    }
+
     Write-Host ""
     Write-Host "  ========================================" -ForegroundColor Green
     Write-Host "       INSTALADOR CREADO CORRECTAMENTE" -ForegroundColor Green
@@ -263,8 +426,15 @@ try {
     Write-Host "  $signatureDestination" -ForegroundColor White
     Write-Host "  $latestPath" -ForegroundColor White
     Write-Host ""
-    Write-Host "  Los usuarios solo deben abrir ese archivo e instalar." -ForegroundColor Gray
-    Write-Host "  Para publicar una actualizacion, sube los tres archivos a GitHub Releases con la etiqueta $releaseTag." -ForegroundColor Gray
+    if ($Publish) {
+        Write-Host "  Actualización publicada en GitHub Releases con la etiqueta $releaseTag." -ForegroundColor Green
+        Write-Host "  Las instalaciones anteriores la detectarán al volver a abrir Fortuna Real." -ForegroundColor Gray
+    }
+    else {
+        Write-Host "  Los usuarios solo deben abrir ese archivo e instalar." -ForegroundColor Gray
+        Write-Host "  Para publicar sin exponer la clave, ejecuta: npm run publicar-actualizacion" -ForegroundColor Gray
+    }
+    Start-Process -FilePath "explorer.exe" -ArgumentList "/select,`"$destination`""
 }
 catch {
     Write-Host ""
@@ -274,5 +444,6 @@ catch {
 }
 finally {
     Remove-Item Env:TAURI_SIGNING_PRIVATE_KEY -ErrorAction SilentlyContinue
+    Remove-Item Env:TAURI_SIGNING_PRIVATE_KEY_PATH -ErrorAction SilentlyContinue
     Remove-Item Env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD -ErrorAction SilentlyContinue
 }

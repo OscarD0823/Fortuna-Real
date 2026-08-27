@@ -531,6 +531,7 @@ export const createPinballScene = (
   const followCameraPosition = new THREE.Vector3();
   const followCameraLookTarget = new THREE.Vector3();
   const followDirection = new THREE.Vector3();
+  const followCameraUp = new THREE.Vector3(0, 1, 0);
   camera.position.copy(presentationCameraPosition);
   camera.lookAt(presentationCameraTarget);
 
@@ -1073,6 +1074,18 @@ export const createPinballScene = (
   ballGlows.renderOrder = 8;
   cabinet.add(ballGlows);
 
+  const followTrailPointCount = 20;
+  const followTrailPositions = new Float32Array(followTrailPointCount * 3);
+  const followTrailGeometry = new THREE.BufferGeometry();
+  followTrailGeometry.setAttribute("position", new THREE.BufferAttribute(followTrailPositions, 3));
+  const followTrail = new THREE.Line(
+    followTrailGeometry,
+    new THREE.LineBasicMaterial({ color: 0x69fff8, transparent: true, opacity: 0.72, depthWrite: false }),
+  );
+  followTrail.visible = false;
+  followTrail.renderOrder = 9;
+  cabinet.add(followTrail);
+
   const winnerCrowns = new THREE.InstancedMesh(
     new THREE.CylinderGeometry(0.18, 0.25, 0.24, 5, 1, true),
     new THREE.MeshStandardMaterial({ color: 0xffc52f, emissive: 0x8f4e00, emissiveIntensity: 1.35, metalness: 0.72, roughness: 0.2 }),
@@ -1432,27 +1445,49 @@ export const createPinballScene = (
       followDirection.set(followedPhysics.vx, 0, followedPhysics.vz);
       if (followDirection.lengthSq() < 0.04) followDirection.set(0, 0, -1);
       else followDirection.normalize();
-      followCameraPosition.set(followedPhysics.x, 3.15, followedPhysics.z)
-        .addScaledVector(followDirection, -2.35);
+      const followedSpeed = Math.hypot(followedPhysics.vx, followedPhysics.vz);
+      const speedBlend = THREE.MathUtils.clamp(followedSpeed / 9, 0, 1);
+      if (!followCameraPrimed) {
+        for (let trailIndex = 0; trailIndex < followTrailPointCount; trailIndex += 1) {
+          followTrailPositions[trailIndex * 3] = followedPhysics.x;
+          followTrailPositions[trailIndex * 3 + 1] = 0.73;
+          followTrailPositions[trailIndex * 3 + 2] = followedPhysics.z;
+        }
+      } else {
+        followTrailPositions.copyWithin(0, 3);
+        const trailOffset = (followTrailPointCount - 1) * 3;
+        followTrailPositions[trailOffset] = followedPhysics.x;
+        followTrailPositions[trailOffset + 1] = 0.73;
+        followTrailPositions[trailOffset + 2] = followedPhysics.z;
+      }
+      (followTrailGeometry.getAttribute("position") as THREE.BufferAttribute).needsUpdate = true;
+      followTrail.visible = true;
+      followCameraPosition.set(followedPhysics.x, 2.75 + speedBlend * 0.72, followedPhysics.z)
+        .addScaledVector(followDirection, -(2.25 + speedBlend * 0.95));
       followCameraLookTarget.set(followedPhysics.x, 0.76, followedPhysics.z)
-        .addScaledVector(followDirection, 1.25);
+        .addScaledVector(followDirection, 1.3 + speedBlend * 1.35);
+      followCameraUp.set(THREE.MathUtils.clamp(-followedPhysics.vx * 0.014, -0.13, 0.13), 1, 0).normalize();
       if (!followCameraPrimed) {
         camera.position.copy(followCameraPosition);
         cameraTarget.copy(followCameraLookTarget);
+        camera.up.copy(followCameraUp);
       } else {
-        const cameraResponse = reducedMotion ? 1 : 0.38;
+        const cameraResponse = reducedMotion ? 1 : 1 - Math.exp(-delta * 7.4);
         camera.position.lerp(followCameraPosition, cameraResponse);
-        cameraTarget.lerp(followCameraLookTarget, cameraResponse);
+        cameraTarget.lerp(followCameraLookTarget, Math.min(1, cameraResponse * 1.2));
+        camera.up.lerp(followCameraUp, cameraResponse * 0.7).normalize();
       }
-      camera.up.copy(THREE.Object3D.DEFAULT_UP);
-      if (camera.fov !== 62) {
-        camera.fov = 62;
+      const desiredFollowFov = 57 + speedBlend * 9;
+      if (Math.abs(camera.fov - desiredFollowFov) > 0.05) {
+        camera.fov = THREE.MathUtils.lerp(camera.fov, desiredFollowFov, reducedMotion ? 1 : 0.16);
         camera.updateProjectionMatrix();
       }
       followCameraPrimed = true;
       const cameraMode = `ball-${round.balls[followIndex].participant.id}`;
       if (canvas.dataset.cameraMode !== cameraMode) canvas.dataset.cameraMode = cameraMode;
+      canvas.dataset.cameraStyle = "predictive-ball-follow";
     } else {
+      followTrail.visible = false;
       const cameraBlend = running ? reducedMotion ? 1 : smoothstep(elapsed / cameraIntroMs) : 0;
       camera.position.lerpVectors(presentationCameraPosition, overviewCameraPosition, cameraBlend);
       cameraTarget.lerpVectors(presentationCameraTarget, overviewCameraTarget, cameraBlend);
@@ -1464,6 +1499,7 @@ export const createPinballScene = (
       camera.up.copy(THREE.Object3D.DEFAULT_UP);
       followCameraPrimed = false;
       if (canvas.dataset.cameraMode !== "overview") canvas.dataset.cameraMode = "overview";
+      canvas.dataset.cameraStyle = "overview";
     }
     camera.lookAt(cameraTarget);
     if (renderer.shadowMap.enabled && !shadowReady) renderer.shadowMap.needsUpdate = true;

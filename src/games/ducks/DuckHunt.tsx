@@ -101,6 +101,8 @@ export function DuckHunt({
   const [stats, setStats] = useState(initialStats);
   const [shots, setShots] = useState(0);
   const [hits, setHits] = useState(0);
+  const [hitStreak, setHitStreak] = useState(0);
+  const [bestStreak, setBestStreak] = useState(0);
   const [lastHit, setLastHit] = useState<DuckContestant | null>(null);
   const [activePower, setActivePower] = useState<ActiveDuckPower | null>(null);
   const [crosshair, setCrosshair] = useState({ x: 50, y: 48, visible: false });
@@ -136,6 +138,8 @@ export function DuckHunt({
     setPhase("ready");
     setShots(0);
     setHits(0);
+    setHitStreak(0);
+    setBestStreak(0);
     setLastHit(null);
     setActivePower(null);
     commitmentCursorRef.current = 0;
@@ -274,6 +278,11 @@ export function DuckHunt({
     }));
     const target = nextFlightContestants.find((contestant) => contestant.id === targetId) ?? result.target;
     setHits((value) => value + 1);
+    setHitStreak((value) => {
+      const nextValue = value + 1;
+      setBestStreak((currentBest) => Math.max(currentBest, nextValue));
+      return nextValue;
+    });
     setContestants(nextFlightContestants);
     setLastHit(target);
     setActivePower(null);
@@ -318,6 +327,7 @@ export function DuckHunt({
         ));
       }
       fortunaAudio.playDuckShot(false);
+      setHitStreak(0);
       return;
     }
     advanceCommittedHit(shot.hitId);
@@ -408,6 +418,9 @@ export function DuckHunt({
       data-render-triangles={stats.triangles}
       data-render-mode={rendererFailed ? "fallback" : "webgl"}
       data-duck-power={activePower?.power ?? "none"}
+      data-hit-streak={hitStreak}
+      data-best-streak={bestStreak}
+      data-release-stage="beta"
     >
       <div className="duck-hunt__status">
         <span className="duck-hunt__status-icon"><Feather size={19} /></span>
@@ -423,6 +436,7 @@ export function DuckHunt({
           <span><Heart size={12} /> {livingCount} en pie</span>
           <span><ShieldCheck size={12} /> orden verificado</span>
           <span><Target size={12} /> {hits}/{shots}</span>
+          <span><Crosshair size={12} /> racha ×{hitStreak}</span>
           <span>{accuracy}% precisión</span>
           <span>{rendererFailed ? "MODO 2D" : `${stats.fps} FPS`}</span>
         </div>
@@ -506,6 +520,7 @@ export function DuckHunt({
           ) : phase === "flying" ? (
             <div className="duck-automatic-actions">
               <div className="duck-flight-state duck-flight-state--flying"><span /><strong>APUNTA Y DISPARA</strong></div>
+              <button type="button" className="text-button" onClick={accessibleHit}><Target size={18} /> Siguiente impacto</button>
               <button type="button" className="text-button" onClick={resolveCommittedOrder}><FastForward size={17} /> Resolución automática</button>
             </div>
           ) : (

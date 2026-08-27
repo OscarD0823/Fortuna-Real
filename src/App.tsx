@@ -8,6 +8,7 @@ import {
 } from "react";
 import {
   ArrowLeft,
+  AudioLines,
   Bird,
   CheckCircle2,
   CircleDot,
@@ -20,13 +21,13 @@ import {
   Gem,
   Gift,
   Hash,
+  HelpCircle,
   History,
   Layers3,
   Mic,
   MicOff,
   Play,
   RotateCcw,
-  Settings2,
   ShieldCheck,
   Shuffle,
   Sparkles,
@@ -75,9 +76,13 @@ import { ResultReveal } from "./modules/results/ResultReveal";
 import { resolveFinalWinner } from "./modules/results/finalWinner";
 import { WinnerHistory } from "./modules/winners/WinnerHistory";
 import { fortunaAudio } from "./shared/audio/audioEngine";
+import { parseAudioVolume } from "./shared/audio/audioPreferences";
 import { sha256Hex } from "./shared/crypto/sha256";
 import { SplashScreen } from "./shared/components/SplashScreen";
 import { AppUpdater } from "./shared/components/AppUpdater";
+import { GameDemoModal } from "./shared/tutorial/GameDemoModal";
+import { GuidedTour } from "./shared/tutorial/GuidedTour";
+import { gameGuides, type TutorialId } from "./shared/tutorial/tutorialContent";
 
 const secureRandomDegrees = () => {
   const values = new Uint32Array(1);
@@ -124,6 +129,8 @@ const formatEstimatedDuration = (
 const numberParity = (number: number): Parity =>
   number % 2 === 0 ? "even" : "odd";
 
+const tutorialSeenKey = (tutorialId: TutorialId) => `fortuna-real-tutorial-v2-${tutorialId}`;
+
 type ActiveScreen = "setup" | "roulette" | "cards" | "pinball" | "marbles" | "ducks";
 
 function App() {
@@ -133,6 +140,8 @@ function App() {
   const [pinballRoundKey, setPinballRoundKey] = useState(0);
   const [marbleRoundKey, setMarbleRoundKey] = useState(0);
   const [duckRoundKey, setDuckRoundKey] = useState(0);
+  const [activeTutorial, setActiveTutorial] = useState<TutorialId | null>(null);
+  const [demoGame, setDemoGame] = useState<GameId | null>(null);
   const [isSpinning, setIsSpinning] = useState(false);
   const [roundAnimating, setRoundAnimating] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(
@@ -141,10 +150,7 @@ function App() {
   const [voiceEnabled, setVoiceEnabled] = useState(
     () => localStorage.getItem("fortuna-real-voice") !== "off",
   );
-  const [audioVolume, setAudioVolume] = useState(() => {
-    const stored = Number(localStorage.getItem("fortuna-real-volume"));
-    return Number.isFinite(stored) && stored >= 0 && stored <= 1 ? stored : 0.8;
-  });
+  const [audioVolume, setAudioVolume] = useState(() => parseAudioVolume(localStorage.getItem("fortuna-real-volume")));
   const [spinRequest, setSpinRequest] = useState<{
     entryId: string;
     nonce: number;
@@ -556,11 +562,38 @@ function App() {
     }
   };
 
+  useEffect(() => {
+    if (showSplash || activeTutorial || demoGame || roundAnimating || currentResult) return;
+    if (localStorage.getItem(tutorialSeenKey(screen)) === "seen") return;
+    const timer = window.setTimeout(() => setActiveTutorial(screen), screen === "setup" ? 420 : 620);
+    return () => window.clearTimeout(timer);
+  }, [activeTutorial, currentResult, demoGame, roundAnimating, screen, showSplash]);
+
+  const closeTutorial = useCallback(() => {
+    if (activeTutorial) localStorage.setItem(tutorialSeenKey(activeTutorial), "seen");
+    setActiveTutorial(null);
+    if (activeTutorial === "setup") {
+      window.setTimeout(() => document.querySelector<HTMLInputElement>('input[aria-label="Nombre del participante"]')?.focus(), 80);
+    }
+  }, [activeTutorial]);
+
+  const openDemo = useCallback((selectedGame: GameId) => {
+    setActiveTutorial(null);
+    setDemoGame(selectedGame);
+  }, []);
+
+  const closeDemo = useCallback(() => {
+    setDemoGame(null);
+    if (screen === "setup") {
+      window.setTimeout(() => document.querySelector<HTMLInputElement>('input[aria-label="Nombre del participante"]')?.focus(), 80);
+    }
+  }, [screen]);
+
   return (
     <div className="app-root">
       {showSplash && <SplashScreen onDone={() => setShowSplash(false)} />}
 
-      <main className={`app-shell ${showSplash ? "app-shell--waiting" : ""}`}>
+      <main className={`app-shell ${showSplash ? "app-shell--waiting" : ""}`} inert={Boolean((activeTutorial || demoGame) && !currentResult)}>
         <Topbar
           screen={screen}
           game={game}
@@ -571,6 +604,11 @@ function App() {
           audioVolume={audioVolume}
           onVolumeChange={setAudioVolume}
           onToggleFullscreen={toggleFullscreen}
+          tutorialDisabled={roundAnimating}
+          onOpenTutorial={() => {
+            setDemoGame(null);
+            setActiveTutorial(screen);
+          }}
           onBack={returnToSetup}
           roundCommitted={roundLocked}
           roundNumber={roundNumber}
@@ -585,6 +623,8 @@ function App() {
             eligibleCount={activeParticipants.length}
             mode={mode}
             marbleDifficulty={marbleDifficulty}
+            onOpenTutorial={() => setActiveTutorial("setup")}
+            onOpenDemo={openDemo}
           />
         ) : screen === "roulette" ? (
           <RouletteScreen
@@ -706,7 +746,9 @@ function App() {
           soundEnabled={soundEnabled || voiceEnabled}
         />
       )}
-      <AppUpdater />
+      {activeTutorial && !currentResult && <GuidedTour key={activeTutorial} tutorialId={activeTutorial} onDone={closeTutorial} canNarrate={voiceEnabled && audioVolume > 0 && "speechSynthesis" in window} />}
+      {demoGame && !currentResult && <GameDemoModal initialGame={demoGame} onDone={closeDemo} canNarrate={voiceEnabled && audioVolume > 0 && "speechSynthesis" in window} />}
+      <AppUpdater blocked={showSplash || screen !== "setup" || roundAnimating || !!activeTutorial || !!demoGame || !!currentResult} />
     </div>
   );
 }
@@ -721,6 +763,8 @@ function Topbar({
   audioVolume,
   onVolumeChange,
   onToggleFullscreen,
+  onOpenTutorial,
+  tutorialDisabled,
   onBack,
   roundCommitted,
   roundNumber,
@@ -735,6 +779,8 @@ function Topbar({
   audioVolume: number;
   onVolumeChange: (volume: number) => void;
   onToggleFullscreen: () => void;
+  onOpenTutorial: () => void;
+  tutorialDisabled: boolean;
   onBack: () => void;
   roundCommitted: boolean;
   roundNumber: number;
@@ -829,8 +875,19 @@ function Topbar({
             aria-label="Volumen general"
           />
         </label>
-        <button className="icon-button" type="button" aria-label="Configuración de audio aplicada" disabled>
-          <Settings2 size={19} />
+        <button
+          className="icon-button"
+          type="button"
+          aria-label="Probar voz natural"
+          title="Probar la mejor voz en español disponible"
+          onClick={() => fortunaAudio.previewNarration()}
+          disabled={!voiceEnabled}
+        >
+          <AudioLines size={19} />
+        </button>
+        <button className="icon-button tutorial-help-button" type="button" disabled={tutorialDisabled} aria-label={screen === "setup" ? "Abrir tutorial del inicio" : "Abrir tutorial de este juego"} title={tutorialDisabled ? "La guía estará disponible al terminar esta ronda" : "Guía paso a paso"} onClick={onOpenTutorial}>
+          <HelpCircle size={20} />
+          <span>Guía</span>
         </button>
         <button className="icon-button" type="button" aria-label="Pantalla completa" onClick={onToggleFullscreen}>
           <Expand size={19} />
@@ -847,6 +904,8 @@ function SetupScreen({
   eligibleCount,
   mode,
   marbleDifficulty,
+  onOpenTutorial,
+  onOpenDemo,
 }: {
   onStart: () => void;
   game: GameId;
@@ -854,8 +913,16 @@ function SetupScreen({
   eligibleCount: number;
   mode: DrawMode;
   marbleDifficulty: MarbleDifficulty;
+  onOpenTutorial: () => void;
+  onOpenDemo: (game: GameId) => void;
 }) {
   const estimatedDuration = formatEstimatedDuration(game, eligibleCount, marbleDifficulty);
+  const selectedGuide = gameGuides[game];
+  const focusSetupControl = (selector: string) => {
+    const target = document.querySelector<HTMLElement>(selector);
+    target?.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth", block: "center" });
+    target?.focus({ preventScroll: true });
+  };
   return (
     <section className="setup-page">
       <div className="setup-hero">
@@ -863,6 +930,10 @@ function SetupScreen({
           <span className="eyebrow">CREAR NUEVO SORTEO</span>
           <h1>Prepara la fortuna</h1>
           <p>Carga todos los nombres que necesites: solo aparecerán las casillas ocupadas.</p>
+          <div className="setup-hero-help">
+            <button type="button" onClick={onOpenTutorial}><HelpCircle size={16} /> Tutorial del inicio</button>
+            <button type="button" onClick={() => onOpenDemo(game)}><Play size={15} /> Demo de {selectedGuide.title}</button>
+          </div>
         </div>
         <div className="setup-hero-actions">
           <div className="setup-summary">
@@ -875,6 +946,7 @@ function SetupScreen({
           <button
             type="button"
             className="start-button setup-start-button setup-hero-start"
+            data-tour="start-draw"
             onClick={onStart}
             disabled={eligibleCount < 2}
             title={eligibleCount < 2
@@ -886,10 +958,17 @@ function SetupScreen({
         </div>
       </div>
 
+      <nav className="setup-journey" aria-label="Pasos para iniciar el sorteo">
+        <button type="button" aria-label="Paso 1: cargar participantes" onClick={() => focusSetupControl('.setup-name-entry input')} className={participantCount >= 2 ? "is-complete" : "is-current"}><i>1</i><b>Participantes</b><small>{participantCount >= 2 ? `${participantCount} cargados` : "Agrega mínimo 2"}</small></button>
+        <button type="button" aria-label="Paso 2: elegir juego" onClick={() => focusSetupControl('.game-options--large [aria-checked="true"]')} className="is-ready"><i>2</i><b>Juego</b><small>{selectedGuide.title}</small></button>
+        <button type="button" aria-label="Paso 3: elegir modo" onClick={() => focusSetupControl('.mode-options--two [aria-checked="true"]')} className="is-ready"><i>3</i><b>Modo</b><small>{modeLabels[mode]}</small></button>
+        <button type="button" aria-label="Paso 4: entrar al juego" onClick={onStart} disabled={eligibleCount < 2} className={eligibleCount >= 2 ? "is-current" : ""}><i>4</i><b>Iniciar</b><small>{eligibleCount >= 2 ? "Todo listo" : "Pendiente"}</small></button>
+      </nav>
+
       <div className="setup-grid">
         <ParticipantPanel />
         <div className="setup-right-column">
-          <DrawSetup />
+          <DrawSetup onOpenDemo={onOpenDemo} />
           <WinnerHistory />
         </div>
       </div>
@@ -1347,7 +1426,7 @@ function PinballScreen({
       <section className="pinball-stage-column">
         <div className="stage-heading casino-stage-heading">
           <div>
-            <span className="eyebrow">{modeLabels[mode]} · RONDA {roundNumber}</span>
+            <span className="eyebrow">BETA · {modeLabels[mode]} · RONDA {roundNumber}</span>
             <h1>Pinball Real 3D</h1>
           </div>
           <div className="live-badge"><span /> {finalWinner ? "RONDA FINALIZADA" : controlMode === "automatic" ? "CONTROL AUTOMÁTICO" : "CONTROL MANUAL"}</div>
@@ -1507,7 +1586,7 @@ function MarblesScreen({
       <section className="marbles-stage-column">
         <div className="stage-heading casino-stage-heading">
           <div>
-            <span className="eyebrow">{modeLabels[mode]} · RONDA {roundNumber}</span>
+            <span className="eyebrow">BETA · {modeLabels[mode]} · RONDA {roundNumber}</span>
             <h1>Carrera de canicas</h1>
           </div>
           <div className="live-badge"><span /> {finalWinner ? "CARRERA FINALIZADA" : "PISTA PROCEDURAL"}</div>
@@ -1541,7 +1620,7 @@ function MarblesScreen({
           <div className="panel-title"><Flag size={18} /> {modeLabels[mode]}</div>
           <p className="mode-description">
             {mode === "direct"
-              ? "La primera canica en cruzar la meta gana. Queda fuera hasta que decidas habilitarla nuevamente."
+              ? "La primera canica en cruzar la meta gana. La persona ganadora queda fuera hasta que decidas habilitarla nuevamente."
               : "La última canica en cruzar queda eliminada. En cada ronda se genera una pista nueva."}
           </p>
           <div className="cards-process-mini marbles-process-mini">
@@ -1665,7 +1744,7 @@ function DucksScreen({
       <section className="ducks-stage-column">
         <div className="stage-heading casino-stage-heading ducks-stage-heading">
           <div>
-            <span className="eyebrow">SUPERVIVENCIA · 3 VIDAS</span>
+            <span className="eyebrow">BETA · SUPERVIVENCIA · 3 VIDAS</span>
             <h1>Patos de Fortuna</h1>
           </div>
           <div className="live-badge"><span /> {finalWinner ? "PARTIDA FINALIZADA" : "CAMPO DE TIRO 3D"}</div>

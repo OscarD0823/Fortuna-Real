@@ -849,8 +849,10 @@ dependencies = [
 
 [[package]]
 name = "fortuna-real"
-version = "1.0.0"
+version = "1.0.2"
 dependencies = [
+ "base64 0.22.1",
+ "minisign-verify",
  "serde",
  "serde_json",
  "tauri",

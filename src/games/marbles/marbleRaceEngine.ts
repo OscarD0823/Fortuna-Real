@@ -116,6 +116,17 @@ export interface MarbleRacer {
   durationMs: number;
   power: MarblePower | null;
   powerAt: number;
+  /** Rival al que se dirige un poder ofensivo; null para poderes propios. */
+  powerTargetId: string | null;
+  /** Poder ofensivo recibido desde una canica que venía detrás. */
+  incomingPower: MarblePower | null;
+  incomingPowerAt: number;
+  incomingPowerSourceId: string | null;
+  /** Probabilidad determinista de obtener poder según su posición provisional. */
+  comebackChance: number;
+  /** Punto de una eventual salida de pista; 2 significa que no habrá rescate. */
+  recoveryAt: number;
+  recoveryDirection: -1 | 1;
   lane: number;
   previousWinner: boolean;
 }
@@ -146,6 +157,12 @@ export interface MarbleMotionState {
   spinAngle: number;
   section: TrackSection;
   powerActive: boolean;
+  incomingPowerActive: boolean;
+  activePower: MarblePower | null;
+  recovering: boolean;
+  recoveryPhase: number;
+  recoveryDrop: number;
+  recoveryDirection: -1 | 1;
   radiusScale: number;
   finished: boolean;
 }
@@ -656,8 +673,8 @@ const buildVerticalProfile = (
   random: () => number,
   difficulty: MarbleDifficulty,
 ) => {
-  const variation = difficulty === "easy" ? 0.025 : difficulty === "medium" ? 0.046 : 0.065;
-  const maximumElevation = difficulty === "easy" ? 0.36 : difficulty === "medium" ? 0.68 : 0.92;
+  const variation = difficulty === "easy" ? 0.042 : difficulty === "medium" ? 0.072 : 0.1;
+  const maximumElevation = difficulty === "easy" ? 0.72 : difficulty === "medium" ? 1.2 : 1.72;
   const rawElevations = [0];
   let elevation = 0;
   drafts.forEach((draft, index) => {
@@ -668,14 +685,24 @@ const buildVerticalProfile = (
       + curveLift
       + (random() - 0.5) * variation
       + returnBias * 0.34;
-    elevation += clamp(change, -0.11, 0.12);
+    elevation += clamp(change, -0.18, 0.2);
     rawElevations.push(elevation);
   });
 
   // Los conectores inicial y final quedan a la misma altura, de modo que cualquier
   // conjunto de piezas se pueda sustituir por otro sin abrir una grieta en la pista.
   const drift = rawElevations[rawElevations.length - 1];
-  const leveled = rawElevations.map((value, index) => value - drift * (index / drafts.length));
+  const leveled = rawElevations.map((value, index) => {
+    const progress = index / drafts.length;
+    const returnToDeck = value - drift * progress;
+    const mountainEnvelope = Math.sin(progress * Math.PI);
+    const elevatedBackbone = mountainEnvelope * maximumElevation * (difficulty === "easy" ? 0.38 : difficulty === "medium" ? 0.5 : 0.58);
+    const rollingHills = Math.sin(progress * Math.PI * (difficulty === "hard" ? 5 : 3))
+      * mountainEnvelope
+      * maximumElevation
+      * 0.16;
+    return returnToDeck + elevatedBackbone + rollingHills;
+  });
   const range = Math.max(...leveled.map((value) => Math.abs(value)), 0.001);
   const scale = range > maximumElevation ? maximumElevation / range : 1;
   return leveled.map((value) => roundPoint(value * scale));
@@ -753,7 +780,7 @@ export const generateMarbleTrack = (
   });
   const elevations = buildVerticalProfile(sectionDrafts, random, difficulty);
   const maximumBank = difficulty === "easy" ? 0.16 : difficulty === "medium" ? 0.24 : 0.31;
-  const maximumBridgeLift = difficulty === "easy" ? 0.55 : difficulty === "medium" ? 0.85 : 1.15;
+  const maximumBridgeLift = difficulty === "easy" ? 0.72 : difficulty === "medium" ? 1.18 : 1.68;
   const bridgeLifts = sectionDrafts.map((draft) => draft.clearance < 0.07
     ? roundPoint(maximumBridgeLift * clamp(1 - draft.clearance / 0.07, 0.24, 1))
     : 0,
@@ -875,6 +902,21 @@ const powerDurationModifier: Record<MarblePower, number> = {
   restart: 1150,
 };
 
+const OFFENSIVE_POWERS = new Set<MarblePower>(["freeze", "reverse", "tiny", "restart"]);
+const recoveryChanceByDifficulty: Record<MarbleDifficulty, number> = {
+  easy: 0.018,
+  medium: 0.058,
+  hard: 0.1,
+};
+const recoveryPenaltyByDifficulty: Record<MarbleDifficulty, number> = {
+  easy: 760,
+  medium: 1_080,
+  hard: 1_360,
+};
+
+const isOffensivePower = (power: MarblePower | null): power is MarblePower =>
+  power !== null && OFFENSIVE_POWERS.has(power);
+
 export const prepareMarbleRace = (
   participants: readonly Participant[],
   mode: DrawMode,
@@ -886,24 +928,102 @@ export const prepareMarbleRace = (
   const track = generateMarbleTrack(seed, difficulty);
   const config = marbleDifficultyConfig[difficulty];
   const random = seededRandom(`racers-${difficulty}-${seed}-${participants.map((person) => person.id).join("|")}`);
-  const racers = participants.map((participant, index) => {
-    const hasPower = random() < config.powerChance;
-    const powerZone = hasPower ? track.powerZones[Math.floor(random() * track.powerZones.length)] : null;
-    const power = powerZone?.power ?? null;
-    const hue = (index * 137.508 + random() * 38) % 360;
-    const trapVariance = track.obstacles.length * (40 + random() * 42);
+  const drafts = participants.map((participant, index) => {
+    const powerRoll = random();
+    const powerZoneRoll = random();
+    const hueRoll = random();
+    const durationRoll = random();
+    const trapRoll = random();
+    const powerTimingRoll = random();
+    const laneRoll = random();
+    const targetRoll = random();
+    const recoveryRoll = random();
+    const recoveryPositionRoll = random();
+    const recoveryDirectionRoll = random();
+    const baseDurationMs = config.durationBaseMs
+      + durationRoll * 2_700
+      + track.obstacles.length * (40 + trapRoll * 42)
+      + index / 1_000;
     return {
-      id: `marble-${participant.id}`,
-      number: index + 1,
       participant,
-      color: participant.color,
-      accent: `hsl(${hue}, 86%, 67%)`,
-      durationMs: config.durationBaseMs + random() * 2700 + trapVariance + (power ? powerDurationModifier[power] : 0) + index / 1000,
+      index,
+      baseDurationMs,
+      powerRoll,
+      powerZoneRoll,
+      powerTimingRoll,
+      targetRoll,
+      recoveryRoll,
+      recoveryPositionRoll,
+      recoveryDirection: (recoveryDirectionRoll < 0.5 ? -1 : 1) as -1 | 1,
+      hue: (index * 137.508 + hueRoll * 38) % 360,
+      lane: laneRoll * 2 - 1,
+    };
+  });
+  const provisionalOrder = [...drafts].sort((first, second) => first.baseDurationMs - second.baseDurationMs);
+  const provisionalRank = new Map(provisionalOrder.map((draft, index) => [draft.participant.id, index]));
+
+  const racers = drafts.map((draft): MarbleRacer => {
+    const rank = provisionalRank.get(draft.participant.id) ?? 0;
+    const trailingRatio = participants.length <= 1 ? 0 : rank / (participants.length - 1);
+    const comebackChance = clamp(config.powerChance * (0.55 + trailingRatio * 0.68), 0.04, 0.98);
+    const hasPower = draft.powerRoll < comebackChance;
+    const powerZone = hasPower
+      ? track.powerZones[Math.min(track.powerZones.length - 1, Math.floor(draft.powerZoneRoll * track.powerZones.length))]
+      : null;
+    let power = powerZone?.power ?? null;
+    if (rank === 0 && isOffensivePower(power)) power = difficulty === "easy" ? "shield" : "boost";
+    const recoveryAt = draft.recoveryRoll < recoveryChanceByDifficulty[difficulty]
+      ? clamp(0.24 + draft.recoveryPositionRoll * 0.48, 0.2, 0.76)
+      : 2;
+    const ownPowerModifier = power && !isOffensivePower(power) ? powerDurationModifier[power] : 0;
+    return {
+      id: `marble-${draft.participant.id}`,
+      number: draft.index + 1,
+      participant: draft.participant,
+      color: draft.participant.color,
+      accent: `hsl(${draft.hue}, 86%, 67%)`,
+      durationMs: draft.baseDurationMs
+        + ownPowerModifier
+        + (recoveryAt < 1 ? recoveryPenaltyByDifficulty[difficulty] : 0),
       power,
-      powerAt: powerZone ? clamp(powerZone.progress + (random() - 0.5) * 0.025, 0.08, 0.92) : 2,
-      lane: random() * 2 - 1,
-      previousWinner: previousWinnerIds.has(participant.id),
+      powerAt: powerZone ? clamp(powerZone.progress + (draft.powerTimingRoll - 0.5) * 0.025, 0.08, 0.92) : 2,
+      powerTargetId: null,
+      incomingPower: null,
+      incomingPowerAt: 2,
+      incomingPowerSourceId: null,
+      comebackChance,
+      recoveryAt,
+      recoveryDirection: draft.recoveryDirection,
+      lane: draft.lane,
+      previousWinner: previousWinnerIds.has(draft.participant.id),
     } satisfies MarbleRacer;
+  });
+
+  racers.forEach((attacker) => {
+    if (!isOffensivePower(attacker.power)) return;
+    const attackerRank = provisionalRank.get(attacker.participant.id) ?? 0;
+    if (attackerRank <= 0) return;
+    const ahead = provisionalOrder.slice(0, attackerRank);
+    const leaderPoolSize = Math.max(1, Math.ceil(ahead.length * 0.42));
+    const leaderPool = ahead.slice(0, leaderPoolSize);
+    const draft = drafts[attacker.number - 1];
+    const startIndex = Math.min(leaderPool.length - 1, Math.floor(draft.targetRoll * leaderPool.length));
+    const orderedTargets = [
+      ...leaderPool.slice(startIndex),
+      ...leaderPool.slice(0, startIndex),
+    ];
+    const targetDraft = orderedTargets.find((candidate) => {
+      const racer = racers[candidate.index];
+      const shieldWouldBlock = racer.power === "shield" && Math.abs(racer.powerAt - attacker.powerAt) < 0.16;
+      return racer.incomingPower === null && !shieldWouldBlock;
+    });
+    if (!targetDraft) return;
+    const target = racers[targetDraft.index];
+    attacker.powerTargetId = target.id;
+    target.incomingPower = attacker.power;
+    target.incomingPowerAt = attacker.powerAt;
+    target.incomingPowerSourceId = attacker.id;
+    target.durationMs += powerDurationModifier[attacker.power];
   });
   const selected = mode === "direct"
     ? racers.reduce((best, racer) => racer.durationMs < best.durationMs ? racer : best)
@@ -983,29 +1103,40 @@ const profileProgressAtTime = (track: MarbleTrack, normalizedTime: number) => {
   return profile.progress[startIndex] + (profile.progress[endIndex] - profile.progress[startIndex]) * local;
 };
 
-const powerAdjustedProgress = (racer: MarbleRacer, track: MarbleTrack, raw: number) => {
-  // Arranque desde reposo y aceleración sostenida: no hay frenada artificial antes de meta.
-  const kineticTime = raw * raw * (2 - raw);
-  let progress = profileProgressAtTime(track, kineticTime);
-  const at = clamp(racer.powerAt, 0, 0.9);
-  const powerWindow = racer.power === "boost" ? 0.14 : racer.power === "restart" ? 0.11 : 0.09;
+const powerWindowFor = (power: MarblePower | null) =>
+  power === "boost" ? 0.14 : power === "restart" ? 0.11 : 0.09;
+
+const applyPowerProgress = (
+  sourceProgress: number,
+  power: MarblePower | null,
+  powerAt: number,
+) => {
+  if (!power) return sourceProgress;
+  let progress = sourceProgress;
+  const at = clamp(powerAt, 0, 0.9);
+  const powerWindow = powerWindowFor(power);
   const powerEnd = Math.min(0.965, at + powerWindow);
   const span = Math.max(0.001, powerEnd - at);
   const local = clamp((progress - at) / span, 0, 1);
-  if (racer.power === "boost" && progress >= at) {
+  if (power === "boost" && progress >= at) {
     const gain = Math.min(0.052, (1 - powerEnd) * 0.72);
     const boostedEnd = powerEnd + gain;
     progress = progress <= powerEnd
       ? at + (boostedEnd - at) * local
       : boostedEnd + (1 - boostedEnd) * ((progress - powerEnd) / Math.max(0.001, 1 - powerEnd));
-  } else if (racer.power === "freeze" && progress >= at) {
+  } else if (power === "freeze" && progress >= at) {
     const frozenEnd = at + span * 0.46;
     progress = progress <= powerEnd
       ? at + (frozenEnd - at) * local
       : frozenEnd + (1 - frozenEnd) * ((progress - powerEnd) / Math.max(0.001, 1 - powerEnd));
-  } else if (racer.power === "reverse" && progress >= at && progress <= powerEnd) {
+  } else if (power === "reverse" && progress >= at && progress <= powerEnd) {
     progress -= Math.sin(local * Math.PI) * 0.075;
-  } else if (racer.power === "restart" && progress >= at) {
+  } else if (power === "tiny" && progress >= at) {
+    const reducedEnd = at + span * 0.7;
+    progress = progress <= powerEnd
+      ? at + (reducedEnd - at) * local
+      : reducedEnd + (1 - reducedEnd) * ((progress - powerEnd) / Math.max(0.001, 1 - powerEnd));
+  } else if (power === "restart" && progress >= at) {
     const restartFloor = 0.025;
     if (progress <= powerEnd) {
       const smoothReturn = local * local * (3 - 2 * local);
@@ -1019,6 +1150,35 @@ const powerAdjustedProgress = (racer: MarbleRacer, track: MarbleTrack, raw: numb
   return clamp(progress, 0, 1);
 };
 
+const powerOnlyProgress = (racer: MarbleRacer, track: MarbleTrack, raw: number) => {
+  // Arranque desde reposo y aceleración sostenida: no hay frenada artificial antes de meta.
+  const kineticTime = raw * raw * (2 - raw);
+  let progress = profileProgressAtTime(track, kineticTime);
+  if (racer.power && !isOffensivePower(racer.power)) {
+    progress = applyPowerProgress(progress, racer.power, racer.powerAt);
+  }
+  if (racer.incomingPower) {
+    progress = applyPowerProgress(progress, racer.incomingPower, racer.incomingPowerAt);
+  }
+  return progress;
+};
+
+const applyRecoveryProgress = (racer: MarbleRacer, sourceProgress: number) => {
+  if (racer.recoveryAt >= 1 || sourceProgress < racer.recoveryAt) return sourceProgress;
+  const recoveryEnd = Math.min(0.92, racer.recoveryAt + 0.13);
+  if (sourceProgress <= recoveryEnd) {
+    const local = clamp((sourceProgress - racer.recoveryAt) / Math.max(0.001, recoveryEnd - racer.recoveryAt), 0, 1);
+    const smoothReturn = local * local * (3 - 2 * local);
+    return racer.recoveryAt + (0.012 - racer.recoveryAt) * smoothReturn;
+  }
+  const replay = clamp((sourceProgress - recoveryEnd) / Math.max(0.001, 1 - recoveryEnd), 0, 1);
+  const replayKinetic = replay * replay * (2 - replay);
+  return 0.012 + 0.988 * replayKinetic;
+};
+
+const powerAdjustedProgress = (racer: MarbleRacer, track: MarbleTrack, raw: number) =>
+  clamp(applyRecoveryProgress(racer, powerOnlyProgress(racer, track, raw)), 0, 1);
+
 export const getMarbleMotion = (
   racer: MarbleRacer,
   track: MarbleTrack,
@@ -1027,16 +1187,30 @@ export const getMarbleMotion = (
   const raw = clamp(elapsedMs / racer.durationMs, 0, 1);
   const progress = powerAdjustedProgress(racer, track, raw);
   const unadjustedProgress = profileProgressAtTime(track, raw * raw * (2 - raw));
+  const beforeRecoveryProgress = powerOnlyProgress(racer, track, raw);
   const section = sectionAtProgress(track, progress);
   const deltaRaw = 0.0015;
   const before = powerAdjustedProgress(racer, track, Math.max(0, raw - deltaRaw));
   const after = powerAdjustedProgress(racer, track, Math.min(1, raw + deltaRaw));
   const elapsedWindowSeconds = Math.max(0.0001, (Math.min(1, raw + deltaRaw) - Math.max(0, raw - deltaRaw)) * racer.durationMs / 1000);
   const velocity = (after - before) / elapsedWindowSeconds;
-  const powerActive = racer.power !== null && unadjustedProgress >= racer.powerAt && unadjustedProgress <= racer.powerAt + 0.115;
+  const powerActive = racer.power !== null
+    && unadjustedProgress >= racer.powerAt
+    && unadjustedProgress <= racer.powerAt + powerWindowFor(racer.power);
+  const incomingPowerActive = racer.incomingPower !== null
+    && unadjustedProgress >= racer.incomingPowerAt
+    && unadjustedProgress <= racer.incomingPowerAt + powerWindowFor(racer.incomingPower);
+  const recoveryEnd = racer.recoveryAt + 0.13;
+  const recovering = racer.recoveryAt < 1
+    && beforeRecoveryProgress >= racer.recoveryAt
+    && beforeRecoveryProgress <= recoveryEnd;
+  const recoveryPhase = recovering
+    ? clamp((beforeRecoveryProgress - racer.recoveryAt) / 0.13, 0, 1)
+    : 0;
+  const recoveryArc = recovering ? Math.sin(recoveryPhase * Math.PI) : 0;
   const radiusScale = racer.power === "giant" && powerActive
     ? 1.72
-    : racer.power === "tiny" && powerActive
+    : racer.incomingPower === "tiny" && incomingPowerActive
       ? 0.54
       : 1;
   let nearestObstacleDistance = Number.POSITIVE_INFINITY;
@@ -1053,9 +1227,11 @@ export const getMarbleMotion = (
     : 0;
   const gripDrift = (1 - Math.min(1, section.surfaceGrip)) * Math.sin(progress * 93 + racer.number * 1.77);
   const lateralImpulse = clamp(
-    gripDrift * 0.72 + Math.sin(elapsedMs / 48 + racer.number * 1.71) * collisionStrength,
-    -1.2,
-    1.2,
+    gripDrift * 0.72
+      + Math.sin(elapsedMs / 48 + racer.number * 1.71) * collisionStrength
+      + racer.recoveryDirection * recoveryArc * 5.2,
+    -5.4,
+    5.4,
   );
   const sectionSpan = Math.max(0.0001, section.endProgress - section.startProgress);
   const sectionLocal = clamp((progress - section.startProgress) / sectionSpan, 0, 1);
@@ -1071,6 +1247,12 @@ export const getMarbleMotion = (
     spinAngle: progress * 116 + racer.number * 0.31,
     section,
     powerActive,
+    incomingPowerActive,
+    activePower: incomingPowerActive ? racer.incomingPower : powerActive ? racer.power : null,
+    recovering,
+    recoveryPhase,
+    recoveryDrop: recoveryArc * (1.15 + track.risk * 0.13),
+    recoveryDirection: racer.recoveryDirection,
     radiusScale,
     finished: raw >= 1,
   };
@@ -1084,6 +1266,12 @@ export const getMarbleProgress = (racer: MarbleRacer, elapsedMs: number, track?:
     raw,
     progress: raw >= 1 ? 1 : raw * raw * (2 - raw),
     powerActive: racer.power !== null && raw >= racer.powerAt && raw <= racer.powerAt + 0.115,
+    incomingPowerActive: false,
+    activePower: racer.power !== null && raw >= racer.powerAt && raw <= racer.powerAt + 0.115 ? racer.power : null,
+    recovering: false,
+    recoveryPhase: 0,
+    recoveryDrop: 0,
+    recoveryDirection: racer.recoveryDirection,
     radiusScale: 1,
     finished: raw >= 1,
   };

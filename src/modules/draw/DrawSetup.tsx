@@ -1,6 +1,9 @@
 import {
   Bird,
+  BookOpen,
   Bot,
+  Check,
+  ChevronRight,
   CircleDot,
   Gem,
   Gamepad2,
@@ -8,9 +11,11 @@ import {
   Trophy,
   UsersRound,
 } from "lucide-react";
+import type { GameId } from "../../core/types";
+import { gameGuides } from "../../shared/tutorial/tutorialContent";
 import { useDrawStore } from "../participants/drawStore";
 
-export function DrawSetup() {
+export function DrawSetup({ onOpenDemo }: { onOpenDemo: (game: GameId) => void }) {
   const game = useDrawStore((state) => state.game);
   const mode = useDrawStore((state) => state.mode);
   const prize = useDrawStore((state) => state.prize);
@@ -19,6 +24,16 @@ export function DrawSetup() {
   const setMode = useDrawStore((state) => state.setMode);
   const setPrize = useDrawStore((state) => state.setPrize);
   const setPinballControlMode = useDrawStore((state) => state.setPinballControlMode);
+  const selectedGuide = gameGuides[game];
+  const selectedIcon = game === "roulette"
+    ? <CircleDot size={24} />
+    : game === "cards"
+      ? <Layers3 size={24} />
+      : game === "pinball"
+        ? <Gamepad2 size={24} />
+        : game === "marbles"
+          ? <Gem size={24} />
+          : <Bird size={24} />;
 
   return (
     <div className="setup-options-stack">
@@ -30,7 +45,7 @@ export function DrawSetup() {
             <p>Cinco juegos conectados al mismo sorteo e historial</p>
           </div>
         </div>
-        <div className="game-options game-options--large" role="radiogroup" aria-label="Juego del sorteo">
+        <div className="game-options game-options--large" data-tour="game-picker" role="radiogroup" aria-label="Juego del sorteo">
           <button
             type="button"
             role="radio"
@@ -57,29 +72,29 @@ export function DrawSetup() {
             type="button"
             role="radio"
             aria-checked={game === "pinball"}
-            className={`game-option ${game === "pinball" ? "is-active" : ""}`}
+            className={`game-option game-option--beta ${game === "pinball" ? "is-active" : ""}`}
             onClick={() => setGame("pinball")}
           >
             <Gamepad2 size={29} />
             <span>Pinball 3D</span>
-            <small>Nuevo</small>
+            <small>BETA · mesa física</small>
           </button>
           <button
             type="button"
             role="radio"
             aria-checked={game === "marbles"}
-            className={`game-option ${game === "marbles" ? "is-active" : ""}`}
+            className={`game-option game-option--beta ${game === "marbles" ? "is-active" : ""}`}
             onClick={() => setGame("marbles")}
           >
             <Gem size={29} />
             <span>Canicas</span>
-            <small>3D procedural</small>
+            <small>BETA · 3D procedural</small>
           </button>
           <button
             type="button"
             role="radio"
             aria-checked={game === "ducks"}
-            className={`game-option game-option--ducks ${game === "ducks" ? "is-active" : ""}`}
+            className={`game-option game-option--beta game-option--ducks ${game === "ducks" ? "is-active" : ""}`}
             onClick={() => {
               setGame("ducks");
               setMode("elimination");
@@ -87,12 +102,25 @@ export function DrawSetup() {
           >
             <Bird size={29} />
             <span>Patos 3D</span>
-            <small>Supervivencia</small>
+            <small>BETA · supervivencia</small>
+          </button>
+        </div>
+        <div className="selected-game-guide" data-tour="game-guide">
+          <div className="selected-game-guide__icon">{selectedIcon}</div>
+          <div className="selected-game-guide__copy">
+            <span><BookOpen size={14} /> Así funciona {selectedGuide.title}</span>
+            <strong>{selectedGuide.summary}</strong>
+            <div>
+              {selectedGuide.steps.slice(0, 3).map((step) => <small key={step.title}><Check size={12} /> {step.title}</small>)}
+            </div>
+          </div>
+          <button type="button" onClick={() => onOpenDemo(game)} aria-label={`Ver demostración paso a paso de ${selectedGuide.title}`}>
+            Ver demo paso a paso <ChevronRight size={16} />
           </button>
         </div>
       </section>
 
-      <section className="panel setup-choice-panel mode-choice-panel">
+      <section className="panel setup-choice-panel mode-choice-panel" data-tour="mode-picker">
         <div className="section-heading">
           <span className="step-number">3</span>
           <div>

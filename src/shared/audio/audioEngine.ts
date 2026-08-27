@@ -2,6 +2,33 @@ import type { RoundResult } from "../../core/types";
 
 type StopSound = () => void;
 
+const narrationVoiceScore = (voice: SpeechSynthesisVoice, online: boolean) => {
+  const language = voice.lang.toLocaleLowerCase();
+  const identity = `${voice.name} ${voice.voiceURI} ${language}`.toLocaleLowerCase();
+  if (!language.startsWith("es")) return Number.NEGATIVE_INFINITY;
+  if (!online && !voice.localService) return Number.NEGATIVE_INFINITY;
+
+  let score = 100;
+  if (language === "es-co") score += 240;
+  else if (language === "es-419") score += 190;
+  else if (language === "es-mx") score += 150;
+  else if (language === "es-us") score += 125;
+  else if (language === "es-es") score += 90;
+  if (/natural|neural|online/u.test(identity)) score += 210;
+  if (/salome|gonzalo|dalia|jorge|elvira|alvaro|sabina|helena/u.test(identity)) score += 65;
+  if (voice.localService) score += 24;
+  if (voice.default) score += 8;
+  return score;
+};
+
+const selectNarrationVoice = (voices: SpeechSynthesisVoice[]) => {
+  const online = typeof navigator === "undefined" || navigator.onLine !== false;
+  return [...voices]
+    .map((voice) => ({ voice, score: narrationVoiceScore(voice, online) }))
+    .filter(({ score }) => Number.isFinite(score))
+    .sort((left, right) => right.score - left.score)[0]?.voice ?? null;
+};
+
 class FortunaAudioEngine {
   private context: AudioContext | null = null;
   private output: GainNode | null = null;
@@ -332,6 +359,42 @@ class FortunaAudioEngine {
     }
   }
 
+  previewNarration() {
+    if (!this.voiceEnabled || typeof window === "undefined" || !("speechSynthesis" in window)) return;
+    if (typeof SpeechSynthesisUtterance === "undefined") return;
+    this.cancelAnnouncement();
+    const voice = selectNarrationVoice(window.speechSynthesis.getVoices());
+    const naturalVoice = Boolean(voice && /natural|neural|online/iu.test(`${voice.name} ${voice.voiceURI}`));
+    const preview = new SpeechSynthesisUtterance("Fortuna Real. La voz natural está lista para anunciar el próximo resultado.");
+    preview.voice = voice;
+    preview.lang = voice?.lang || "es-CO";
+    preview.rate = naturalVoice ? 0.98 : 0.92;
+    preview.pitch = naturalVoice ? 1 : 0.97;
+    preview.volume = this.volume;
+    window.speechSynthesis.speak(preview);
+  }
+
+  speakGuide(text: string) {
+    if (!this.voiceEnabled || typeof window === "undefined" || !("speechSynthesis" in window)) return;
+    if (typeof SpeechSynthesisUtterance === "undefined") return;
+    const guideText = text.replace(/\s+/gu, " ").trim().slice(0, 780);
+    if (!guideText) return;
+    this.cancelAnnouncement();
+    const voice = selectNarrationVoice(window.speechSynthesis.getVoices());
+    const naturalVoice = Boolean(voice && /natural|neural|online/iu.test(`${voice.name} ${voice.voiceURI}`));
+    const narration = new SpeechSynthesisUtterance(guideText);
+    narration.voice = voice;
+    narration.lang = voice?.lang || "es-CO";
+    narration.rate = naturalVoice ? 0.97 : 0.91;
+    narration.pitch = naturalVoice ? 1 : 0.97;
+    narration.volume = this.volume;
+    window.speechSynthesis.speak(narration);
+  }
+
+  stopNarration() {
+    this.cancelAnnouncement();
+  }
+
   announceResult(result: RoundResult) {
     if (!this.voiceEnabled || (result.kind !== "winner" && result.kind !== "eliminated")) return;
     if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
@@ -351,14 +414,7 @@ class FortunaAudioEngine {
           window.speechSynthesis.removeEventListener("voiceschanged", this.voiceChangeHandler);
           this.voiceChangeHandler = null;
         }
-      const spanishVoices = availableVoices.filter(
-        (voice) => voice.lang.toLocaleLowerCase().startsWith("es"),
-      );
-      const voice = spanishVoices.find(
-        (candidate) => /es-co|colombia|natural|neural|es-mx|mexico|mexican|sabina|helena|dalia|elvira/i.test(
-          `${candidate.name} ${candidate.lang}`,
-        ),
-      ) ?? spanishVoices[0] ?? null;
+      const voice = selectNarrationVoice(availableVoices);
 
       const contextLabel = result.game === "cards"
         ? result.selectionLabel || `Carta ${result.landedNumber}`
@@ -369,22 +425,11 @@ class FortunaAudioEngine {
         : result.game === "ducks"
           ? result.selectionLabel || `Pato ${result.landedNumber}`
           : `Número ${result.landedNumber}`;
-      const parts = result.kind === "winner"
+      const announcementText = result.kind === "winner"
         ? result.selectedParticipantName
-          ? [
-              { text: `Resultado confirmado. ${result.selectedParticipantName} ha sido eliminado.`, rate: 0.88, pitch: 0.82 },
-              { text: `¡Atención! ${result.participantName} es el gran ganador de Fortuna Real.`, rate: 0.96, pitch: 1.08 },
-              { text: `Premio: ${result.prize || "premio del sorteo"}. ¡Felicidades!`, rate: 1, pitch: 1.12 },
-            ]
-          : [
-              { text: "¡Atención! Fortuna Real tiene un resultado.", rate: 0.97, pitch: 1.02 },
-              { text: `${contextLabel}. ¡${result.participantName} es el gran ganador!`, rate: 0.94, pitch: 1.12 },
-              { text: `Premio: ${result.prize || "premio del sorteo"}. ¡Felicidades!`, rate: 1, pitch: 1.15 },
-            ]
-        : [
-              { text: "Atención. Resultado confirmado.", rate: 0.92, pitch: 0.94 },
-              { text: `${contextLabel}. ${result.participantName}. Eliminado.`, rate: 0.9, pitch: 0.9 },
-          ];
+          ? `Resultado confirmado. ${result.selectedParticipantName} queda fuera de la ronda; y ${result.participantName} gana Fortuna Real. El premio es ${result.prize || "el premio del sorteo"}. ¡Felicitaciones!`
+          : `Atención, Fortuna Real tiene un resultado. ${contextLabel}: ${result.participantName} gana. El premio es ${result.prize || "el premio del sorteo"}. ¡Felicitaciones!`
+        : `Resultado confirmado. ${contextLabel}: ${result.participantName} queda fuera de la ronda.`;
 
       if (result.kind === "winner") {
         [659, 831, 1047].forEach((frequency, index) => this.tone(frequency, 0.45, {
@@ -397,15 +442,14 @@ class FortunaAudioEngine {
         this.tone(330, 0.32, { type: "sine", volume: 0.04, delay: 0.19, endFrequency: 220 });
       }
 
-      parts.forEach((part) => {
-        const announcement = new SpeechSynthesisUtterance(part.text);
-        announcement.voice = voice;
-        announcement.lang = voice?.lang || "es-CO";
-        announcement.rate = part.rate;
-        announcement.pitch = part.pitch;
-        announcement.volume = this.volume;
-        window.speechSynthesis.speak(announcement);
-      });
+      const naturalVoice = Boolean(voice && /natural|neural|online/iu.test(`${voice.name} ${voice.voiceURI}`));
+      const announcement = new SpeechSynthesisUtterance(announcementText);
+      announcement.voice = voice;
+      announcement.lang = voice?.lang || "es-CO";
+      announcement.rate = result.kind === "winner" ? (naturalVoice ? 0.98 : 0.92) : (naturalVoice ? 0.96 : 0.9);
+      announcement.pitch = naturalVoice ? 1 : 0.97;
+      announcement.volume = this.volume;
+      window.speechSynthesis.speak(announcement);
       };
       this.voiceChangeHandler = () => speak();
       window.speechSynthesis.addEventListener("voiceschanged", this.voiceChangeHandler, { once: true });

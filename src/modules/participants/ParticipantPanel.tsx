@@ -89,6 +89,12 @@ export function ParticipantPanel() {
         <input
           value={name}
           onChange={(event) => setName(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && !event.nativeEvent.isComposing) {
+              event.preventDefault();
+              addSingle();
+            }
+          }}
           placeholder="Escribe un nombre"
           maxLength={MAX_PARTICIPANT_NAME_LENGTH}
           aria-label="Nombre del participante"
@@ -106,6 +112,8 @@ export function ParticipantPanel() {
         <button
           type="button"
           onClick={() => setShowBulk((visible) => !visible)}
+          aria-expanded={showBulk}
+          aria-controls="participant-bulk-entry"
           disabled={isFull}
         >
           <ClipboardPaste size={16} /> Pegar varios nombres
@@ -125,8 +133,9 @@ export function ParticipantPanel() {
       </div>
 
       {showBulk && (
-        <div className="bulk-entry setup-bulk-entry">
+        <div id="participant-bulk-entry" className="bulk-entry setup-bulk-entry">
           <textarea
+            aria-label="Lista de nombres separados por comas o saltos de línea"
             value={bulkText}
             onChange={(event) => setBulkText(event.target.value)}
             placeholder={'Pega nombres separados por comas o líneas:\nLaura\nSantiago\nMariana'}

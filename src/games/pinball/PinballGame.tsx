@@ -35,7 +35,7 @@ export function PinballGame({
   onFinish: (assignment: PinballBallAssignment, label: string) => void;
 }) {
   const [seed, setSeed] = useState(() => initialSeed?.trim() || createPinballSeed());
-  const resumedSeed = Boolean(initialSeed?.trim());
+  const [resumedSeed] = useState(() => Boolean(initialSeed?.trim()));
   const [roundParticipants] = useState(() => participants);
   const [roundPreviousWinnerIds] = useState(() => new Set(previousWinnerIds));
   const [phase, setPhase] = useState<PinballPhase>("ready");
@@ -232,6 +232,7 @@ export function PinballGame({
       data-render-mode={renderMode}
       data-launch-mode="simultaneous"
       data-camera-target={cameraTargetId ?? "overview"}
+      data-release-stage="beta"
     >
       <div className="pinball-game__status" aria-live="polite">
         <span className="pinball-game__mode-icon">{controlMode === "automatic" ? <Bot size={19} /> : <Gamepad2 size={19} />}</span>

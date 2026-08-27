@@ -1,11 +1,11 @@
 ============================================================
-                 FORTUNA REAL 1.0.0
+                 FORTUNA REAL 1.0.2
              GUÍA DE INSTALACIÓN Y USO
 ============================================================
 
 CONTENIDO DE ESTA CARPETA
 
-- Fortuna-Real-1.0.0-Instalador.exe
+- Fortuna-Real-1.0.2-Instalador.exe
   Es el instalador de Fortuna Real para Windows.
 
 - INSTRUCCIONES - LEER PRIMERO.txt
@@ -15,16 +15,20 @@ CONTENIDO DE ESTA CARPETA
 1. REQUISITOS
 
 - Computador con Windows 10 u 11 de 64 bits.
-- Aproximadamente 500 MB de espacio disponible.
+- Al menos 1 GB de espacio libre durante la instalación (incluye WebView2).
+- Para el 3D, controlador gráfico actualizado y compatibilidad WebGL 2.
+- No necesitas Node.js, Rust, Visual Studio ni conexión para instalar o jugar.
+  El instalador incluye WebView2 si Windows todavía no lo tiene.
+  Internet solo se necesita para buscar/descargar nuevas actualizaciones.
 
 
 2. CÓMO INSTALAR FORTUNA REAL
 
-1. Abre la carpeta “Fortuna Real 1.0.0”.
-2. Haz doble clic en “Fortuna-Real-1.0.0-Instalador.exe”.
+1. Abre la carpeta donde recibiste el instalador.
+2. Haz doble clic en “Fortuna-Real-1.0.2-Instalador.exe”.
 3. Si Windows muestra “Windows protegió su PC”:
    a. Pulsa “Más información”.
-   b. Comprueba que el archivo sea Fortuna-Real-1.0.0-Instalador.exe.
+   b. Comprueba que el archivo sea Fortuna-Real-1.0.2-Instalador.exe.
    c. Pulsa “Ejecutar de todas formas”.
 4. Sigue las instrucciones del instalador.
 5. Abre “Fortuna Real” desde el menú Inicio o su acceso directo.
@@ -36,8 +40,19 @@ persona de confianza.
 
 3. PREPARAR UN SORTEO
 
+Antes de empezar aparece una guía sobre la pantalla. Puedes repetirla con
+el botón “Guía”. La barra de pasos permite ir directamente al campo que necesitas.
+“Ver demo paso a paso” explica cada juego en cuatro pasos. En Ruleta puedes
+practicar cómo agregar nombres y en Cartas puedes revelar una carta de ejemplo;
+estas prácticas no se guardan ni cambian tu sorteo real.
+
 1. Agrega los nombres uno por uno o usa “Pegar varios nombres”.
+   Para uno solo, escribe el nombre y pulsa Enter o +.
+   Para varios, usa una persona por línea o comas: Ana, Bruno, Camila.
+   Después pulsa “Agregar nombres”. Se omiten los nombres repetidos.
 2. Selecciona Ruleta, Cartas, Pinball 3D, Canicas 3D o Patos 3D.
+   Pinball 3D, Canicas 3D y Patos 3D aparecen identificados como BETA mientras
+   continúan recibiendo mejoras visuales, de cámara y rendimiento.
 3. Elige Ganador directo o Eliminación.
 4. Escribe el premio.
 5. Pulsa “Iniciar sorteo”.
@@ -54,16 +69,15 @@ Modo automático:
 
 Modo manual:
 - Pulsa “Encender y jugar”.
-- Usa LANZAR o la barra espaciadora hasta soltar todas las pelotas.
+- Usa LANZAR o la barra espaciadora una vez para soltar todas las pelotas juntas.
 - Usa A o flecha izquierda para el flipper izquierdo.
 - Usa D o flecha derecha para el flipper derecho.
 - También puedes usar los tres botones de la pantalla.
 
-En Ganador directo, la primera pelota válida que atraviesa la meta gana. En
-Eliminación, esa pelota elimina una sola persona. En automático la máquina
-controla toda la partida y es el modo recomendado para un sorteo neutral. En
-manual, los lanzamientos y los flippers sí pueden alterar la trayectoria y el
-orden de llegada; úsalo solamente si quieres una experiencia de habilidad.
+En Ganador directo, la pelota sellada representa al ganador. En Eliminación,
+representa a la persona eliminada. En automático la máquina controla la partida.
+En manual puedes cambiar trayectorias y activar flippers, pero no cambiar el
+resultado previamente sellado. Todos los modos conservan el mismo compromiso.
 La mesa admite listas de 2 a 200 participantes.
 
 
@@ -93,6 +107,9 @@ La mesa admite listas de 2 a 200 participantes.
 - En Eliminación, sale la última canica que cruza la meta.
 - Fácil, Medio y Difícil cambian longitud, obstáculos, poderes y duración.
 - La pista se genera de nuevo para cada ronda.
+- El selector de cámara permite seguir a cualquier participante. Las flechas
+  cambian de canica; el botón de estilo cambia entre persecución, a bordo y aérea.
+- Si una canica sale del canal, regresa de forma segura a la salida.
 - Al reanudar una ronda comprometida se reconstruyen pista, orden y resultado;
   no se permite cambiar mapa ni dificultad.
 
@@ -104,10 +121,14 @@ La mesa admite listas de 2 a 200 participantes.
   de impactos y lo sella con SHA-256. Un clic acertado solo avanza ese orden:
   no permite escoger quién pierde la vida.
 - Nombre, color y corona permanecen ocultos hasta el primer impacto oficial.
+- Los refugios esconden también los letreros de los patos. Cada impacto provoca
+  una salida colectiva. Paleta, temblor e inversión son efectos temporales.
+- Puedes apuntar o usar “Siguiente impacto”; “Resolución automática” termina
+  el orden sellado sin cambiar la persona ganadora.
 - Si la vista 3D no puede abrirse, aparece un control accesible que consume el
   mismo orden sellado; no se vuelve a sortear.
-- Con listas grandes, la espera entre impactos baja automáticamente: 2,08 s
-  hasta 20; 0,98 s de 21 a 50; 0,52 s de 51 a 100; y 0,26 s de 101 a 200.
+- Con listas grandes, la espera entre impactos baja automáticamente. El tiempo
+  exacto se muestra junto a los controles de la bandada.
 
 
 9. COMPROMISO, DURACIÓN Y CANCELACIÓN
@@ -128,7 +149,9 @@ La mesa admite listas de 2 a 200 participantes.
 - Los ganadores y premios quedan guardados aunque cambies de juego.
 - Un ganador no se repite hasta que pulses “Volver a incluir”.
 - Volver a incluir no borra los premios anteriores.
-- El altavoz activa o silencia sonidos y anuncios por voz.
+- El altavoz controla los sonidos; el micrófono controla la locución.
+- La voz depende de las voces instaladas en Windows. Si no hay una voz española
+  compatible, las instrucciones y los resultados siguen disponibles en pantalla.
 - El botón de las cuatro esquinas activa la pantalla completa.
 - En Patos, enfoca el campo y pulsa Enter o Espacio para registrar el siguiente
   impacto comprometido. Escape cierra el diálogo de resultado.

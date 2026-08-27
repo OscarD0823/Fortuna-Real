@@ -32,7 +32,10 @@ let pinballPhysicsSteps = 0;
 let marbleMotionSamples = 0;
 let marbleConnectorChecks = 0;
 let marbleBridgeSections = 0;
+let marbleComebackTargets = 0;
+let marbleRecoveryRacers = 0;
 let minimumMarbleCoverage = 1;
+let maximumMarbleElevation = 0;
 const pinballSignatures = new Set<string>();
 const marbleSignatures = new Set<string>();
 
@@ -231,12 +234,15 @@ for (let count = 2; count <= 200; count += 1) {
     const xs = track.points.map((point) => point.x);
     const ys = track.points.map((point) => point.y);
     const coverage = (Math.max(...xs) - Math.min(...xs)) * (Math.max(...ys) - Math.min(...ys));
+    const elevationPeak = Math.max(...track.points.map((point) => point.elevation ?? 0));
     minimumMarbleCoverage = Math.min(minimumMarbleCoverage, coverage);
+    maximumMarbleElevation = Math.max(maximumMarbleElevation, elevationPeak);
     if (
       !validation.valid
       || track.sections.length !== expected.sectionCount
       || track.points.length <= track.sections.length * 4
       || coverage < 0.18
+      || elevationPeak < (marbleDifficulty === "easy" ? 0.2 : marbleDifficulty === "medium" ? 0.45 : 0.72)
       || ![track.points[0].x, track.points[0].y].some((coordinate) =>
         Math.abs(coordinate - 0.065) < 0.00001 || Math.abs(coordinate - 0.935) < 0.00001,
       )
@@ -268,6 +274,7 @@ for (let count = 2; count <= 200; count += 1) {
     }
   }
   const marbleRace = prepareMarbleRace(participants, "direct", marbleSeed, marbleDifficulty);
+  const comebackChances = marbleRace.racers.map((racer) => racer.comebackChance);
   if (
     marbleRace.racers.length !== count
     || new Set(marbleRace.racers.map((racer) => racer.participant.id)).size !== count
@@ -275,7 +282,18 @@ for (let count = 2; count <= 200; count += 1) {
   ) {
     throw new Error(`Asignación de canicas inválida para ${count} participantes.`);
   }
+  if (count >= 12 && Math.max(...comebackChances) - Math.min(...comebackChances) < 0.1) {
+    throw new Error(`La asistencia de remontada no favorece suficientemente a los últimos para ${count} participantes.`);
+  }
   marbleRace.racers.forEach((racer) => {
+    if (racer.powerTargetId) {
+      const target = marbleRace.racers.find((candidate) => candidate.id === racer.powerTargetId);
+      if (!target || target.incomingPower !== racer.power || target.incomingPowerSourceId !== racer.id) {
+        throw new Error(`El poder ofensivo de la canica ${racer.number} no quedó enlazado a su rival.`);
+      }
+      marbleComebackTargets += 1;
+    }
+    if (racer.recoveryAt < 1) marbleRecoveryRacers += 1;
     [0, 0.25, 0.5, 0.75, 1].forEach((timeRatio) => {
       const motion = getMarbleMotion(racer, marbleRace.track, racer.durationMs * timeRatio);
       if (
@@ -290,6 +308,10 @@ for (let count = 2; count <= 200; count += 1) {
     });
   });
   maxMarbleLogicMs = Math.max(maxMarbleLogicMs, performance.now() - caseStartedAt);
+}
+
+if (marbleComebackTargets === 0 || marbleRecoveryRacers === 0) {
+  throw new Error("La batería de capacidad no activó poderes de remontada y rescates de pista.");
 }
 
 console.log(JSON.stringify({
@@ -307,6 +329,9 @@ console.log(JSON.stringify({
   marbleMotionSamples,
   marbleConnectorChecks,
   marbleBridgeSections,
+  marbleComebackTargets,
+  marbleRecoveryRacers,
+  maximumMarbleElevation: Number(maximumMarbleElevation.toFixed(3)),
   minimumMarbleCoverage: Number(minimumMarbleCoverage.toFixed(3)),
   marblesIncludedInRelease: true,
   maxCardLogicMs: Number(maxCardLogicMs.toFixed(3)),
