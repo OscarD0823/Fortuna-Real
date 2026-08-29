@@ -16,7 +16,9 @@ Plataforma comprobada: Windows x64
 - Firma y `latest.json`: verificados con la clave pública incluida en la aplicación.
 - ZIP: cuatro entradas esperadas y lectura completa aprobada.
 - Ejecutable portátil: proceso nativo iniciado correctamente desde `Entrega/Programa`.
-- Iniciador GitHub: sintaxis, dirección fija, modo `-CheckOnly` y controles de copia local aprobados.
+- Iniciador GitHub: descarga pública sin credenciales, instalación completa de
+  dependencias y modo `-CheckOnly` aprobados en una carpeta temporal limpia.
+- ZIP del iniciador: conserva juntos `.cmd`, `.ps1` y guía para evitar descargas incompletas.
 
 ## Entrega
 
@@ -30,6 +32,10 @@ SHA-256 del instalador:
 SHA-256 del ZIP:
 
 `E61379DD82D5F3F415B2ADEC6CFD22C797614ABBC1982D0FB7E2EFD34F109F60`
+
+SHA-256 del ZIP del iniciador público:
+
+`CAD41BC94477948FB1620ADCD25C11F1E3597433286F6E78F75AFCE48AC74B54`
 
 ## Alcance honesto
 

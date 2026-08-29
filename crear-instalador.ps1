@@ -478,6 +478,16 @@ Autor: OscarD0823
 "@ | Set-Content -LiteralPath (Join-Path $ProgramOutput "LEEME.txt") -Encoding utf8
     Get-ChildItem -LiteralPath (Join-Path $ProjectRoot "iniciador") -Force |
         Copy-Item -Destination $StarterOutput -Recurse -Force
+    $starterZipPath = Join-Path $StarterOutput "Fortuna-Real-$version-Iniciador.zip"
+    $starterZipTemporary = Join-Path $BuildCache "Fortuna-Real-$version-Iniciador.zip"
+    if (Test-Path -LiteralPath $starterZipTemporary) { Remove-Item -LiteralPath $starterZipTemporary -Force }
+    [IO.Compression.ZipFile]::CreateFromDirectory(
+        $StarterOutput,
+        $starterZipTemporary,
+        [IO.Compression.CompressionLevel]::Optimal,
+        $false
+    )
+    Move-Item -LiteralPath $starterZipTemporary -Destination $starterZipPath -Force
 
     # Solo después de verificar firma, manifiesto y ZIP se retiran entregas
     # anteriores. Las rutas están ancladas a este repositorio.
@@ -524,6 +534,7 @@ Autor: OscarD0823
             $signatureDestination `
             $latestPath `
             $zipPath `
+            $starterZipPath `
             --repo $ReleaseRepository `
             --target main `
             --title "Fortuna Real $releaseTag" `
@@ -550,6 +561,7 @@ Autor: OscarD0823
     Write-Host "  $signatureDestination" -ForegroundColor White
     Write-Host "  $latestPath" -ForegroundColor White
     Write-Host "  $zipPath" -ForegroundColor White
+    Write-Host "  $starterZipPath" -ForegroundColor White
     Write-Host "  $ProgramOutput" -ForegroundColor White
     Write-Host "  $StarterOutput" -ForegroundColor White
     Write-Host ""

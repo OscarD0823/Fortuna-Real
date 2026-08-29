@@ -109,6 +109,7 @@ for (const marker of [
   '"Instaladores"',
   '"Iniciador"',
   "ZipFile]::CreateFromDirectory",
+  "Fortuna-Real-$version-Iniciador.zip",
   "Fortuna-Real-Portable.exe",
   "Get-ChildItem -LiteralPath $InstallerOutput",
 ]) {
@@ -116,13 +117,14 @@ for (const marker of [
 }
 for (const marker of [
   '"OscarD0823/Fortuna-Real"',
-  "gh.exe auth login",
-  "gh.exe repo clone",
+  "git.exe clone",
+  "--depth 1",
   "npm.cmd ci",
   "status --porcelain",
 ]) {
   assert.ok(githubStarter.includes(marker), `El iniciador de GitHub no aplica: ${marker}.`);
 }
+assert.ok(!githubStarter.includes("gh.exe"), "El iniciador público no debe exigir GitHub CLI ni autenticación.");
 
 console.log(JSON.stringify({
   version: packageJson.version,
@@ -137,5 +139,5 @@ console.log(JSON.stringify({
   offlineWebViewBundled: true,
   distributedSignatureVerification: true,
   deliveryFolders: ["Programa", "Instaladores", "Iniciador"],
-  privateRepositoryStarter: true,
+  publicRepositoryStarter: true,
 }));

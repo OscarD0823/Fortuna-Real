@@ -19,7 +19,7 @@ Después de ejecutar `npm run crear-instalador`, `Entrega` contiene exactamente:
 Entrega/
 ├── Programa/       # ejecutable portátil y guía
 ├── Instaladores/   # instalador normal, ZIP, firma y latest.json
-└── Iniciador/      # descarga autenticada del repositorio privado
+└── Iniciador/      # descarga pública del proyecto y ZIP autocontenido
 ```
 
 El instalador normal es la opción recomendada. Configura Fortuna Real, crea los accesos de Windows e instala
@@ -29,10 +29,10 @@ para instalar/jugar, Node.js, Rust, Visual Studio ni copiar el código del proye
 Internet solo se utiliza para buscar o descargar actualizaciones. La voz disponible
 depende de las voces instaladas en Windows; los juegos también funcionan sin voz.
 
-El iniciador de respaldo nunca contiene credenciales. Abre la autorización de
-GitHub, comprueba que la cuenta tenga acceso a `OscarD0823/Fortuna-Real`, permite
-elegir la carpeta de destino e instala las dependencias declaradas. Como el
-repositorio es privado, una cuenta sin acceso no puede descargarlo.
+El iniciador de respaldo nunca contiene credenciales ni exige iniciar sesión.
+Descarga el repositorio público `OscarD0823/Fortuna-Real`, permite elegir la
+carpeta de destino e instala las dependencias declaradas. Para distribuirlo se
+usa el ZIP del iniciador, que mantiene juntos el `.cmd`, el `.ps1` y su guía.
 
 ## Inicio guiado y demos
 
