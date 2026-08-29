@@ -1,12 +1,18 @@
 ============================================================
-                 FORTUNA REAL 1.0.2
+                 FORTUNA REAL 1.0.3
              GUÍA DE INSTALACIÓN Y USO
 ============================================================
 
 CONTENIDO DE ESTA CARPETA
 
-- Fortuna-Real-1.0.2-Instalador.exe
+- Fortuna-Real-1.0.3-Instalador.exe
   Es el instalador de Fortuna Real para Windows.
+
+- Fortuna-Real-1.0.3-Instalador.zip
+  Es una copia comprimida del instalador, su firma y su manifiesto.
+
+- latest.json y el archivo .sig
+  Permiten comprobar y distribuir actualizaciones firmadas. No los edites.
 
 - INSTRUCCIONES - LEER PRIMERO.txt
   Es este instructivo.
@@ -25,10 +31,10 @@ CONTENIDO DE ESTA CARPETA
 2. CÓMO INSTALAR FORTUNA REAL
 
 1. Abre la carpeta donde recibiste el instalador.
-2. Haz doble clic en “Fortuna-Real-1.0.2-Instalador.exe”.
+2. Haz doble clic en “Fortuna-Real-1.0.3-Instalador.exe”.
 3. Si Windows muestra “Windows protegió su PC”:
    a. Pulsa “Más información”.
-   b. Comprueba que el archivo sea Fortuna-Real-1.0.2-Instalador.exe.
+   b. Comprueba que el archivo sea Fortuna-Real-1.0.3-Instalador.exe.
    c. Pulsa “Ejecutar de todas formas”.
 4. Sigue las instrucciones del instalador.
 5. Abre “Fortuna Real” desde el menú Inicio o su acceso directo.

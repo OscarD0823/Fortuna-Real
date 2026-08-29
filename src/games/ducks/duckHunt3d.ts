@@ -19,6 +19,8 @@ export interface DuckHuntStats {
 export interface DuckHuntController {
   updateContestants: (contestants: readonly DuckContestant[]) => void;
   setRunning: (running: boolean) => void;
+  beginWave: (duckIds: readonly string[]) => void;
+  escapeWave: () => void;
   shoot: (clientX: number, clientY: number) => DuckShotTarget;
   castPower: (casterId: string) => void;
   resetFlock: (targetId: string, labelOverride?: string) => void;
@@ -137,6 +139,9 @@ export const createDuckHunt3D = (
   let shotFlashUntil = 0;
   let powerPulseUntil = 0;
   let powerCasterId: string | null = null;
+  let activeWaveIds = new Set<string>();
+  let escapeStartedAt = 0;
+  let escapeUntil = 0;
 
   const renderer = new THREE.WebGLRenderer({
     canvas,
@@ -149,31 +154,25 @@ export const createDuckHunt3D = (
   );
   renderer.setPixelRatio(maximumPixelRatio);
   canvas.dataset.renderQuality = "high";
-  canvas.dataset.environment = "forest-pond-elevated";
+  canvas.dataset.environment = "classic-duck-field-3d";
+  canvas.dataset.cameraMode = "classic-fixed";
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.06;
+  renderer.toneMappingExposure = 1.12;
   renderer.shadowMap.enabled = initialContestants.length <= 48;
   renderer.shadowMap.type = THREE.PCFShadowMap;
 
   const scene = new THREE.Scene();
   scene.name = "SC_DuckHunt";
-  scene.background = new THREE.Color("#071927");
-  scene.fog = new THREE.FogExp2("#071927", 0.022);
-  const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 90);
-  const overviewCameraPosition = new THREE.Vector3(0, 6.8, 18.2);
-  const overviewCameraTarget = new THREE.Vector3(0, 3.75, 0.25);
-  const readyCameraPosition = initialContestants.length > 120
-    ? new THREE.Vector3(0, 6.1, 17.4)
-    : initialContestants.length > 60
-      ? new THREE.Vector3(0, 5.7, 15.2)
-      : new THREE.Vector3(0, 4.6, 11.8);
-  const readyCameraTarget = new THREE.Vector3(0, 1.75, 0.5);
-  const cameraTarget = new THREE.Vector3();
-  camera.position.copy(readyCameraPosition);
-  camera.lookAt(readyCameraTarget);
+  scene.background = new THREE.Color("#63b9e9");
+  scene.fog = new THREE.Fog("#8dd1ee", 28, 58);
+  const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 90);
+  const classicCameraPosition = new THREE.Vector3(0, 5.3, 20.8);
+  const classicCameraTarget = new THREE.Vector3(0, 4.25, 0.2);
+  camera.position.copy(classicCameraPosition);
+  camera.lookAt(classicCameraTarget);
 
-  scene.add(new THREE.HemisphereLight("#bfeeff", "#172509", 2.2));
+  scene.add(new THREE.HemisphereLight("#e8f8ff", "#396519", 2.8));
   const sun = new THREE.DirectionalLight("#fff0c2", 3.8);
   sun.position.set(-8, 13, 8);
   sun.castShadow = renderer.shadowMap.enabled;
@@ -183,13 +182,13 @@ export const createDuckHunt3D = (
   sun.shadow.camera.top = 13;
   sun.shadow.camera.bottom = -8;
   scene.add(sun);
-  const moonRim = new THREE.PointLight("#76dcff", 22, 28, 1.8);
-  moonRim.position.set(-8.8, 8.2, -5.8);
-  scene.add(moonRim);
+  const skyRim = new THREE.PointLight("#fff1b5", 18, 30, 1.8);
+  skyRim.position.set(-8.8, 9.5, -5.8);
+  scene.add(skyRim);
 
   const ground = new THREE.Mesh(
     new THREE.PlaneGeometry(44, 28),
-    new THREE.MeshStandardMaterial({ color: "#142817", roughness: 0.96, metalness: 0.02 }),
+    new THREE.MeshStandardMaterial({ color: "#527c24", roughness: 0.96, metalness: 0.02 }),
   );
   ground.rotation.x = -Math.PI / 2;
   ground.position.set(0, -0.05, -2);
@@ -305,22 +304,22 @@ export const createDuckHunt3D = (
 
   const horizon = new THREE.Mesh(
     new THREE.PlaneGeometry(45, 15),
-    new THREE.MeshBasicMaterial({ color: "#0d3444", fog: true }),
+    new THREE.MeshBasicMaterial({ color: "#77c7e9", fog: true }),
   );
   horizon.position.set(0, 6.5, -10.5);
   scene.add(horizon);
 
-  const moon = new THREE.Mesh(
+  const sunDisc = new THREE.Mesh(
     new THREE.CircleGeometry(1.35, 40),
-    new THREE.MeshBasicMaterial({ color: "#ffd77a", transparent: true, opacity: 0.88, fog: false }),
+    new THREE.MeshBasicMaterial({ color: "#fff2a8", transparent: true, opacity: 0.94, fog: false }),
   );
-  moon.position.set(-8.8, 8.2, -9.9);
-  scene.add(moon);
+  sunDisc.position.set(-8.8, 8.2, -9.9);
+  scene.add(sunDisc);
 
   const cloudCount = 18;
   const clouds = new THREE.InstancedMesh(
     new THREE.SphereGeometry(0.72, 9, 6),
-    new THREE.MeshBasicMaterial({ color: "#8ab9c1", transparent: true, opacity: 0.14, fog: true }),
+    new THREE.MeshBasicMaterial({ color: "#f4fbff", transparent: true, opacity: 0.46, fog: true }),
     cloudCount,
   );
   for (let index = 0; index < cloudCount; index += 1) {
@@ -341,17 +340,17 @@ export const createDuckHunt3D = (
   const treePositions: THREE.Vector3[] = [];
   const trunks = new THREE.InstancedMesh(
     new THREE.CylinderGeometry(0.15, 0.3, 3.2, 7),
-    new THREE.MeshStandardMaterial({ color: "#3b2819", roughness: 1 }),
+    new THREE.MeshStandardMaterial({ color: "#70401e", roughness: 1 }),
     treeCount,
   );
   const lowerCrowns = new THREE.InstancedMesh(
-    new THREE.ConeGeometry(1.2, 2.8, 8),
-    new THREE.MeshStandardMaterial({ color: "#0a4028", roughness: 0.96 }),
+    new THREE.IcosahedronGeometry(1.2, 2),
+    new THREE.MeshStandardMaterial({ color: "#176b2b", roughness: 0.96 }),
     treeCount,
   );
   const upperCrowns = new THREE.InstancedMesh(
-    new THREE.ConeGeometry(0.88, 2.35, 8),
-    new THREE.MeshStandardMaterial({ color: "#126038", roughness: 0.93 }),
+    new THREE.IcosahedronGeometry(0.88, 2),
+    new THREE.MeshStandardMaterial({ color: "#2c8d38", roughness: 0.93 }),
     treeCount,
   );
   for (let index = 0; index < treeCount; index += 1) {
@@ -382,7 +381,7 @@ export const createDuckHunt3D = (
   const grassCount = 240;
   const grass = new THREE.InstancedMesh(
     new THREE.ConeGeometry(0.12, 0.9, 4),
-    new THREE.MeshStandardMaterial({ color: "#2e7b39", roughness: 0.96 }),
+    new THREE.MeshStandardMaterial({ color: "#68a72a", roughness: 0.96 }),
     grassCount,
   );
   for (let index = 0; index < grassCount; index += 1) {
@@ -407,7 +406,7 @@ export const createDuckHunt3D = (
   const shrubCount = 52;
   const shrubs = new THREE.InstancedMesh(
     new THREE.IcosahedronGeometry(0.72, 1),
-    new THREE.MeshStandardMaterial({ color: "#195c31", roughness: 1 }),
+    new THREE.MeshStandardMaterial({ color: "#3f8e2b", roughness: 1 }),
     shrubCount,
   );
   for (let index = 0; index < shrubCount; index += 1) {
@@ -713,7 +712,22 @@ export const createDuckHunt3D = (
         }
         return;
       }
+      const collectiveTakeoff = Boolean(resetState) || escapeUntil > now;
+      if (running && activeWaveIds.size > 0 && !activeWaveIds.has(contestant.id) && !collectiveTakeoff) {
+        coverAmounts.set(contestant.id, 1);
+        if (!hiddenContestantIds.has(contestant.id)) {
+          coreDuckMeshes.forEach((mesh) => hideInstance(mesh, index));
+          hiddenContestantIds.add(contestant.id);
+          matricesChanged = true;
+        }
+        return;
+      }
       getFlightPosition(contestant, elapsedSeconds, flightPosition);
+      if (escapeUntil > now && activeWaveIds.has(contestant.id)) {
+        const escapeProgress = smoothstep((now - escapeStartedAt) / Math.max(1, escapeUntil - escapeStartedAt));
+        flightPosition.y += escapeProgress * 8.4;
+        flightPosition.x += Math.sign(flightPosition.x || (contestant.number % 2 ? 1 : -1)) * escapeProgress * 2.8;
+      }
       getCoverPosition(contestant, groundPosition);
       let position = currentPositions.get(contestant.id);
       if (!position) {
@@ -890,34 +904,16 @@ export const createDuckHunt3D = (
       lastDuckUpdateAt = now;
     }
     const visible = visibleCount;
-    const cameraBlend = hasStarted
-      ? running ? reducedMotion ? 1 : smoothstep((now - runStartedAt) / 1650) : 1
-      : 0;
-    camera.position.lerpVectors(readyCameraPosition, overviewCameraPosition, cameraBlend);
-    cameraTarget.lerpVectors(readyCameraTarget, overviewCameraTarget, cameraBlend);
-    if (running && !reducedMotion) {
-      const cameraDrift = Math.sin(now / 2_700) * 0.16;
-      camera.position.x += cameraDrift;
-      camera.position.y += Math.cos(now / 3_100) * 0.07;
-      cameraTarget.x += cameraDrift * 0.32;
-    }
-    const reactiveTargetId = resetState?.targetId ?? (powerPulseUntil > now ? powerCasterId : null);
-    const reactiveTarget = reactiveTargetId ? currentPositions.get(reactiveTargetId) : null;
-    if (reactiveTarget && running) {
-      const focusStrength = resetState ? 0.34 : 0.2;
-      cameraTarget.lerp(reactiveTarget, focusStrength);
-      camera.position.x += THREE.MathUtils.clamp(reactiveTarget.x * 0.035, -0.38, 0.38);
-      camera.position.y += resetState ? 0.25 : 0.08;
-      canvas.dataset.cameraFocus = resetState ? "impact" : "power";
-    } else {
-      canvas.dataset.cameraFocus = running ? "flock" : "overview";
-    }
-    const desiredFov = reactiveTarget && running ? 39.5 : renderHeight < 560 ? 47 : 42;
+    // Cámara fija tipo galería de tiro: el apuntado y el tamaño de los patos
+    // no cambian por una animación de cámara.
+    camera.position.copy(classicCameraPosition);
+    canvas.dataset.cameraFocus = running ? "classic-field" : "classic-preview";
+    const desiredFov = renderHeight < 560 ? 43 : 38;
     if (Math.abs(camera.fov - desiredFov) > 0.04) {
       camera.fov = THREE.MathUtils.lerp(camera.fov, desiredFov, reducedMotion ? 1 : 0.09);
       camera.updateProjectionMatrix();
     }
-    camera.lookAt(cameraTarget);
+    camera.lookAt(classicCameraTarget);
     pond.rotation.z = reducedMotion ? 0 : Math.sin(now / 2200) * 0.012;
     if (!reducedMotion) {
       clouds.position.x = Math.sin(now / 6_600) * 0.42;
@@ -990,6 +986,21 @@ export const createDuckHunt3D = (
         coverCycleStartedAt = runStartedAt;
       }
     },
+    beginWave(duckIds) {
+      activeWaveIds = new Set(duckIds);
+      resetState = null;
+      escapeStartedAt = 0;
+      escapeUntil = 0;
+      coverCycleStartedAt = performance.now();
+      hiddenContestantIds.clear();
+      removeLabel();
+    },
+    escapeWave() {
+      escapeStartedAt = performance.now();
+      escapeUntil = escapeStartedAt + 1_050;
+      powerCasterId = null;
+      powerPulseUntil = 0;
+    },
     shoot(clientX, clientY) {
       const emptyShot: DuckShotTarget = { hitId: null, grazedId: null, threatX: 0, threatY: 0 };
       if (!running || resetState) return emptyShot;
@@ -1003,6 +1014,8 @@ export const createDuckHunt3D = (
       const radius = getDuckHitRadius(contestants.length);
       contestants.forEach((contestant) => {
         if (contestant.knockedOut) return;
+        if (activeWaveIds.size > 0 && !activeWaveIds.has(contestant.id)) return;
+        if (escapeUntil > performance.now()) return;
         if ((coverAmounts.get(contestant.id) ?? 0) >= 0.58) return;
         const position = currentPositions.get(contestant.id);
         if (!position) return;

@@ -77,6 +77,7 @@ function Import-VisualStudioEnvironment {
     $environmentLines = & cmd.exe /d /s /c "`"$developerCommand`" -no_logo -arch=x64 -host_arch=x64 >nul && set"
     foreach ($line in $environmentLines) {
         if ($line -match '^([^=]+)=(.*)$') {
+            if ($matches[1] -ieq "PSModulePath") { continue }
             Set-Item -Path "Env:$($matches[1])" -Value $matches[2]
         }
     }
@@ -259,7 +260,7 @@ try {
 
     if (-not (Test-Path -LiteralPath (Join-Path $ProjectRoot "node_modules"))) {
         Write-Step "Instalando las dependencias del programa..."
-        & npm.cmd install
+        & npm.cmd ci --prefer-offline --no-audit --no-fund
         if ($LASTEXITCODE -ne 0) {
             throw "No se pudieron instalar las dependencias."
         }

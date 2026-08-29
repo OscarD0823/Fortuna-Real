@@ -1774,12 +1774,12 @@ function DucksScreen({
           <div className="panel-title"><Crosshair size={18} /> Reglas de supervivencia</div>
           <div className="duck-rule-steps">
             <span><b>1</b><strong>Tres vidas</strong><small>Cada participante empieza completo.</small></span>
-            <span><b>2</b><strong>Impacto</strong><small>Revela el nombre y resta una vida.</small></span>
-            <span><b>3</b><strong>Bosque activo</strong><small>Se ocultan al azar entre árboles y pasto.</small></span>
+            <span><b>2</b><strong>Tandas clásicas</strong><small>Uno o dos patos y solo tres disparos.</small></span>
+            <span><b>3</b><strong>Cámara fija</strong><small>El campo no se mueve mientras apuntas.</small></span>
             <span><b>4</b><strong>Orden comprometido</strong><small>El clic solo avanza el próximo impacto ya sellado.</small></span>
             <span><b>5</b><strong>Identidad protegida</strong><small>Nombre, color y corona se revelan después del impacto.</small></span>
             <span><b>6</b><strong>Poderes de pato</strong><small>Paleta, temblor o inversión visual; nunca cambian el ganador.</small></span>
-            <span><b>7</b><strong>Salida colectiva</strong><small>Cada impacto hace salir a toda la bandada de su refugio.</small></span>
+            <span><b>7</b><strong>Escape y salida</strong><small>Si fallas o expira el tiempo, escapan; un impacto hace salir a todos.</small></span>
           </div>
         </section>
 

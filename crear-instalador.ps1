@@ -7,8 +7,14 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+Add-Type -AssemblyName System.Security
+Add-Type -AssemblyName System.IO.Compression.FileSystem
 $ProjectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
-$InstallerOutput = Join-Path $ProjectRoot "instaladores"
+$DeliveryRoot = Join-Path $ProjectRoot "Entrega"
+$ProgramOutput = Join-Path $DeliveryRoot "Programa"
+$InstallerOutput = Join-Path $DeliveryRoot "Instaladores"
+$StarterOutput = Join-Path $DeliveryRoot "Iniciador"
+$LegacyInstallerOutput = Join-Path $ProjectRoot "instaladores"
 $SigningKeyPath = Join-Path $env:USERPROFILE ".tauri\fortuna-real.key"
 $SigningPasswordPath = "$SigningKeyPath.password.dpapi"
 $ReleaseRepository = "OscarD0823/Fortuna-Real"
@@ -44,7 +50,16 @@ function Get-ValidationFingerprint {
 
     $fingerprintSource = ($inputFiles | ForEach-Object {
         $relativePath = $_.FullName.Substring($ProjectRoot.Length).TrimStart("\")
-        "$relativePath|$((Get-FileHash -Algorithm SHA256 -LiteralPath $_.FullName).Hash)"
+        $fileStream = [IO.File]::OpenRead($_.FullName)
+        $fileHasher = [Security.Cryptography.SHA256]::Create()
+        try {
+            $fileHash = ([BitConverter]::ToString($fileHasher.ComputeHash($fileStream))).Replace("-", "")
+        }
+        finally {
+            $fileHasher.Dispose()
+            $fileStream.Dispose()
+        }
+        "$relativePath|$fileHash"
     }) -join "`n"
     $fingerprintBytes = [Text.Encoding]::UTF8.GetBytes($fingerprintSource)
     $fingerprintHasher = [Security.Cryptography.SHA256]::Create()
@@ -64,6 +79,44 @@ function ConvertFrom-ProtectedString {
     }
     finally {
         [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($pointer)
+    }
+}
+
+function Protect-LocalPassword {
+    param([string]$PlainText)
+    $plainBytes = [Text.Encoding]::Unicode.GetBytes($PlainText)
+    try {
+        $protectedBytes = [System.Security.Cryptography.ProtectedData]::Protect(
+            $plainBytes,
+            $null,
+            [System.Security.Cryptography.DataProtectionScope]::CurrentUser
+        )
+        return ([BitConverter]::ToString($protectedBytes)).Replace("-", "")
+    }
+    finally {
+        [Array]::Clear($plainBytes, 0, $plainBytes.Length)
+    }
+}
+
+function Unprotect-LocalPassword {
+    param([string]$ProtectedHex)
+    if (-not $ProtectedHex -or $ProtectedHex.Length % 2 -ne 0 -or $ProtectedHex -notmatch '^[0-9A-Fa-f]+$') {
+        throw "El archivo de contraseña protegida tiene un formato inválido."
+    }
+    $protectedBytes = New-Object byte[] ($ProtectedHex.Length / 2)
+    for ($index = 0; $index -lt $protectedBytes.Length; $index++) {
+        $protectedBytes[$index] = [Convert]::ToByte($ProtectedHex.Substring($index * 2, 2), 16)
+    }
+    $plainBytes = [System.Security.Cryptography.ProtectedData]::Unprotect(
+        $protectedBytes,
+        $null,
+        [System.Security.Cryptography.DataProtectionScope]::CurrentUser
+    )
+    try {
+        return [Text.Encoding]::Unicode.GetString($plainBytes)
+    }
+    finally {
+        [Array]::Clear($plainBytes, 0, $plainBytes.Length)
     }
 }
 
@@ -110,6 +163,7 @@ function Import-VisualStudioEnvironment {
     $environmentLines = & cmd.exe /d /s /c "`"$developerCommand`" -no_logo -arch=x64 -host_arch=x64 >nul && set"
     foreach ($line in $environmentLines) {
         if ($line -match '^([^=]+)=(.*)$') {
+            if ($matches[1] -ieq "PSModulePath") { continue }
             Set-Item -Path "Env:$($matches[1])" -Value $matches[2]
         }
     }
@@ -256,23 +310,24 @@ try {
     $passwordIsValid = $false
 
     for ($passwordAttempt = 1; $passwordAttempt -le $maximumPasswordAttempts; $passwordAttempt++) {
-        $secureSigningPassword = if ($usesProtectedPassword) {
-            (Get-Content -Raw -LiteralPath $SigningPasswordPath).Trim() | ConvertTo-SecureString
+        $signingPassword = if ($usesProtectedPassword) {
+            Unprotect-LocalPassword (Get-Content -Raw -LiteralPath $SigningPasswordPath).Trim()
         }
         else {
-            Read-Host "Contrasena de la clave de firma (intento $passwordAttempt de $maximumPasswordAttempts; no se guardara)" -AsSecureString
+            $secureSigningPassword = Read-Host "Contrasena de la clave de firma (intento $passwordAttempt de $maximumPasswordAttempts; no se guardara)" -AsSecureString
+            ConvertFrom-ProtectedString $secureSigningPassword
         }
-        $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = ConvertFrom-ProtectedString $secureSigningPassword
+        $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = $signingPassword
 
-        $signingProbe = New-TemporaryFile
-        $signingProbeSignature = "$($signingProbe.FullName).sig"
+        $signingProbePath = [IO.Path]::GetTempFileName()
+        $signingProbeSignature = "$signingProbePath.sig"
         try {
-            [IO.File]::WriteAllText($signingProbe.FullName, "Fortuna Real signing key verification")
-            & npm.cmd run tauri -- signer sign $signingProbe.FullName *> $null
+            [IO.File]::WriteAllText($signingProbePath, "Fortuna Real signing key verification")
+            & npm.cmd run tauri -- signer sign $signingProbePath *> $null
             $passwordIsValid = $LASTEXITCODE -eq 0
         }
         finally {
-            Remove-Item -LiteralPath $signingProbe.FullName -Force -ErrorAction SilentlyContinue
+            Remove-Item -LiteralPath $signingProbePath -Force -ErrorAction SilentlyContinue
             Remove-Item -LiteralPath $signingProbeSignature -Force -ErrorAction SilentlyContinue
         }
 
@@ -280,7 +335,7 @@ try {
             Write-Host "  Clave de firma:      OK" -ForegroundColor Green
             if (-not $usesProtectedPassword) {
                 New-Item -ItemType Directory -Force -Path (Split-Path -Parent $SigningPasswordPath) | Out-Null
-                $secureSigningPassword | ConvertFrom-SecureString | Set-Content -LiteralPath $SigningPasswordPath -Encoding ascii
+                Protect-LocalPassword $signingPassword | Set-Content -LiteralPath $SigningPasswordPath -Encoding ascii
                 Write-Host "  Contrasena protegida con tu usuario de Windows para los proximos doble clic." -ForegroundColor DarkGray
             }
             break
@@ -383,6 +438,74 @@ try {
     }
     Copy-Item -LiteralPath (Join-Path $ProjectRoot "INSTRUCCIONES - LEER PRIMERO.txt") -Destination $InstallerOutput -Force
 
+    Write-Step "Preparando las tres carpetas de entrega..."
+    $instructionsPath = Join-Path $InstallerOutput "INSTRUCCIONES - LEER PRIMERO.txt"
+    $zipPath = Join-Path $InstallerOutput "Fortuna-Real-$version-Instalador.zip"
+    $zipStage = Join-Path $BuildCache "installer-zip-stage"
+    if (Test-Path -LiteralPath $zipStage) { Remove-Item -LiteralPath $zipStage -Recurse -Force }
+    New-Item -ItemType Directory -Force -Path $zipStage | Out-Null
+    foreach ($zipSource in @($destination, $signatureDestination, $latestPath, $instructionsPath)) {
+        Copy-Item -LiteralPath $zipSource -Destination $zipStage -Force
+    }
+    if (Test-Path -LiteralPath $zipPath) { Remove-Item -LiteralPath $zipPath -Force }
+    [IO.Compression.ZipFile]::CreateFromDirectory(
+        $zipStage,
+        $zipPath,
+        [IO.Compression.CompressionLevel]::Optimal,
+        $false
+    )
+    Remove-Item -LiteralPath $zipStage -Recurse -Force
+
+    foreach ($deliveryDirectory in @($ProgramOutput, $StarterOutput)) {
+        New-Item -ItemType Directory -Force -Path $deliveryDirectory | Out-Null
+        Get-ChildItem -LiteralPath $deliveryDirectory -Force -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force
+    }
+    $portableSource = Join-Path $ProjectRoot "src-tauri\target\release\fortuna-real.exe"
+    if (-not (Test-Path -LiteralPath $portableSource)) {
+        throw "La compilación terminó sin producir el ejecutable principal para la carpeta Programa."
+    }
+    Copy-Item -LiteralPath $portableSource -Destination (Join-Path $ProgramOutput "Fortuna-Real-Portable.exe") -Force
+    @"
+FORTUNA REAL $version - PROGRAMA
+================================
+
+Abre Fortuna-Real-Portable.exe. Si Windows indica que falta WebView2 o el
+programa no abre, utiliza el instalador normal de la carpeta Instaladores; ese
+instalador incluye WebView2 sin conexión.
+
+Proyecto: https://github.com/OscarD0823/Fortuna-Real
+Autor: OscarD0823
+"@ | Set-Content -LiteralPath (Join-Path $ProgramOutput "LEEME.txt") -Encoding utf8
+    Get-ChildItem -LiteralPath (Join-Path $ProjectRoot "iniciador") -Force |
+        Copy-Item -Destination $StarterOutput -Recurse -Force
+
+    # Solo después de verificar firma, manifiesto y ZIP se retiran entregas
+    # anteriores. Las rutas están ancladas a este repositorio.
+    $deliveryRootFull = [IO.Path]::GetFullPath($DeliveryRoot).TrimEnd('\')
+    $installerOutputFull = [IO.Path]::GetFullPath($InstallerOutput).TrimEnd('\')
+    if (-not $installerOutputFull.StartsWith("$deliveryRootFull\", [StringComparison]::OrdinalIgnoreCase)) {
+        throw "La carpeta de instaladores no pertenece a la entrega esperada."
+    }
+    $keepInstallerNames = @(
+        (Split-Path -Leaf $destination),
+        (Split-Path -Leaf $signatureDestination),
+        (Split-Path -Leaf $latestPath),
+        (Split-Path -Leaf $zipPath),
+        "INSTRUCCIONES - LEER PRIMERO.txt"
+    )
+    Get-ChildItem -LiteralPath $InstallerOutput -Force |
+        Where-Object { $_.Name -notin $keepInstallerNames } |
+        Remove-Item -Recurse -Force
+
+    if (Test-Path -LiteralPath $LegacyInstallerOutput) {
+        $legacyFull = [IO.Path]::GetFullPath($LegacyInstallerOutput).TrimEnd('\')
+        $projectFull = [IO.Path]::GetFullPath($ProjectRoot).TrimEnd('\')
+        if ($legacyFull -ne "$projectFull\instaladores") {
+            throw "La carpeta antigua de instaladores no coincide con la ruta permitida."
+        }
+        Remove-Item -LiteralPath $LegacyInstallerOutput -Recurse -Force
+    }
+
     if ($Publish) {
         Write-Step "Comprobando acceso a GitHub..."
         & gh.exe auth status
@@ -400,6 +523,7 @@ try {
             $destination `
             $signatureDestination `
             $latestPath `
+            $zipPath `
             --repo $ReleaseRepository `
             --target main `
             --title "Fortuna Real $releaseTag" `
@@ -425,6 +549,9 @@ try {
     Write-Host "  $destination" -ForegroundColor White
     Write-Host "  $signatureDestination" -ForegroundColor White
     Write-Host "  $latestPath" -ForegroundColor White
+    Write-Host "  $zipPath" -ForegroundColor White
+    Write-Host "  $ProgramOutput" -ForegroundColor White
+    Write-Host "  $StarterOutput" -ForegroundColor White
     Write-Host ""
     if ($Publish) {
         Write-Host "  Actualización publicada en GitHub Releases con la etiqueta $releaseTag." -ForegroundColor Green

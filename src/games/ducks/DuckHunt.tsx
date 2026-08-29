@@ -40,6 +40,13 @@ import {
   type DuckHuntController,
   type DuckHuntStats,
 } from "./duckHunt3d";
+import {
+  DUCK_WAVE_SHOTS,
+  getDuckPassLine,
+  getDuckWaveDuration,
+  selectDuckWaveIds,
+  type DuckArcadeMode,
+} from "./duckWaveEngine";
 
 type DuckPhase = "ready" | "flying" | "resetting" | "finished";
 
@@ -106,12 +113,28 @@ export function DuckHunt({
   const [lastHit, setLastHit] = useState<DuckContestant | null>(null);
   const [activePower, setActivePower] = useState<ActiveDuckPower | null>(null);
   const [crosshair, setCrosshair] = useState({ x: 50, y: 48, visible: false });
+  const [arcadeMode, setArcadeMode] = useState<DuckArcadeMode>("single");
+  const [waveNumber, setWaveNumber] = useState(1);
+  const [shotsInWave, setShotsInWave] = useState(0);
+  const [waveRemainingMs, setWaveRemainingMs] = useState(getDuckWaveDuration(1));
+  const [recentWaveHits, setRecentWaveHits] = useState<boolean[]>([]);
+  const [waveEscaped, setWaveEscaped] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const controllerRef = useRef<DuckHuntController | null>(null);
   const resetTimerRef = useRef<number | null>(null);
   const knockoutOrderRef = useRef<DuckContestant[]>([]);
   const commitmentCursorRef = useRef(0);
   const contestantsRef = useRef(initialContestants);
+  const phaseRef = useRef<DuckPhase>("ready");
+  const waveRef = useRef(1);
+  const shotsInWaveRef = useRef(0);
+  const waveModeRef = useRef<DuckArcadeMode>("single");
+  const currentWaveIdsRef = useRef<string[]>([]);
+
+  const applyPhase = (nextPhase: DuckPhase) => {
+    phaseRef.current = nextPhase;
+    setPhase(nextPhase);
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -135,13 +158,20 @@ export function DuckHunt({
 
   useEffect(() => {
     setContestants(initialContestants);
-    setPhase("ready");
+    applyPhase("ready");
     setShots(0);
     setHits(0);
     setHitStreak(0);
     setBestStreak(0);
     setLastHit(null);
     setActivePower(null);
+    setWaveNumber(1);
+    waveRef.current = 1;
+    setShotsInWave(0);
+    shotsInWaveRef.current = 0;
+    setWaveRemainingMs(getDuckWaveDuration(1));
+    setRecentWaveHits([]);
+    setWaveEscaped(false);
     commitmentCursorRef.current = 0;
     knockoutOrderRef.current = [];
   }, [initialContestants]);
@@ -203,7 +233,8 @@ export function DuckHunt({
     const schedulePower = () => {
       castTimer = window.setTimeout(() => {
         if (cancelled) return;
-        const candidates = contestantsRef.current.filter((contestant) => !contestant.knockedOut);
+        const candidates = contestantsRef.current.filter((contestant) =>
+          !contestant.knockedOut && currentWaveIdsRef.current.includes(contestant.id));
         if (candidates.length === 0) return;
         const caster = candidates[Math.min(candidates.length - 1, Math.floor(randomFraction() * candidates.length))];
         const definition = duckSabotageDefinitions[caster.power];
@@ -239,7 +270,18 @@ export function DuckHunt({
     fortunaAudio.playDuckStart();
     setActivePower(null);
     controllerRef.current?.setRunning(true);
-    setPhase("flying");
+    const livingIds = contestantsRef.current.filter((contestant) => !contestant.knockedOut).map((contestant) => contestant.id);
+    const firstWaveIds = selectDuckWaveIds(livingIds, 1, arcadeMode);
+    currentWaveIdsRef.current = firstWaveIds;
+    waveModeRef.current = arcadeMode;
+    controllerRef.current?.beginWave(firstWaveIds);
+    setWaveNumber(1);
+    waveRef.current = 1;
+    setShotsInWave(0);
+    shotsInWaveRef.current = 0;
+    setWaveRemainingMs(getDuckWaveDuration(1));
+    setWaveEscaped(false);
+    applyPhase("flying");
   };
 
   const regenerate = () => {
@@ -286,7 +328,8 @@ export function DuckHunt({
     setContestants(nextFlightContestants);
     setLastHit(target);
     setActivePower(null);
-    setPhase("resetting");
+    applyPhase("resetting");
+    setRecentWaveHits((values) => [...values.slice(-9), true]);
     controllerRef.current?.updateContestants(nextFlightContestants.map(concealContestant));
     controllerRef.current?.resetFlock(
       visualHitId ?? targetId,
@@ -301,12 +344,23 @@ export function DuckHunt({
           setCommitmentError("El superviviente no coincide con el compromiso sellado.");
           return;
         }
-        setPhase("finished");
+        applyPhase("finished");
         controllerRef.current?.setRunning(false);
         fortunaAudio.playDuckWinner();
         onFinish(result.survivor, knockoutOrderRef.current);
       } else {
-        setPhase("flying");
+        const nextWave = waveRef.current + 1;
+        const livingIds = nextFlightContestants.filter((contestant) => !contestant.knockedOut).map((contestant) => contestant.id);
+        const nextWaveIds = selectDuckWaveIds(livingIds, nextWave, waveModeRef.current);
+        currentWaveIdsRef.current = nextWaveIds;
+        waveRef.current = nextWave;
+        setWaveNumber(nextWave);
+        shotsInWaveRef.current = 0;
+        setShotsInWave(0);
+        setWaveRemainingMs(getDuckWaveDuration(nextWave));
+        setWaveEscaped(false);
+        controllerRef.current?.beginWave(nextWaveIds);
+        applyPhase("flying");
         setLastHit(null);
         fortunaAudio.playDuckTakeoff();
       }
@@ -314,7 +368,10 @@ export function DuckHunt({
   };
 
   const shoot = (event: React.PointerEvent<HTMLCanvasElement>) => {
-    if (phase !== "flying") return;
+    if (phaseRef.current !== "flying") return;
+    const nextWaveShots = Math.min(DUCK_WAVE_SHOTS, shotsInWaveRef.current + 1);
+    shotsInWaveRef.current = nextWaveShots;
+    setShotsInWave(nextWaveShots);
     setShots((value) => value + 1);
     const shot = controllerRef.current?.shoot(event.clientX, event.clientY);
     if (!shot?.hitId) {
@@ -328,16 +385,63 @@ export function DuckHunt({
       }
       fortunaAudio.playDuckShot(false);
       setHitStreak(0);
+      if (nextWaveShots >= DUCK_WAVE_SHOTS) escapeCurrentWave();
       return;
     }
     advanceCommittedHit(shot.hitId);
   };
 
   const accessibleHit = () => {
-    if (phase !== "flying") return;
+    if (phaseRef.current !== "flying") return;
+    shotsInWaveRef.current = Math.min(DUCK_WAVE_SHOTS, shotsInWaveRef.current + 1);
+    setShotsInWave(shotsInWaveRef.current);
     setShots((value) => value + 1);
     advanceCommittedHit();
   };
+
+  const escapeCurrentWave = () => {
+    if (phaseRef.current !== "flying") return;
+    applyPhase("resetting");
+    setWaveEscaped(true);
+    setLastHit(null);
+    setHitStreak(0);
+    setActivePower(null);
+    setRecentWaveHits((values) => [...values.slice(-9), false]);
+    controllerRef.current?.escapeWave();
+    fortunaAudio.playDuckShot(false);
+    resetTimerRef.current = window.setTimeout(() => {
+      const nextWave = waveRef.current + 1;
+      const livingIds = contestantsRef.current.filter((contestant) => !contestant.knockedOut).map((contestant) => contestant.id);
+      const nextWaveIds = selectDuckWaveIds(livingIds, nextWave, waveModeRef.current);
+      currentWaveIdsRef.current = nextWaveIds;
+      waveRef.current = nextWave;
+      setWaveNumber(nextWave);
+      shotsInWaveRef.current = 0;
+      setShotsInWave(0);
+      setWaveRemainingMs(getDuckWaveDuration(nextWave));
+      setWaveEscaped(false);
+      controllerRef.current?.beginWave(nextWaveIds);
+      applyPhase("flying");
+      fortunaAudio.playDuckTakeoff();
+    }, 1_080);
+  };
+
+  useEffect(() => {
+    if (phase !== "flying") return;
+    let previousTick = performance.now();
+    const timer = window.setInterval(() => {
+      const now = performance.now();
+      const elapsed = document.hidden ? 0 : Math.min(350, now - previousTick);
+      previousTick = now;
+      if (elapsed === 0) return;
+      setWaveRemainingMs((remaining) => {
+        const next = Math.max(0, remaining - elapsed);
+        if (next === 0) window.queueMicrotask(escapeCurrentWave);
+        return next;
+      });
+    }, 100);
+    return () => window.clearInterval(timer);
+  }, [phase, waveNumber]);
 
   const resolveCommittedOrder = () => {
     if (phase !== "flying" || !commitment) return;
@@ -380,13 +484,13 @@ export function DuckHunt({
     setContestants(workingContestants);
     setLastHit(survivor);
     setActivePower(null);
-    setPhase("resetting");
+    applyPhase("resetting");
     controllerRef.current?.updateContestants(workingContestants.map(concealContestant));
     controllerRef.current?.resetFlock(survivor.id, `${survivor.participant.name} · superviviente`);
     fortunaAudio.playDuckShot(true);
 
     resetTimerRef.current = window.setTimeout(() => {
-      setPhase("finished");
+      applyPhase("finished");
       controllerRef.current?.setRunning(false);
       fortunaAudio.playDuckWinner();
       onFinish(survivor, knockoutOrder);
@@ -420,6 +524,9 @@ export function DuckHunt({
       data-duck-power={activePower?.power ?? "none"}
       data-hit-streak={hitStreak}
       data-best-streak={bestStreak}
+      data-wave={waveNumber}
+      data-wave-mode={arcadeMode}
+      data-wave-shots-left={Math.max(0, DUCK_WAVE_SHOTS - shotsInWave)}
       data-release-stage="beta"
     >
       <div className="duck-hunt__status">
@@ -436,8 +543,8 @@ export function DuckHunt({
           <span><Heart size={12} /> {livingCount} en pie</span>
           <span><ShieldCheck size={12} /> orden verificado</span>
           <span><Target size={12} /> {hits}/{shots}</span>
-          <span><Crosshair size={12} /> racha ×{hitStreak}</span>
-          <span>{accuracy}% precisión</span>
+          <span><Crosshair size={12} /> tanda {waveNumber}</span>
+          <span>{Math.ceil(waveRemainingMs / 100) / 10}s</span>
           <span>{rendererFailed ? "MODO 2D" : `${stats.fps} FPS`}</span>
         </div>
       </div>
@@ -463,7 +570,13 @@ export function DuckHunt({
           style={{ left: `${crosshair.x}%`, top: `${crosshair.y}%` }}
           aria-hidden="true"
         ><span /><i /></div>
-        <div className="duck-hunt__render-badge"><span /> {rendererFailed ? "RESPALDO ACCESIBLE" : "CAMPO 3D EN VIVO"}</div>
+        <div className="duck-hunt__render-badge"><span /> {rendererFailed ? "RESPALDO ACCESIBLE" : "CÁMARA CLÁSICA 3D"}</div>
+        <div className="duck-arcade-hud" aria-label={`Tanda ${waveNumber}, ${Math.max(0, DUCK_WAVE_SHOTS - shotsInWave)} disparos disponibles`}>
+          <div><small>TANDA</small><strong>{String(waveNumber).padStart(2, "0")}</strong></div>
+          <div className="duck-shot-counter"><small>DISPAROS</small><span>{Array.from({ length: DUCK_WAVE_SHOTS }, (_, index) => <i key={index} className={index < DUCK_WAVE_SHOTS - shotsInWave ? "is-loaded" : ""} />)}</span></div>
+          <div className="duck-hit-lamps"><small>IMPACTOS · META {getDuckPassLine(waveNumber)}</small><span>{Array.from({ length: 10 }, (_, index) => <i key={index} className={recentWaveHits[index] ? "is-hit" : ""} />)}</span></div>
+          <div><small>PRECISIÓN</small><strong>{accuracy}%</strong></div>
+        </div>
         {activePower && activePowerDefinition && (
           <div className={`duck-power-alert duck-power-alert--${activePower.power}`} role="status" aria-live="assertive">
             <ActivePowerIcon size={18} />
@@ -475,7 +588,8 @@ export function DuckHunt({
           {commitmentError ? <><TriangleAlert size={18} /><strong>No se puede iniciar</strong><span>{commitmentError}</span></>
             : rendererFailed ? <><TriangleAlert size={18} /><strong>Vista 3D no disponible</strong><span>Usa el botón accesible: mantiene exactamente el mismo orden sellado.</span></>
               : phase === "ready" ? <><Crosshair size={18} /><strong>Apunta con el cursor</strong><span>Nombre, color y corona permanecen ocultos hasta el impacto.</span></>
-                : phase === "resetting" && lastHit ? <><Target size={18} /><strong>{lastHit.participant.name}</strong><span>{lastHit.lives === 0 ? "Sin vidas · fuera de la partida" : `${duckLivesLabel(lastHit.lives)} · impacto oficial registrado`}</span></>
+                : phase === "resetting" && waveEscaped ? <><Feather size={18} /><strong>¡Se escaparon!</strong><span>Se agotaron los tres disparos o el tiempo. Preparando otra tanda.</span></>
+                  : phase === "resetting" && lastHit ? <><Target size={18} /><strong>{lastHit.participant.name}</strong><span>{lastHit.lives === 0 ? "Sin vidas · fuera de la partida" : `${duckLivesLabel(lastHit.lives)} · impacto oficial registrado`}</span></>
                   : phase === "finished" ? <><Trophy size={18} /><strong>Superviviente confirmado</strong><span>El resultado coincide con el compromiso previo.</span></>
                     : activePower && activePowerDefinition
                       ? <><ActivePowerIcon size={18} /><strong>{activePowerDefinition.label}</strong><span>{activePowerDefinition.description} El punto real del disparo no cambia.</span></>
@@ -509,6 +623,10 @@ export function DuckHunt({
         <div className="duck-hunt__controls">
           {phase === "ready" ? (
             <>
+              <div className="duck-mode-picker" role="group" aria-label="Cantidad de patos por tanda">
+                <button type="button" className={arcadeMode === "single" ? "is-active" : ""} onClick={() => setArcadeMode("single")}><b>1</b><span>Un pato</span></button>
+                <button type="button" className={arcadeMode === "double" ? "is-active" : ""} onClick={() => setArcadeMode("double")}><b>2</b><span>Dos patos</span></button>
+              </div>
               <button type="button" className="text-button duck-regenerate" onClick={regenerate} disabled={!commitment || !!resumedCommitmentSeed}><RefreshCw size={15} /> Nueva bandada</button>
               <button type="button" className="start-button duck-start" onClick={start} disabled={disabled || !commitment || !!commitmentError}><Play size={19} fill="currentColor" /> Soltar los patos</button>
             </>
@@ -528,7 +646,7 @@ export function DuckHunt({
               <span /><strong>{phase === "resetting" ? "A CUBIERTO · SALIDA COLECTIVA" : "PARTIDA FINALIZADA"}</strong>
             </div>
           )}
-          <small><Sparkles size={11} /> Tras cada impacto todos salen del pasto o los árboles en {(resetDelay / 1_000).toFixed(2)} s.</small>
+          <small><Sparkles size={11} /> Cámara fija, tres disparos por tanda y salida colectiva tras cada impacto.</small>
         </div>
       </div>
     </div>

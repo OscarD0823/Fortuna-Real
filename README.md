@@ -11,20 +11,28 @@ persisten; cancelarlos exige un motivo que queda en el registro local de auditor
 Cartas, Pinball y Canicas guardan además una semilla CSPRNG por ronda para
 reconstruir exactamente su asignación, distribución o pista después de reiniciar.
 
-## Para los usuarios
+## Entrega para los usuarios
 
-Los usuarios reciben solamente este archivo:
+Después de ejecutar `npm run crear-instalador`, `Entrega` contiene exactamente:
 
 ```text
-Fortuna-Real-1.0.2-Instalador.exe
+Entrega/
+├── Programa/       # ejecutable portátil y guía
+├── Instaladores/   # instalador normal, ZIP, firma y latest.json
+└── Iniciador/      # descarga autenticada del repositorio privado
 ```
 
-El instalador configura Fortuna Real, crea los accesos de Windows e instala
+El instalador normal es la opción recomendada. Configura Fortuna Real, crea los accesos de Windows e instala
 WebView2 silenciosamente si el equipo no lo tiene, con el paquete sin conexión
 incluido. Está preparado para Windows 10/11 x64. El usuario no necesita Internet
 para instalar/jugar, Node.js, Rust, Visual Studio ni copiar el código del proyecto.
 Internet solo se utiliza para buscar o descargar actualizaciones. La voz disponible
 depende de las voces instaladas en Windows; los juegos también funcionan sin voz.
+
+El iniciador de respaldo nunca contiene credenciales. Abre la autorización de
+GitHub, comprueba que la cuenta tenga acceso a `OscarD0823/Fortuna-Real`, permite
+elegir la carpeta de destino e instala las dependencias declaradas. Como el
+repositorio es privado, una cuenta sin acceso no puede descargarlo.
 
 ## Inicio guiado y demos
 
@@ -139,7 +147,7 @@ Después de publicar también comprueba que el endpoint `latest.json` informe la
 versión recién creada. La sesión local de `gh` publica los archivos; la clave de
 firma nunca sale del computador.
 
-Hasta publicar el Release correspondiente (por ejemplo `v1.0.2`), la versión local
+Hasta publicar el Release correspondiente (por ejemplo `v1.0.3`), la versión local
 no se ofrecerá como actualización automática. Si no hay ningún Release publicado,
 el endpoint devolverá 404 sin bloquear el programa. El instalador local funciona
 igualmente sin conexión; publicar y verificar el Release es un paso separado.

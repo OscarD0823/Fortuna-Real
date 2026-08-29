@@ -11,6 +11,7 @@ const workflow = readText(".github/workflows/release.yml");
 const launcher = readText("iniciar-fortuna.ps1");
 const updaterUi = readText("src/shared/components/AppUpdater.tsx");
 const installerCreator = readText("crear-instalador.ps1");
+const githubStarter = readText("iniciador/instalar-desde-github.ps1");
 
 const cargoVersion = cargoToml.match(/^version\s*=\s*"([^"]+)"/mu)?.[1];
 assert.equal(packageJson.version, tauriConfig.version, "package.json y Tauri deben coincidir.");
@@ -84,7 +85,8 @@ for (const marker of [
   ".fortuna-cache",
   "signer sign",
   "maximumPasswordAttempts",
-  "ConvertFrom-SecureString | Set-Content",
+  "ProtectedData]::Protect",
+  "ProtectedData]::Unprotect",
   "$env:TAURI_SIGNING_PRIVATE_KEY = $SigningKeyPath",
   "Start-Process -FilePath \"explorer.exe\"",
   "--example verify_installer",
@@ -101,6 +103,26 @@ const signatureVerifier = readText("src-tauri/examples/verify_installer.rs");
 for (const marker of ["PublicKey::decode", "verify_stream", "verifier.finalize()", "include_str!(\"../tauri.conf.json\")"]) {
   assert.ok(signatureVerifier.includes(marker), `Falta la validación criptográfica del instalador: ${marker}.`);
 }
+for (const marker of [
+  '"Entrega"',
+  '"Programa"',
+  '"Instaladores"',
+  '"Iniciador"',
+  "ZipFile]::CreateFromDirectory",
+  "Fortuna-Real-Portable.exe",
+  "Get-ChildItem -LiteralPath $InstallerOutput",
+]) {
+  assert.ok(installerCreator.includes(marker), `La entrega no prepara correctamente: ${marker}.`);
+}
+for (const marker of [
+  '"OscarD0823/Fortuna-Real"',
+  "gh.exe auth login",
+  "gh.exe repo clone",
+  "npm.cmd ci",
+  "status --porcelain",
+]) {
+  assert.ok(githubStarter.includes(marker), `El iniciador de GitHub no aplica: ${marker}.`);
+}
 
 console.log(JSON.stringify({
   version: packageJson.version,
@@ -114,4 +136,6 @@ console.log(JSON.stringify({
   automaticCheckFailureSilent: true,
   offlineWebViewBundled: true,
   distributedSignatureVerification: true,
+  deliveryFolders: ["Programa", "Instaladores", "Iniciador"],
+  privateRepositoryStarter: true,
 }));
