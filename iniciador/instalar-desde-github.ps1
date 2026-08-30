@@ -20,7 +20,7 @@ function Write-Step {
 
 function Get-RemoteJson {
     param([Parameter(Mandatory = $true)][string]$Uri)
-    $response = Invoke-WebRequest -Uri $Uri -TimeoutSec 30
+    $response = Invoke-WebRequest -UseBasicParsing -Uri $Uri -TimeoutSec 30
     $text = if ($response.Content -is [byte[]]) {
         [Text.Encoding]::UTF8.GetString($response.Content)
     } else {
@@ -146,7 +146,7 @@ try {
     $downloadedInstaller = Join-Path $installerPath $installerName
     $partialInstaller = "$downloadedInstaller.partial"
     if (-not (Test-Path -LiteralPath $downloadedInstaller) -or (Get-Item -LiteralPath $downloadedInstaller).Length -lt 1MB) {
-        Invoke-WebRequest -Uri $installerUri.AbsoluteUri -OutFile $partialInstaller -TimeoutSec 600
+        Invoke-WebRequest -UseBasicParsing -Uri $installerUri.AbsoluteUri -OutFile $partialInstaller -TimeoutSec 600
         if (-not (Test-Path -LiteralPath $partialInstaller) -or (Get-Item -LiteralPath $partialInstaller).Length -lt 1MB) {
             throw "La descarga del instalador quedo incompleta."
         }
@@ -196,5 +196,8 @@ FORTUNA REAL - ESTRUCTURA DE DESCARGA
 catch {
     Write-Host "`n  No se pudo completar la instalacion:" -ForegroundColor Red
     Write-Host "  $($_.Exception.Message)" -ForegroundColor Red
+    if ($_.InvocationInfo.ScriptLineNumber) {
+        Write-Host "  Linea: $($_.InvocationInfo.ScriptLineNumber)" -ForegroundColor DarkGray
+    }
     exit 1
 }

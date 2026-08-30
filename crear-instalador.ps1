@@ -29,7 +29,7 @@ function Write-Step {
 
 function Get-RemoteJson {
     param([Parameter(Mandatory = $true)][string]$Uri)
-    $response = Invoke-WebRequest -Uri $Uri -TimeoutSec 30
+    $response = Invoke-WebRequest -UseBasicParsing -Uri $Uri -TimeoutSec 30
     $text = if ($response.Content -is [byte[]]) {
         [Text.Encoding]::UTF8.GetString($response.Content)
     } else {
