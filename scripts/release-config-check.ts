@@ -127,6 +127,7 @@ for (const marker of [
   '"2 Instaladores"',
   '"3 Ejecutar"',
   "Invoke-WebRequest",
+  "ConvertFrom-Json",
   "npm.cmd ci",
   "status --porcelain",
 ]) {

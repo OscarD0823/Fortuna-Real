@@ -18,6 +18,17 @@ function Write-Step {
     Write-Host "`n  $Message" -ForegroundColor Cyan
 }
 
+function Get-RemoteJson {
+    param([Parameter(Mandatory = $true)][string]$Uri)
+    $response = Invoke-WebRequest -Uri $Uri -TimeoutSec 30
+    $text = if ($response.Content -is [byte[]]) {
+        [Text.Encoding]::UTF8.GetString($response.Content)
+    } else {
+        [string]$response.Content
+    }
+    return $text.TrimStart([char]0xFEFF) | ConvertFrom-Json
+}
+
 function Refresh-Path {
     $paths = @(
         "$env:LOCALAPPDATA\Microsoft\WinGet\Links",
@@ -121,7 +132,7 @@ try {
 
     New-Item -ItemType Directory -Force -Path $installerPath, $launcherPath | Out-Null
     Write-Step "Descargando el instalador normal de la ultima version..."
-    $latest = Invoke-RestMethod -Uri $LatestManifestUrl -TimeoutSec 30
+    $latest = Get-RemoteJson -Uri $LatestManifestUrl
     $installerUrl = [string]$latest.platforms."windows-x86_64".url
     if (-not $installerUrl) { throw "latest.json no contiene el instalador para Windows x64." }
     $installerUri = [Uri]$installerUrl

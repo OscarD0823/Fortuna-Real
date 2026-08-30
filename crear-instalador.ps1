@@ -27,6 +27,17 @@ function Write-Step {
     Write-Host "`n  $Message" -ForegroundColor Cyan
 }
 
+function Get-RemoteJson {
+    param([Parameter(Mandatory = $true)][string]$Uri)
+    $response = Invoke-WebRequest -Uri $Uri -TimeoutSec 30
+    $text = if ($response.Content -is [byte[]]) {
+        [Text.Encoding]::UTF8.GetString($response.Content)
+    } else {
+        [string]$response.Content
+    }
+    return $text.TrimStart([char]0xFEFF) | ConvertFrom-Json
+}
+
 function Get-DependencyFingerprint {
     # Node también admite la clave vacía de package-lock.json en PowerShell 5.1.
     $dependencyHash = & node.exe (Join-Path $ProjectRoot "scripts\dependency-fingerprint.mjs")
@@ -600,7 +611,7 @@ Proyecto: https://github.com/OscarD0823/Fortuna-Real
 
         Write-Step "Verificando el manifiesto remoto..."
         $remoteManifestUrl = "https://github.com/$ReleaseRepository/releases/latest/download/latest.json"
-        $remoteManifest = Invoke-RestMethod -Uri $remoteManifestUrl -TimeoutSec 30
+        $remoteManifest = Get-RemoteJson -Uri $remoteManifestUrl
         if ($remoteManifest.version -ne $version) {
             throw "El Release se publicó, pero latest.json informa la versión $($remoteManifest.version) en lugar de $version."
         }
