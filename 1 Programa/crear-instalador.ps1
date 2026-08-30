@@ -10,7 +10,8 @@ $ErrorActionPreference = "Stop"
 Add-Type -AssemblyName System.Security
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 $ProjectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
-$DeliveryRoot = Join-Path $ProjectRoot "Entrega"
+$RepositoryRoot = Split-Path -Parent $ProjectRoot
+$DeliveryRoot = Join-Path $RepositoryRoot "Entrega"
 $ProgramOutput = Join-Path $DeliveryRoot "1 Programa"
 $InstallerOutput = Join-Path $DeliveryRoot "2 Instaladores"
 $LauncherOutput = Join-Path $DeliveryRoot "3 Ejecutar"
@@ -490,7 +491,7 @@ Autor: OscarD0823
     $starterStage = Join-Path $BuildCache "github-starter-stage"
     if (Test-Path -LiteralPath $starterStage) { Remove-Item -LiteralPath $starterStage -Recurse -Force }
     New-Item -ItemType Directory -Force -Path $starterStage | Out-Null
-    Get-ChildItem -LiteralPath (Join-Path $ProjectRoot "iniciador") -Force |
+    Get-ChildItem -LiteralPath (Join-Path $RepositoryRoot "3 Ejecutar\Iniciador GitHub") -Force |
         Copy-Item -Destination $starterStage -Recurse -Force
     $starterZipPath = Join-Path $InstallerOutput "Fortuna-Real-$version-Iniciador.zip"
     $starterZipTemporary = Join-Path $BuildCache "Fortuna-Real-$version-Iniciador.zip"

@@ -95,35 +95,30 @@ try {
     $installerPath = Join-Path $DestinationPath $InstallerFolderName
     $launcherPath = Join-Path $DestinationPath $LauncherFolderName
 
-    if (Test-Path -LiteralPath (Join-Path $DestinationPath ".git")) {
-        throw "Esta ubicacion usa la estructura antigua. Elige una carpeta nueva para crear 1 Programa, 2 Instaladores y 3 Ejecutar."
-    }
-
-    $gitDirectory = Join-Path $programPath ".git"
+    $gitDirectory = Join-Path $DestinationPath ".git"
     if (Test-Path -LiteralPath $gitDirectory) {
-        $remote = (& git.exe -C $programPath remote get-url origin).Trim()
+        $remote = (& git.exe -C $DestinationPath remote get-url origin).Trim()
         if ($LASTEXITCODE -ne 0 -or $remote.TrimEnd('/').ToLowerInvariant() -ne $ExpectedRemote.TrimEnd('/').ToLowerInvariant()) {
             throw "La carpeta contiene otro repositorio. Elige una ubicacion diferente."
         }
-        if (& git.exe -C $programPath status --porcelain) {
+        if (& git.exe -C $DestinationPath status --porcelain) {
             throw "La copia existente tiene cambios sin guardar. Se conservaron intactos; elige otra carpeta."
         }
         Write-Step "Actualizando la copia existente desde la rama main..."
-        & git.exe -C $programPath pull --ff-only origin main
+        & git.exe -C $DestinationPath pull --ff-only origin main
         if ($LASTEXITCODE -ne 0) { throw "No se pudo actualizar la copia existente." }
     }
-    elseif (Test-Path -LiteralPath $programPath) {
-        if ((Get-ChildItem -LiteralPath $programPath -Force | Select-Object -First 1)) {
+    elseif (Test-Path -LiteralPath $DestinationPath) {
+        if ((Get-ChildItem -LiteralPath $DestinationPath -Force | Select-Object -First 1)) {
             throw "La carpeta de destino no esta vacia. No se sobrescribio ningun archivo."
         }
         Write-Step "Descargando el proyecto publico desde GitHub..."
-        & git.exe clone --branch main --single-branch --depth 1 -- $ExpectedRemote $programPath
+        & git.exe clone --branch main --single-branch --depth 1 -- $ExpectedRemote $DestinationPath
         if ($LASTEXITCODE -ne 0) { throw "No se pudo descargar Fortuna Real." }
     }
     else {
-        New-Item -ItemType Directory -Force -Path $DestinationPath | Out-Null
         Write-Step "Descargando el proyecto publico desde GitHub..."
-        & git.exe clone --branch main --single-branch --depth 1 -- $ExpectedRemote $programPath
+        & git.exe clone --branch main --single-branch --depth 1 -- $ExpectedRemote $DestinationPath
         if ($LASTEXITCODE -ne 0) { throw "No se pudo descargar Fortuna Real." }
     }
 
@@ -156,24 +151,11 @@ try {
         Where-Object { $_.Name -ne $installerName } |
         Remove-Item -Force
 
-    @"
-@echo off
-chcp 65001 >nul
-call "%~dp0..\1 Programa\Iniciar Fortuna Real.cmd"
-"@ | Set-Content -LiteralPath (Join-Path $launcherPath "Ejecutar Fortuna Real.cmd") -Encoding ascii
-    @"
-@echo off
-chcp 65001 >nul
-start "" "%~dp0..\2 Instaladores\$installerName"
-"@ | Set-Content -LiteralPath (Join-Path $launcherPath "Instalar Fortuna Real.cmd") -Encoding ascii
-    @"
-FORTUNA REAL - ESTRUCTURA DE DESCARGA
-=====================================
-
-1 Programa contiene el proyecto y sus dependencias.
-2 Instaladores contiene el instalador normal mas reciente.
-3 Ejecutar contiene los accesos para abrir o instalar Fortuna Real.
-"@ | Set-Content -LiteralPath (Join-Path $launcherPath "LEEME.txt") -Encoding utf8
+    foreach ($requiredLauncher in @("Ejecutar Fortuna Real.cmd", "Instalar Fortuna Real.cmd")) {
+        if (-not (Test-Path -LiteralPath (Join-Path $launcherPath $requiredLauncher))) {
+            throw "La descarga termino incompleta: falta $requiredLauncher en 3 Ejecutar."
+        }
+    }
 
     Write-Step "Instalando los componentes de Windows que necesita el proyecto..."
     & powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File $sourceLauncher -InstallOnly

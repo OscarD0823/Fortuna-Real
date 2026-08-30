@@ -7,11 +7,22 @@ const packageLock = JSON.parse(readText("package-lock.json"));
 const tauriConfig = JSON.parse(readText("src-tauri/tauri.conf.json"));
 const cargoToml = readText("src-tauri/Cargo.toml");
 const cargoLock = readText("src-tauri/Cargo.lock");
-const workflow = readText(".github/workflows/release.yml");
+const repositoryRoot = "..";
+const workflow = readText(`${repositoryRoot}/.github/workflows/release.yml`);
 const launcher = readText("iniciar-fortuna.ps1");
 const updaterUi = readText("src/shared/components/AppUpdater.tsx");
 const installerCreator = readText("crear-instalador.ps1");
-const githubStarter = readText("iniciador/instalar-desde-github.ps1");
+const githubStarter = readText(`${repositoryRoot}/3 Ejecutar/Iniciador GitHub/instalar-desde-github.ps1`);
+const localInstallerDirectory = `${repositoryRoot}/Entrega/2 Instaladores`;
+
+for (const requiredPath of [
+  `${repositoryRoot}/1 Programa`,
+  `${repositoryRoot}/2 Instaladores`,
+  `${repositoryRoot}/3 Ejecutar`,
+  `${repositoryRoot}/README.md`,
+]) {
+  assert.ok(existsSync(requiredPath), `Falta la ruta principal del repositorio: ${requiredPath}.`);
+}
 
 const cargoVersion = cargoToml.match(/^version\s*=\s*"([^"]+)"/mu)?.[1];
 assert.equal(packageJson.version, tauriConfig.version, "package.json y Tauri deben coincidir.");
@@ -34,8 +45,8 @@ assert.equal(updater.endpoints?.length, 1, "Debe existir un único endpoint can�
 assert.match(updater.endpoints[0], /^https:\/\/github\.com\//u);
 
 let signedLocalArtifacts = false;
-if (process.env.CI !== "true" && existsSync("instaladores/latest.json")) {
-  const latestManifest = JSON.parse(readText("instaladores/latest.json"));
+if (process.env.CI !== "true" && existsSync(`${localInstallerDirectory}/latest.json`)) {
+  const latestManifest = JSON.parse(readText(`${localInstallerDirectory}/latest.json`));
   if (latestManifest.version === packageJson.version) {
     const windowsPlatform = latestManifest.platforms?.["windows-x86_64"];
     assert.equal(typeof windowsPlatform?.signature, "string");
@@ -47,8 +58,8 @@ if (process.env.CI !== "true" && existsSync("instaladores/latest.json")) {
     );
     const installerSegments = new URL(windowsPlatform.url).pathname.split("/");
     const installerName = decodeURIComponent(installerSegments[installerSegments.length - 1] ?? "");
-    assert.ok(existsSync(`instaladores/${installerName}`), "Falta el instalador local declarado.");
-    assert.ok(existsSync(`instaladores/${installerName}.sig`), "Falta la firma local del instalador.");
+    assert.ok(existsSync(`${localInstallerDirectory}/${installerName}`), "Falta el instalador local declarado.");
+    assert.ok(existsSync(`${localInstallerDirectory}/${installerName}.sig`), "Falta la firma local del instalador.");
     signedLocalArtifacts = true;
   } else {
     assert.match(String(latestManifest.version ?? ""), /^\d+\.\d+\.\d+$/u, "El manifiesto local anterior tiene una versión inválida.");
@@ -72,12 +83,15 @@ for (const command of [
   "test:types",
   "cargo test",
   "cargo clippy",
-  "UPDATER_ENDPOINT",
+  'working-directory: "1 Programa"',
+  'cache-dependency-path: "1 Programa/package-lock.json"',
+  "firma local",
 ]) {
   assert.ok(workflow.includes(command), `El workflow no ejecuta o valida: ${command}.`);
 }
 const mutableActionRefs = workflow.match(/uses:\s+[^\s]+@(?![0-9a-f]{40}(?:\s|$))[^\s#]+/gu) ?? [];
 assert.deepEqual(mutableActionRefs, [], `Las acciones deben fijarse por SHA: ${mutableActionRefs.join(", ")}`);
+assert.ok(!workflow.includes("TAURI_SIGNING_PRIVATE_KEY"), "GitHub Actions no debe pedir la clave privada de firma local.");
 assert.ok(!launcher.includes("Stop-Process"), "El launcher no debe finalizar procesos por puerto.");
 for (const marker of [
   "npm.cmd ci",

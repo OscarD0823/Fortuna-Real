@@ -13,7 +13,12 @@ dist-ssr
 instaladores
 Entrega
 .fortuna-cache
-native-marbles-prototype/target
+1 Programa/native-marbles-prototype/target
+2 Instaladores/*.exe
+2 Instaladores/*.zip
+2 Instaladores/*.sig
+2 Instaladores/latest.json
+2 Instaladores/INSTRUCCIONES - LEER PRIMERO.txt
 *.local
 *.key
 
