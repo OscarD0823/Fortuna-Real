@@ -11,9 +11,9 @@ Add-Type -AssemblyName System.Security
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 $ProjectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $DeliveryRoot = Join-Path $ProjectRoot "Entrega"
-$ProgramOutput = Join-Path $DeliveryRoot "Programa"
-$InstallerOutput = Join-Path $DeliveryRoot "Instaladores"
-$StarterOutput = Join-Path $DeliveryRoot "Iniciador"
+$ProgramOutput = Join-Path $DeliveryRoot "1 Programa"
+$InstallerOutput = Join-Path $DeliveryRoot "2 Instaladores"
+$LauncherOutput = Join-Path $DeliveryRoot "3 Ejecutar"
 $LegacyInstallerOutput = Join-Path $ProjectRoot "instaladores"
 $SigningKeyPath = Join-Path $env:USERPROFILE ".tauri\fortuna-real.key"
 $SigningPasswordPath = "$SigningKeyPath.password.dpapi"
@@ -456,7 +456,7 @@ try {
     )
     Remove-Item -LiteralPath $zipStage -Recurse -Force
 
-    foreach ($deliveryDirectory in @($ProgramOutput, $StarterOutput)) {
+    foreach ($deliveryDirectory in @($ProgramOutput, $LauncherOutput)) {
         New-Item -ItemType Directory -Force -Path $deliveryDirectory | Out-Null
         Get-ChildItem -LiteralPath $deliveryDirectory -Force -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force
     }
@@ -476,18 +476,60 @@ instalador incluye WebView2 sin conexión.
 Proyecto: https://github.com/OscarD0823/Fortuna-Real
 Autor: OscarD0823
 "@ | Set-Content -LiteralPath (Join-Path $ProgramOutput "LEEME.txt") -Encoding utf8
+    $starterStage = Join-Path $BuildCache "github-starter-stage"
+    if (Test-Path -LiteralPath $starterStage) { Remove-Item -LiteralPath $starterStage -Recurse -Force }
+    New-Item -ItemType Directory -Force -Path $starterStage | Out-Null
     Get-ChildItem -LiteralPath (Join-Path $ProjectRoot "iniciador") -Force |
-        Copy-Item -Destination $StarterOutput -Recurse -Force
-    $starterZipPath = Join-Path $StarterOutput "Fortuna-Real-$version-Iniciador.zip"
+        Copy-Item -Destination $starterStage -Recurse -Force
+    $starterZipPath = Join-Path $InstallerOutput "Fortuna-Real-$version-Iniciador.zip"
     $starterZipTemporary = Join-Path $BuildCache "Fortuna-Real-$version-Iniciador.zip"
     if (Test-Path -LiteralPath $starterZipTemporary) { Remove-Item -LiteralPath $starterZipTemporary -Force }
     [IO.Compression.ZipFile]::CreateFromDirectory(
-        $StarterOutput,
+        $starterStage,
         $starterZipTemporary,
         [IO.Compression.CompressionLevel]::Optimal,
         $false
     )
     Move-Item -LiteralPath $starterZipTemporary -Destination $starterZipPath -Force
+    Remove-Item -LiteralPath $starterStage -Recurse -Force
+
+    $portableLauncherPath = Join-Path $LauncherOutput "Ejecutar Fortuna Real.cmd"
+    @"
+@echo off
+chcp 65001 >nul
+setlocal
+set "FORTUNA_EXE=%~dp0..\1 Programa\Fortuna-Real-Portable.exe"
+if not exist "%FORTUNA_EXE%" (
+  echo No se encontro el programa en la carpeta 1 Programa.
+  pause
+  exit /b 1
+)
+start "" "%FORTUNA_EXE%"
+"@ | Set-Content -LiteralPath $portableLauncherPath -Encoding ascii
+
+    $installerLauncherPath = Join-Path $LauncherOutput "Instalar Fortuna Real.cmd"
+    @"
+@echo off
+chcp 65001 >nul
+setlocal
+set "FORTUNA_INSTALLER=%~dp0..\2 Instaladores\$(Split-Path -Leaf $destination)"
+if not exist "%FORTUNA_INSTALLER%" (
+  echo No se encontro el instalador en la carpeta 2 Instaladores.
+  pause
+  exit /b 1
+)
+start "" "%FORTUNA_INSTALLER%"
+"@ | Set-Content -LiteralPath $installerLauncherPath -Encoding ascii
+    @"
+FORTUNA REAL $version - EJECUTAR
+================================
+
+- Ejecutar Fortuna Real.cmd abre la version portatil de 1 Programa.
+- Instalar Fortuna Real.cmd abre el instalador normal de 2 Instaladores.
+- Al instalar, Windows crea accesos fuera de la carpeta interna del programa.
+
+Proyecto: https://github.com/OscarD0823/Fortuna-Real
+"@ | Set-Content -LiteralPath (Join-Path $LauncherOutput "LEEME.txt") -Encoding utf8
 
     # Solo después de verificar firma, manifiesto y ZIP se retiran entregas
     # anteriores. Las rutas están ancladas a este repositorio.
@@ -501,11 +543,24 @@ Autor: OscarD0823
         (Split-Path -Leaf $signatureDestination),
         (Split-Path -Leaf $latestPath),
         (Split-Path -Leaf $zipPath),
+        (Split-Path -Leaf $starterZipPath),
         "INSTRUCCIONES - LEER PRIMERO.txt"
     )
     Get-ChildItem -LiteralPath $InstallerOutput -Force |
         Where-Object { $_.Name -notin $keepInstallerNames } |
         Remove-Item -Recurse -Force
+
+    foreach ($legacyDeliveryName in @("Programa", "Instaladores", "Iniciador")) {
+        $legacyDeliveryPath = Join-Path $DeliveryRoot $legacyDeliveryName
+        if (Test-Path -LiteralPath $legacyDeliveryPath) {
+            $legacyDeliveryFull = [IO.Path]::GetFullPath($legacyDeliveryPath).TrimEnd('\')
+            $deliveryRootFull = [IO.Path]::GetFullPath($DeliveryRoot).TrimEnd('\')
+            if (-not $legacyDeliveryFull.StartsWith("$deliveryRootFull\", [StringComparison]::OrdinalIgnoreCase)) {
+                throw "La carpeta antigua de entrega no pertenece a la ruta permitida."
+            }
+            Remove-Item -LiteralPath $legacyDeliveryPath -Recurse -Force
+        }
+    }
 
     if (Test-Path -LiteralPath $LegacyInstallerOutput) {
         $legacyFull = [IO.Path]::GetFullPath($LegacyInstallerOutput).TrimEnd('\')
@@ -563,7 +618,7 @@ Autor: OscarD0823
     Write-Host "  $zipPath" -ForegroundColor White
     Write-Host "  $starterZipPath" -ForegroundColor White
     Write-Host "  $ProgramOutput" -ForegroundColor White
-    Write-Host "  $StarterOutput" -ForegroundColor White
+    Write-Host "  $LauncherOutput" -ForegroundColor White
     Write-Host ""
     if ($Publish) {
         Write-Host "  Actualización publicada en GitHub Releases con la etiqueta $releaseTag." -ForegroundColor Green

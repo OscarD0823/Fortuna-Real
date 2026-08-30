@@ -28,6 +28,7 @@ type MarbleRenderMode = "webgl" | "fallback";
 const cameraStyleLabels: Record<MarbleFollowCameraStyle, string> = {
   chase: "PERSECUCIÓN",
   onboard: "A BORDO",
+  trackside: "LATERAL",
   aerial: "AÉREA",
 };
 
@@ -893,7 +894,7 @@ export function MarbleRace({
   };
 
   const cycleCameraStyle = () => {
-    const styles: MarbleFollowCameraStyle[] = ["chase", "onboard", "aerial"];
+    const styles: MarbleFollowCameraStyle[] = ["chase", "onboard", "trackside", "aerial"];
     const nextStyle = styles[(styles.indexOf(cameraStyle) + 1) % styles.length];
     cameraStyleRef.current = nextStyle;
     setCameraStyle(nextStyle);

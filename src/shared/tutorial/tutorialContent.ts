@@ -57,7 +57,7 @@ export const gameGuides: Record<GameId, GameGuide> = {
     steps: [
       { title: "Prepara la mesa", description: "El sistema crea una distribución verificable y asigna un número a cada pelota antes de encender la máquina.", action: "Puedes generar otra distribución antes de jugar." },
       { title: "Elige automático o manual", description: "Automático controla toda la mesa. Manual permite usar A, D, flechas y espacio sin alterar el resultado sellado.", action: "El control se elige desde el inicio." },
-      { title: "Sigue una pelota", description: "La cámara predictiva puede acompañar a cualquier participante y muestra una estela para no perderlo de vista.", action: "Usa el selector Cámara sobre la mesa." },
+      { title: "Sigue una pelota", description: "La cámara puede acompañar a cualquier participante en persecución o vista cenital y muestra una estela para no perderlo de vista.", action: "Usa el selector Cámara sobre la mesa." },
       { title: "Lanza el lote completo", description: "Todas las pelotas salen al mismo tiempo. Choques, flippers y puntos presentan la ronda hasta confirmar el resultado.", action: "Pulsa Encender y jugar o Lanzar todas." },
     ],
   },
@@ -68,7 +68,7 @@ export const gameGuides: Record<GameId, GameGuide> = {
     summary: "Una pista modular con altura, curvas, puentes y poderes distintos se genera para cada ronda.",
     steps: [
       { title: "Revisa la pista", description: "Dificultad, altura, trampas y poderes aparecen antes de abrir la compuerta. Puedes generar otro mapa mientras la ronda no esté sellada.", action: "Comprueba los indicadores superiores." },
-      { title: "Escoge una cámara", description: "Vista general muestra toda la carrera. Persecución, A bordo y Aérea siguen a la canica seleccionada.", action: "Elige un nombre y cambia el estilo de cámara." },
+      { title: "Escoge una cámara", description: "Vista general muestra toda la carrera. Persecución, A bordo, Lateral y Aérea siguen a la canica seleccionada.", action: "Elige un nombre y cambia el estilo de cámara." },
       { title: "Observa poderes y remontadas", description: "Quienes van atrás tienen más oportunidades de recibir ayudas o afectar a quienes lideran, sin cambiar la imparcialidad del resultado.", action: "Mira el registro de eventos durante la carrera." },
       { title: "Recuperación y meta", description: "Si una canica abandona la pista vuelve de forma segura al inicio. En Eliminación, la última en cruzar queda fuera.", action: "Pulsa Iniciar carrera y sigue la clasificación." },
     ],
@@ -111,13 +111,13 @@ export const guidedTours: Record<TutorialId, GuidedTourStep[]> = {
   pinball: [
     { target: ".pinball-game__status", eyebrow: "PINBALL · 1", title: "Comprueba modo y sello", description: "Aquí ves si la mesa es automática o manual y confirmas que la ronda ya tiene un resultado protegido.", tip: "Los controles solo afectan la presentación física." },
     { target: ".pinball-cabinet", eyebrow: "PINBALL · 2", title: "Todas salen juntas", description: "La mesa libera el lote completo al mismo tiempo y muestra lanzamientos, pelotas activas, impactos y rendimiento.", tip: "Cada pelota mantiene el número de su participante." },
-    { target: ".pinball-camera-control", eyebrow: "PINBALL · 3", title: "Acompaña una pelota", description: "Selecciona un nombre para activar la cámara predictiva y su estela. Vista general vuelve a mostrar toda la mesa.", tip: "Puedes cambiar de participante durante la partida." },
+    { target: ".pinball-camera-control", eyebrow: "PINBALL · 3", title: "Acompaña una pelota", description: "Selecciona un nombre para activar su estela y alterna entre cámara de persecución o cenital. Vista general vuelve a mostrar toda la mesa.", tip: "Puedes cambiar de participante y de ángulo durante la partida." },
     { target: ".pinball-controls", eyebrow: "PINBALL · 4", title: "Enciende o controla", description: "Automático requiere un solo botón. En manual, espacio lanza todo el lote y A/D o las flechas accionan los flippers.", tip: "La mesa terminará la ronda de forma automática." },
   ],
   marbles: [
     { target: ".marble-race-status", eyebrow: "CANICAS · 1", title: "Lee el mapa antes de salir", description: "Dificultad, riesgo, poderes, altura y cantidad de canicas están resumidos en la cabecera.", tip: "Puedes cambiar mapa o dificultad antes de iniciar." },
     { target: ".marble-arena", eyebrow: "CANICAS · 2", title: "Pista modular con altura", description: "Puentes, curvas, túneles y zonas de poder forman un circuito distinto para cada semilla.", tip: "Una canica fuera de pista activa recuperación segura." },
-    { target: ".marble-camera-control", eyebrow: "CANICAS · 3", title: "Elige a quién seguir", description: "Selecciona un participante y alterna Persecución, A bordo o Aérea. Las flechas cambian rápidamente de canica.", tip: "Vista general conserva el mapa completo en pantalla." },
+    { target: ".marble-camera-control", eyebrow: "CANICAS · 3", title: "Elige a quién seguir", description: "Selecciona un participante y alterna Persecución, A bordo, Lateral o Aérea. Las flechas cambian rápidamente de canica.", tip: "Vista general conserva el mapa completo en pantalla." },
     { target: ".marble-power-quick-legend", eyebrow: "CANICAS · 4", title: "Entiende los poderes", description: "La leyenda muestra qué efectos pueden aparecer. Las canicas retrasadas reciben más oportunidades de remontada.", tip: "Los eventos explican quién activó cada poder." },
     { target: ".marble-controls", eyebrow: "CANICAS · 5", title: "Abre la compuerta", description: "Pulsa Iniciar carrera. La clasificación, zona de riesgo y meta se actualizan en vivo hasta confirmar el resultado.", tip: "En Eliminación, la última canica queda fuera." },
   ],

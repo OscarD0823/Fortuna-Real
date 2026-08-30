@@ -13,7 +13,7 @@ import {
 import { createMarbleTrackPiece3D } from "./marbleTrackPieceKit";
 
 export type MarbleRaceVisualPhase = "ready" | "racing" | "finished";
-export type MarbleFollowCameraStyle = "chase" | "onboard" | "aerial";
+export type MarbleFollowCameraStyle = "chase" | "onboard" | "trackside" | "aerial";
 
 interface TrackWorldPoint {
   position: THREE.Vector3;
@@ -1885,17 +1885,25 @@ export const drawMarbleRace3D = (
       const rescueBlend = motion.recovering ? Math.sin(motion.recoveryPhase * Math.PI) : 0;
       const cameraDistance = followCameraStyle === "onboard"
         ? 2.55 + speedBlend * 0.42 + rescueBlend * 2.2
+        : followCameraStyle === "trackside"
+          ? 1.15 + speedBlend * 0.45 + rescueBlend * 1.1
         : followCameraStyle === "aerial"
           ? 5.7 + speedBlend * 1.25 + rescueBlend * 0.9
           : 3.9 + speedBlend * 1.15 + rescueBlend * 1.35;
       const cameraHeight = followCameraStyle === "onboard"
         ? 1.78 + followedRadius * 1.2 + speedBlend * 0.2 + rescueBlend * 2.15
+        : followCameraStyle === "trackside"
+          ? 2.55 + followedRadius + speedBlend * 0.3 + rescueBlend * 1.55
         : followCameraStyle === "aerial"
           ? 4.7 + speedBlend * 0.8 + rescueBlend * 1.25
           : 2.05 + followedRadius * 1.3 + speedBlend * 0.48 + rescueBlend * 1.8;
       const cameraShoulder = followCameraStyle === "onboard"
         ? 0
-        : cameraSide * (followCameraStyle === "aerial" ? 1.15 : 0.38 + speedBlend * 0.2 + rescueBlend * 0.18);
+        : cameraSide * (
+          followCameraStyle === "trackside"
+            ? 4.4 + speedBlend * 0.75 + rescueBlend * 0.35
+            : followCameraStyle === "aerial" ? 1.15 : 0.38 + speedBlend * 0.2 + rescueBlend * 0.18
+        );
       const desiredPosition = state.positionVector.copy(state.racerPositions[followIndex])
         .addScaledVector(trackPoint.up, cameraHeight)
         .addScaledVector(state.followCameraForward, -cameraDistance)
@@ -1908,7 +1916,7 @@ export const drawMarbleRace3D = (
       const desiredTarget = state.stagingVector.copy(state.racerPositions[followIndex])
         .lerp(
           lookAheadPoint.position,
-          motion.recovering ? 0.16 : followCameraStyle === "onboard" ? 0.84 : followCameraStyle === "aerial" ? 0.2 : 0.28,
+          motion.recovering ? 0.16 : followCameraStyle === "onboard" ? 0.84 : followCameraStyle === "trackside" ? 0.46 : followCameraStyle === "aerial" ? 0.2 : 0.28,
         )
         .addScaledVector(trackPoint.up, followedRadius * 0.45 + (followCameraStyle === "onboard" ? 0.58 : 0.24) + rescueBlend * 0.32);
       state.followCameraUp.copy(Y_AXIS).lerp(
@@ -1931,6 +1939,8 @@ export const drawMarbleRace3D = (
       }
       const desiredFov = followCameraStyle === "onboard"
         ? 66 + speedBlend * 4 + rescueBlend * 2
+        : followCameraStyle === "trackside"
+          ? 52 + speedBlend * 3 + rescueBlend * 2
         : followCameraStyle === "aerial"
           ? 48 + speedBlend * 2 + rescueBlend * 2
           : 59 + speedBlend * 4.5 + rescueBlend * 2;
@@ -1957,7 +1967,11 @@ export const drawMarbleRace3D = (
       beaconMaterial.color.setHex(motion.recovering ? 0xff7a3d : 0x5ffff7);
       state.activeFollowRacerId = followIdentity;
       renderCamera = state.followCamera;
-      const cameraStyleLabel = followCameraStyle === "onboard" ? "onboard-marble" : followCameraStyle === "aerial" ? "aerial-follow" : "cinematic-chase";
+      const cameraStyleLabel = followCameraStyle === "onboard"
+        ? "onboard-marble"
+        : followCameraStyle === "trackside"
+          ? "trackside-rail"
+          : followCameraStyle === "aerial" ? "aerial-follow" : "cinematic-chase";
       if (canvas.dataset.cameraStyle !== cameraStyleLabel) canvas.dataset.cameraStyle = cameraStyleLabel;
       canvas.dataset.cameraRecovery = motion.recovering ? "active" : "none";
       const cameraMode = `marble-${followedRacer.participant.id}-${followCameraStyle}`;

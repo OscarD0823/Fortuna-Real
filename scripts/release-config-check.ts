@@ -23,6 +23,8 @@ assert.equal(tauriConfig.bundle?.targets, "nsis");
 assert.equal(tauriConfig.bundle?.createUpdaterArtifacts, true);
 assert.deepEqual(tauriConfig.bundle?.windows?.webviewInstallMode, { type: "offlineInstaller", silent: true }, "Otro PC debe poder instalar WebView2 sin descargarlo.");
 assert.equal(tauriConfig.bundle?.windows?.nsis?.installMode, "currentUser", "El programa debe instalarse para el usuario sin requerir herramientas de desarrollo.");
+assert.equal(tauriConfig.bundle?.windows?.nsis?.installerHooks, "windows/installer-hooks.nsh", "El instalador debe crear el acceso exterior del escritorio.");
+assert.ok(readText("src-tauri/windows/installer-hooks.nsh").includes("CreateOrUpdateDesktopShortcut"));
 assert.equal(tauriConfig.build?.frontendDist, "../dist", "El instalador debe incluir el frontend compilado.");
 
 const updater = tauriConfig.plugins?.updater;
@@ -105,12 +107,14 @@ for (const marker of ["PublicKey::decode", "verify_stream", "verifier.finalize()
 }
 for (const marker of [
   '"Entrega"',
-  '"Programa"',
-  '"Instaladores"',
-  '"Iniciador"',
+  '"1 Programa"',
+  '"2 Instaladores"',
+  '"3 Ejecutar"',
   "ZipFile]::CreateFromDirectory",
   "Fortuna-Real-$version-Iniciador.zip",
   "Fortuna-Real-Portable.exe",
+  "Ejecutar Fortuna Real.cmd",
+  "Instalar Fortuna Real.cmd",
   "Get-ChildItem -LiteralPath $InstallerOutput",
 ]) {
   assert.ok(installerCreator.includes(marker), `La entrega no prepara correctamente: ${marker}.`);
@@ -119,6 +123,10 @@ for (const marker of [
   '"OscarD0823/Fortuna-Real"',
   "git.exe clone",
   "--depth 1",
+  '"1 Programa"',
+  '"2 Instaladores"',
+  '"3 Ejecutar"',
+  "Invoke-WebRequest",
   "npm.cmd ci",
   "status --porcelain",
 ]) {
@@ -138,6 +146,6 @@ console.log(JSON.stringify({
   automaticCheckFailureSilent: true,
   offlineWebViewBundled: true,
   distributedSignatureVerification: true,
-  deliveryFolders: ["Programa", "Instaladores", "Iniciador"],
+  deliveryFolders: ["1 Programa", "2 Instaladores", "3 Ejecutar"],
   publicRepositoryStarter: true,
 }));

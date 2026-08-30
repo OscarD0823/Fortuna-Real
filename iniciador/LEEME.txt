@@ -5,8 +5,9 @@ INICIADOR DE RESPALDO DE FORTUNA REAL
 proyecto completo desde GitHub.
 
 1. Abre “Instalar Fortuna Real desde GitHub.cmd”.
-2. Elige la carpeta donde deseas colocar el proyecto.
-3. Espera: se descargarán el código y las dependencias necesarias.
+2. Elige la carpeta donde deseas colocar Fortuna Real.
+3. Espera: se crearán `1 Programa`, `2 Instaladores` y `3 Ejecutar`.
+4. Entra a `3 Ejecutar` para abrir el juego o lanzar el instalador normal.
 
 El repositorio es público. No necesitas iniciar sesión en GitHub y el iniciador
 no contiene ni guarda contraseñas, tokens o claves privadas. Conserva juntos

@@ -17,9 +17,9 @@ Después de ejecutar `npm run crear-instalador`, `Entrega` contiene exactamente:
 
 ```text
 Entrega/
-├── Programa/       # ejecutable portátil y guía
-├── Instaladores/   # instalador normal, ZIP, firma y latest.json
-└── Iniciador/      # descarga pública del proyecto y ZIP autocontenido
+├── 1 Programa/       # ejecutable portátil y guía
+├── 2 Instaladores/   # instalador normal, ZIP, firma, latest.json e iniciador
+└── 3 Ejecutar/       # accesos simples para abrir o instalar
 ```
 
 El instalador normal es la opción recomendada. Configura Fortuna Real, crea los accesos de Windows e instala
@@ -31,8 +31,8 @@ depende de las voces instaladas en Windows; los juegos también funcionan sin vo
 
 El iniciador de respaldo nunca contiene credenciales ni exige iniciar sesión.
 Descarga el repositorio público `OscarD0823/Fortuna-Real`, permite elegir la
-carpeta de destino e instala las dependencias declaradas. Para distribuirlo se
-usa el ZIP del iniciador, que mantiene juntos el `.cmd`, el `.ps1` y su guía.
+carpeta de destino e instala las dependencias declaradas. La descarga queda
+organizada igualmente en `1 Programa`, `2 Instaladores` y `3 Ejecutar`.
 
 ## Inicio guiado y demos
 
@@ -147,7 +147,7 @@ Después de publicar también comprueba que el endpoint `latest.json` informe la
 versión recién creada. La sesión local de `gh` publica los archivos; la clave de
 firma nunca sale del computador.
 
-Hasta publicar el Release correspondiente (por ejemplo `v1.0.3`), la versión local
+Hasta publicar el Release correspondiente (por ejemplo `v1.0.4`), la versión local
 no se ofrecerá como actualización automática. Si no hay ningún Release publicado,
 el endpoint devolverá 404 sin bloquear el programa. El instalador local funciona
 igualmente sin conexión; publicar y verificar el Release es un paso separado.

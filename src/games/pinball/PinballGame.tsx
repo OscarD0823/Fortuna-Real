@@ -9,6 +9,7 @@ import {
 } from "./pinballEngine";
 import {
   createPinballScene,
+  type PinballCameraStyle,
   type PinballSceneController,
   type PinballSceneStats,
 } from "./pinball3d";
@@ -42,6 +43,7 @@ export function PinballGame({
   const [commitError, setCommitError] = useState<string | null>(null);
   const [renderMode, setRenderMode] = useState<"webgl" | "fallback">("webgl");
   const [cameraTargetId, setCameraTargetId] = useState<string | null>(null);
+  const [cameraStyle, setCameraStyle] = useState<PinballCameraStyle>("chase");
   const [stats, setStats] = useState<PinballSceneStats>({ launched: 0, active: 0, collisions: 0, fps: 60, renderCalls: 0, triangles: 0 });
   const [manualNotice, setManualNotice] = useState(() => controlMode === "automatic"
     ? "La mesa lanzará todas las pelotas al mismo tiempo y accionará los flippers automáticamente."
@@ -109,6 +111,10 @@ export function PinballGame({
   useEffect(() => {
     controllerRef.current?.setFollowBall(cameraTargetId);
   }, [cameraTargetId, round]);
+
+  useEffect(() => {
+    controllerRef.current?.setCameraStyle(cameraStyle);
+  }, [cameraStyle, round]);
 
   useEffect(() => () => {
     if (fallbackTimerRef.current) window.clearTimeout(fallbackTimerRef.current);
@@ -232,6 +238,7 @@ export function PinballGame({
       data-render-mode={renderMode}
       data-launch-mode="simultaneous"
       data-camera-target={cameraTargetId ?? "overview"}
+      data-camera-style={cameraTargetId ? cameraStyle : "overview"}
       data-release-stage="beta"
     >
       <div className="pinball-game__status" aria-live="polite">
@@ -260,10 +267,12 @@ export function PinballGame({
           <span><Zap size={13} /> IMPACTOS <b>{stats.collisions}</b></span>
           <span><CircleGauge size={13} /> {stats.fps} FPS</span>
         </div>
-        <label className="pinball-camera-control">
+        <div className="pinball-camera-control">
           <Camera size={16} aria-hidden="true" />
-          <span><strong>CÁMARA</strong><small>{cameraTargetId ? "Siguiendo la pelota" : "Vista general"}</small></span>
+          <span><strong>CÁMARA</strong><small>{cameraTargetId ? cameraStyle === "overhead" ? "Seguimiento cenital" : "Persecución predictiva" : "Vista general"}</small></span>
+          <label className="sr-only" htmlFor="pinball-camera-target">Seguir a un participante desde su pelota</label>
           <select
+            id="pinball-camera-target"
             aria-label="Seguir a un participante desde su pelota"
             value={cameraTargetId ?? ""}
             onChange={(event) => {
@@ -279,7 +288,19 @@ export function PinballGame({
               <option key={ball.id} value={ball.id}>{ball.number}. {ball.participant.name}</option>
             ))}
           </select>
-        </label>
+          <button
+            type="button"
+            className="pinball-camera-control__mode"
+            onClick={() => {
+              setCameraStyle((current) => current === "chase" ? "overhead" : "chase");
+              fortunaAudio.playClick();
+            }}
+            disabled={renderMode === "fallback" || !cameraTargetId}
+            aria-label={`Cambiar estilo de cámara. Estilo actual: ${cameraStyle === "overhead" ? "cenital" : "persecución"}`}
+          >
+            <Camera size={13} /> {cameraStyle === "overhead" ? "CENITAL" : "PERSECUCIÓN"}
+          </button>
+        </div>
         {phase === "ready" && (
           <div className="pinball-ready-panel">
             <strong>{roundParticipants.length} PELOTAS PREPARADAS</strong>

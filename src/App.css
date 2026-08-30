@@ -2641,6 +2641,10 @@ button:focus-visible, input:focus-visible, textarea:focus-visible {
 .pinball-camera-control select { grid-column: 1 / -1; width: 100%; min-height: 30px; margin-top: 6px; padding: 0 28px 0 8px; border: 1px solid rgba(196,122,33,.3); border-radius: 6px; color: #fff3ce; background: #10120e; font: inherit; font-size: 12px; font-weight: 800; cursor: pointer; }
 .pinball-camera-control select:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
 .pinball-camera-control select:disabled { cursor: not-allowed; opacity: .48; }
+.pinball-camera-control__mode { grid-column: 1 / -1; display: flex; min-height: 27px; margin-top: 5px; align-items: center; justify-content: center; gap: 6px; border: 1px solid rgba(9,224,223,.28); border-radius: 6px; color: #bfffff; background: rgba(5,38,43,.86); font: inherit; font-size: 12px; font-weight: 900; letter-spacing: .7px; cursor: pointer; }
+.pinball-camera-control__mode:hover:not(:disabled) { border-color: rgba(9,224,223,.72); background: rgba(8,65,70,.92); }
+.pinball-camera-control__mode:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+.pinball-camera-control__mode:disabled { cursor: not-allowed; opacity: .42; }
 .pinball-ready-panel { position: absolute; z-index: 4; left: 50%; bottom: 18px; width: min(390px,72%); transform: translateX(-50%); padding: 10px 14px; border: 1px solid rgba(246,189,53,.35); border-radius: 11px; background: rgba(2,10,14,.84); box-shadow: 0 12px 30px rgba(0,0,0,.52), inset 0 0 20px rgba(246,189,53,.04); backdrop-filter: blur(8px); text-align: center; }
 .pinball-ready-panel strong, .pinball-ready-panel small { display: block; }
 .pinball-ready-panel strong { color: var(--gold); font-size: 12px; letter-spacing: 1px; }

@@ -142,6 +142,9 @@ export const createDuckHunt3D = (
   let activeWaveIds = new Set<string>();
   let escapeStartedAt = 0;
   let escapeUntil = 0;
+  let cameraRecoilUntil = 0;
+  let cameraRecoilX = 0;
+  let cameraRecoilY = 0;
 
   const renderer = new THREE.WebGLRenderer({
     canvas,
@@ -169,6 +172,7 @@ export const createDuckHunt3D = (
   const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 90);
   const classicCameraPosition = new THREE.Vector3(0, 5.3, 20.8);
   const classicCameraTarget = new THREE.Vector3(0, 4.25, 0.2);
+  const recoilCameraTarget = new THREE.Vector3();
   camera.position.copy(classicCameraPosition);
   camera.lookAt(classicCameraTarget);
 
@@ -533,6 +537,10 @@ export const createDuckHunt3D = (
     new THREE.MeshBasicMaterial({ color: "#dff9ff" }),
     maxCount,
   );
+  const pupilGeometry = new THREE.SphereGeometry(0.027, denseFlock ? 4 : 6, denseFlock ? 3 : 5);
+  const pupilMaterial = new THREE.MeshBasicMaterial({ color: "#07100b" });
+  const pupil = new THREE.InstancedMesh(pupilGeometry, pupilMaterial, maxCount);
+  const farPupil = new THREE.InstancedMesh(pupilGeometry, pupilMaterial, maxCount);
   const chest = new THREE.InstancedMesh(
     new THREE.SphereGeometry(0.42, denseFlock ? 7 : 10, denseFlock ? 5 : 7),
     new THREE.MeshStandardMaterial({ color: "#e7eee0", roughness: 0.68 }),
@@ -543,6 +551,10 @@ export const createDuckHunt3D = (
     new THREE.MeshStandardMaterial({ roughness: 0.62 }),
     maxCount,
   );
+  const footGeometry = new THREE.BoxGeometry(0.34, 0.075, 0.18);
+  const footMaterial = new THREE.MeshStandardMaterial({ color: "#e88c20", roughness: 0.62 });
+  const leftFoot = new THREE.InstancedMesh(footGeometry, footMaterial, maxCount);
+  const rightFoot = new THREE.InstancedMesh(footGeometry, footMaterial, maxCount);
   const neckRing = new THREE.InstancedMesh(
     new THREE.TorusGeometry(0.25, 0.055, denseFlock ? 3 : 5, denseFlock ? 7 : 10),
     new THREE.MeshBasicMaterial({ color: "#eaf8e4" }),
@@ -563,7 +575,23 @@ export const createDuckHunt3D = (
     new THREE.MeshBasicMaterial({ color: "#ffffff", transparent: true, opacity: 0.7, depthWrite: false }),
     maxCount,
   );
-  const coreDuckMeshes = [body, chest, head, leftWing, rightWing, beak, eye, farEye, tail, ...(!denseFlock ? [neckRing] : []), powerSigils];
+  const coreDuckMeshes = [
+    body,
+    chest,
+    head,
+    leftWing,
+    rightWing,
+    beak,
+    eye,
+    farEye,
+    pupil,
+    farPupil,
+    tail,
+    leftFoot,
+    rightFoot,
+    ...(!denseFlock ? [neckRing] : []),
+    powerSigils,
+  ];
   const duckMeshes = [...coreDuckMeshes, winnerCrown, shields];
   duckMeshes.forEach((mesh, index) => {
     mesh.name = `SM_DuckPart_${index}`;
@@ -595,12 +623,14 @@ export const createDuckHunt3D = (
   const beakScale = new THREE.Vector3();
   const unitScale = new THREE.Vector3();
   const tailScale = new THREE.Vector3();
+  const footScale = new THREE.Vector3();
   const shieldScale = new THREE.Vector3();
   const baseRotation = new THREE.Euler();
   const leftWingRotation = new THREE.Euler();
   const rightWingRotation = new THREE.Euler();
   const beakRotation = new THREE.Euler();
   const tailRotation = new THREE.Euler();
+  const footRotation = new THREE.Euler();
   const neckRotation = new THREE.Euler();
   const crownRotation = new THREE.Euler();
   const shieldRotation = new THREE.Euler();
@@ -823,10 +853,20 @@ export const createDuckHunt3D = (
       setInstanceTransform(eye, index, partPosition, baseRotation, unitScale);
       partPosition.copy(position).set(position.x + 0.88 * scale, position.y + 0.37 * scale, position.z - 0.27 * scale);
       setInstanceTransform(farEye, index, partPosition, baseRotation, unitScale);
+      partPosition.copy(position).set(position.x + 0.93 * scale, position.y + 0.38 * scale, position.z + 0.305 * scale);
+      setInstanceTransform(pupil, index, partPosition, baseRotation, unitScale);
+      partPosition.copy(position).set(position.x + 0.93 * scale, position.y + 0.38 * scale, position.z - 0.305 * scale);
+      setInstanceTransform(farPupil, index, partPosition, baseRotation, unitScale);
       tailRotation.set(0, 0, Math.PI / 2);
       tailScale.set(0.82, 1.05, 0.82).multiplyScalar(scale);
       partPosition.copy(position).set(position.x - 0.72 * scale, position.y + 0.04 * scale, position.z);
       setInstanceTransform(tail, index, partPosition, tailRotation, tailScale);
+      footRotation.set(0, yaw, reducedMotion ? 0.08 : 0.08 + Math.abs(flapAmount) * 0.14);
+      footScale.setScalar(scale);
+      partPosition.copy(position).set(position.x - 0.08 * scale, position.y - 0.43 * scale, position.z + 0.25 * scale);
+      setInstanceTransform(leftFoot, index, partPosition, footRotation, footScale);
+      partPosition.copy(position).set(position.x - 0.08 * scale, position.y - 0.43 * scale, position.z - 0.25 * scale);
+      setInstanceTransform(rightFoot, index, partPosition, footRotation, footScale);
       neckRotation.set(0, Math.PI / 2 + yaw, 0);
       partPosition.copy(position).set(position.x + 0.43 * scale, position.y + 0.2 * scale, position.z);
       if (!denseFlock) setInstanceTransform(neckRing, index, partPosition, neckRotation, unitScale);
@@ -906,14 +946,21 @@ export const createDuckHunt3D = (
     const visible = visibleCount;
     // Cámara fija tipo galería de tiro: el apuntado y el tamaño de los patos
     // no cambian por una animación de cámara.
+    const recoilRemaining = Math.max(0, cameraRecoilUntil - now);
+    const recoil = recoilRemaining > 0 ? smoothstep(recoilRemaining / 150) : 0;
     camera.position.copy(classicCameraPosition);
+    camera.position.x += cameraRecoilX * recoil * 0.12;
+    camera.position.y += cameraRecoilY * recoil * 0.09;
+    recoilCameraTarget.copy(classicCameraTarget);
+    recoilCameraTarget.x -= cameraRecoilX * recoil * 0.08;
+    recoilCameraTarget.y -= cameraRecoilY * recoil * 0.06;
     canvas.dataset.cameraFocus = running ? "classic-field" : "classic-preview";
-    const desiredFov = renderHeight < 560 ? 43 : 38;
+    const desiredFov = (renderHeight < 560 ? 43 : 38) + recoil * 1.4;
     if (Math.abs(camera.fov - desiredFov) > 0.04) {
       camera.fov = THREE.MathUtils.lerp(camera.fov, desiredFov, reducedMotion ? 1 : 0.09);
       camera.updateProjectionMatrix();
     }
-    camera.lookAt(classicCameraTarget);
+    camera.lookAt(recoilCameraTarget);
     pond.rotation.z = reducedMotion ? 0 : Math.sin(now / 2200) * 0.012;
     if (!reducedMotion) {
       clouds.position.x = Math.sin(now / 6_600) * 0.42;
@@ -1019,7 +1066,7 @@ export const createDuckHunt3D = (
         if ((coverAmounts.get(contestant.id) ?? 0) >= 0.58) return;
         const position = currentPositions.get(contestant.id);
         if (!position) return;
-        projected.copy(position).project(camera);
+      projected.copy(position).project(camera);
         const screenX = (projected.x * 0.5 + 0.5) * rect.width;
         const screenY = (-projected.y * 0.5 + 0.5) * rect.height;
         const distance = Math.hypot(screenX - pointerX, screenY - pointerY);
@@ -1033,7 +1080,11 @@ export const createDuckHunt3D = (
       });
       projected.set((pointerX / rect.width) * 2 - 1, -(pointerY / rect.height) * 2 + 1, 0.12).unproject(camera);
       flash.position.copy(projected);
-      shotFlashUntil = performance.now() + 120;
+      const shotAt = performance.now();
+      shotFlashUntil = shotAt + 120;
+      cameraRecoilUntil = shotAt + 150;
+      cameraRecoilX = (pointerX / rect.width) * 2 - 1;
+      cameraRecoilY = 1 - (pointerY / rect.height) * 2;
       return {
         hitId: selectedId,
         grazedId: selectedId ? null : grazedId,

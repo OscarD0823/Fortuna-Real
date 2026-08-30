@@ -35,10 +35,13 @@ export interface PinballSceneEvents {
   onFinish?: (assignment: PreparedPinballRound["balls"][number], label: string) => void;
 }
 
+export type PinballCameraStyle = "chase" | "overhead";
+
 export interface PinballSceneController {
   start: () => void;
   launchBurst: () => number;
   setFollowBall: (ballId: string | null) => void;
+  setCameraStyle: (style: PinballCameraStyle) => void;
   setFlippers: (left: boolean, right: boolean) => void;
   dispose: () => void;
 }
@@ -1150,6 +1153,7 @@ export const createPinballScene = (
   let shadowReady = false;
   let followedBallIndex = -1;
   let followCameraPrimed = false;
+  let followCameraStyle: PinballCameraStyle = "chase";
 
   const launchAt = (index: number) => {
     const item = runtime[index];
@@ -1462,11 +1466,18 @@ export const createPinballScene = (
       }
       (followTrailGeometry.getAttribute("position") as THREE.BufferAttribute).needsUpdate = true;
       followTrail.visible = true;
-      followCameraPosition.set(followedPhysics.x, 2.75 + speedBlend * 0.72, followedPhysics.z)
-        .addScaledVector(followDirection, -(2.25 + speedBlend * 0.95));
-      followCameraLookTarget.set(followedPhysics.x, 0.76, followedPhysics.z)
-        .addScaledVector(followDirection, 1.3 + speedBlend * 1.35);
-      followCameraUp.set(THREE.MathUtils.clamp(-followedPhysics.vx * 0.014, -0.13, 0.13), 1, 0).normalize();
+      if (followCameraStyle === "overhead") {
+        followCameraPosition.set(followedPhysics.x, 9.2 + speedBlend * 0.8, followedPhysics.z + 3.6);
+        followCameraLookTarget.set(followedPhysics.x, 0.7, followedPhysics.z)
+          .addScaledVector(followDirection, 0.65 + speedBlend * 0.45);
+        followCameraUp.set(0, 0, -1);
+      } else {
+        followCameraPosition.set(followedPhysics.x, 2.75 + speedBlend * 0.72, followedPhysics.z)
+          .addScaledVector(followDirection, -(2.25 + speedBlend * 0.95));
+        followCameraLookTarget.set(followedPhysics.x, 0.76, followedPhysics.z)
+          .addScaledVector(followDirection, 1.3 + speedBlend * 1.35);
+        followCameraUp.set(THREE.MathUtils.clamp(-followedPhysics.vx * 0.014, -0.13, 0.13), 1, 0).normalize();
+      }
       if (!followCameraPrimed) {
         camera.position.copy(followCameraPosition);
         cameraTarget.copy(followCameraLookTarget);
@@ -1477,7 +1488,7 @@ export const createPinballScene = (
         cameraTarget.lerp(followCameraLookTarget, Math.min(1, cameraResponse * 1.2));
         camera.up.lerp(followCameraUp, cameraResponse * 0.7).normalize();
       }
-      const desiredFollowFov = 57 + speedBlend * 9;
+      const desiredFollowFov = followCameraStyle === "overhead" ? 46 + speedBlend * 3 : 57 + speedBlend * 9;
       if (Math.abs(camera.fov - desiredFollowFov) > 0.05) {
         camera.fov = THREE.MathUtils.lerp(camera.fov, desiredFollowFov, reducedMotion ? 1 : 0.16);
         camera.updateProjectionMatrix();
@@ -1485,7 +1496,7 @@ export const createPinballScene = (
       followCameraPrimed = true;
       const cameraMode = `ball-${round.balls[followIndex].participant.id}`;
       if (canvas.dataset.cameraMode !== cameraMode) canvas.dataset.cameraMode = cameraMode;
-      canvas.dataset.cameraStyle = "predictive-ball-follow";
+      canvas.dataset.cameraStyle = followCameraStyle === "overhead" ? "overhead-ball-follow" : "predictive-ball-follow";
     } else {
       followTrail.visible = false;
       const cameraBlend = running ? reducedMotion ? 1 : smoothstep(elapsed / cameraIntroMs) : 0;
@@ -1533,6 +1544,10 @@ export const createPinballScene = (
     launchBurst,
     setFollowBall: (ballId) => {
       followedBallIndex = ballId ? round.balls.findIndex((assignment) => assignment.id === ballId) : -1;
+      followCameraPrimed = false;
+    },
+    setCameraStyle: (style) => {
+      followCameraStyle = style;
       followCameraPrimed = false;
     },
     setFlippers: (left, right) => {

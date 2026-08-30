@@ -6,6 +6,8 @@ const css = readFileSync(resolve(root, "src/App.css"), "utf8");
 const instructions = readFileSync(resolve(root, "INSTRUCCIONES - LEER PRIMERO.txt"), "utf8");
 const setup = readFileSync(resolve(root, "src/modules/draw/DrawSetup.tsx"), "utf8");
 const marbleRace = readFileSync(resolve(root, "src/games/marbles/MarbleRace.tsx"), "utf8");
+const pinballGame = readFileSync(resolve(root, "src/games/pinball/PinballGame.tsx"), "utf8");
+const duckScene = readFileSync(resolve(root, "src/games/ducks/duckHunt3d.ts"), "utf8");
 const app = readFileSync(resolve(root, "src/App.tsx"), "utf8");
 const tutorialContent = readFileSync(resolve(root, "src/shared/tutorial/tutorialContent.ts"), "utf8");
 const guidedTour = readFileSync(resolve(root, "src/shared/tutorial/GuidedTour.tsx"), "utf8");
@@ -35,8 +37,14 @@ if (!instructions.includes(expectedInstruction)) {
 for (const betaLabel of ["BETA · mesa física", "BETA · 3D procedural", "BETA · supervivencia"]) {
   if (!setup.includes(betaLabel)) throw new Error(`Falta identificar como beta: ${betaLabel}`);
 }
-for (const cameraLabel of ["PERSECUCIÓN", "A BORDO", "AÉREA"]) {
+for (const cameraLabel of ["PERSECUCIÓN", "A BORDO", "LATERAL", "AÉREA"]) {
   if (!marbleRace.includes(cameraLabel)) throw new Error(`Falta el modo de cámara de Canicas: ${cameraLabel}`);
+}
+for (const cameraLabel of ["CENITAL", "PERSECUCIÓN"]) {
+  if (!pinballGame.includes(cameraLabel)) throw new Error(`Falta el modo de cámara de Pinball: ${cameraLabel}`);
+}
+for (const modelDetail of ["pupil", "leftFoot", "cameraRecoilUntil"]) {
+  if (!duckScene.includes(modelDetail)) throw new Error(`Falta el detalle visual de Patos: ${modelDetail}`);
 }
 for (const game of ["roulette", "cards", "pinball", "marbles", "ducks"]) {
   if (!tutorialContent.includes(`${game}: {`)) throw new Error(`Falta la demostración de ${game}.`);
@@ -59,7 +67,9 @@ console.log(JSON.stringify({
   lowContrastTokensRemoved: inaccessibleColors,
   fiveGamesDocumented: true,
   betaGamesIdentified: ["pinball", "marbles", "ducks"],
-  marbleCameraModes: 3,
+  marbleCameraModes: 4,
+  pinballCameraModes: 2,
+  duckModelDetails: ["pupils", "feet", "shotRecoil"],
   guidedDemos: ["roulette", "cards", "pinball", "marbles", "ducks"],
   keyboardAccessibleTutorials: true,
 }, null, 2));

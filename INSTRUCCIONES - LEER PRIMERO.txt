@@ -1,14 +1,14 @@
 ============================================================
-                 FORTUNA REAL 1.0.3
+                 FORTUNA REAL 1.0.4
              GUÍA DE INSTALACIÓN Y USO
 ============================================================
 
 CONTENIDO DE ESTA CARPETA
 
-- Fortuna-Real-1.0.3-Instalador.exe
+- Fortuna-Real-1.0.4-Instalador.exe
   Es el instalador de Fortuna Real para Windows.
 
-- Fortuna-Real-1.0.3-Instalador.zip
+- Fortuna-Real-1.0.4-Instalador.zip
   Es una copia comprimida del instalador, su firma y su manifiesto.
 
 - latest.json y el archivo .sig
@@ -31,10 +31,10 @@ CONTENIDO DE ESTA CARPETA
 2. CÓMO INSTALAR FORTUNA REAL
 
 1. Abre la carpeta donde recibiste el instalador.
-2. Haz doble clic en “Fortuna-Real-1.0.3-Instalador.exe”.
+2. Haz doble clic en “Fortuna-Real-1.0.4-Instalador.exe”.
 3. Si Windows muestra “Windows protegió su PC”:
    a. Pulsa “Más información”.
-   b. Comprueba que el archivo sea Fortuna-Real-1.0.3-Instalador.exe.
+   b. Comprueba que el archivo sea Fortuna-Real-1.0.4-Instalador.exe.
    c. Pulsa “Ejecutar de todas formas”.
 4. Sigue las instrucciones del instalador.
 5. Abre “Fortuna Real” desde el menú Inicio o su acceso directo.
@@ -79,6 +79,7 @@ Modo manual:
 - Usa A o flecha izquierda para el flipper izquierdo.
 - Usa D o flecha derecha para el flipper derecho.
 - También puedes usar los tres botones de la pantalla.
+- El selector de cámara permite seguir una pelota en persecución o desde arriba.
 
 En Ganador directo, la pelota sellada representa al ganador. En Eliminación,
 representa a la persona eliminada. En automático la máquina controla la partida.
@@ -114,7 +115,7 @@ La mesa admite listas de 2 a 200 participantes.
 - Fácil, Medio y Difícil cambian longitud, obstáculos, poderes y duración.
 - La pista se genera de nuevo para cada ronda.
 - El selector de cámara permite seguir a cualquier participante. Las flechas
-  cambian de canica; el botón de estilo cambia entre persecución, a bordo y aérea.
+  cambian de canica; el botón de estilo cambia entre persecución, a bordo, lateral y aérea.
 - Si una canica sale del canal, regresa de forma segura a la salida.
 - Al reanudar una ronda comprometida se reconstruyen pista, orden y resultado;
   no se permite cambiar mapa ni dificultad.
