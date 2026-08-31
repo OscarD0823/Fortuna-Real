@@ -132,20 +132,16 @@ descarga el paquete firmado, lo instala y reinicia la aplicación. Los avisos
 esperan a que regreses al inicio y cierres cualquier guía o demo.
 
 Las actualizaciones se publican en GitHub Releases del repositorio
-`OscarD0823/Fortuna-Real`. La clave privada de firma está fuera del proyecto:
+`OscarD0823/Fortuna-Real`. La clave privada de firma y la contraseña protegida
+se conservan únicamente en el perfil local de Windows, fuera del proyecto.
 
-```text
-C:\Users\odcon\.tauri\fortuna-real.key
-C:\Users\odcon\.tauri\fortuna-real.key.password.dpapi
-```
-
-Si existe el archivo `.password.dpapi`, la contraseña local se recupera cifrada
-con DPAPI y solo desde la cuenta de Windows que la creó. Si no existe, el script
-la solicita, la valida antes de compilar y permite tres intentos. Tras el primer
-acierto crea automáticamente el archivo DPAPI; nunca conserva texto plano. La clave,
-ese archivo local y la contraseña original no se comparten ni se suben a GitHub. Debe conservarse
-una copia de seguridad segura; sin ella no se pueden entregar actualizaciones a
-quienes ya tengan el programa instalado.
+La contraseña local se recupera cifrada con DPAPI y solo desde la cuenta de
+Windows que la creó. Si todavía no está protegida, el script la solicita, la
+valida antes de compilar y permite tres intentos. Tras el primer acierto la
+protege automáticamente con DPAPI y nunca conserva texto plano. La clave, el
+archivo local protegido y la contraseña original no se comparten ni se suben a
+GitHub. Debe conservarse una copia de seguridad segura; sin ella no se pueden
+entregar actualizaciones a quienes ya tengan el programa instalado.
 
 La publicación recomendada mantiene la clave exclusivamente en este computador:
 
