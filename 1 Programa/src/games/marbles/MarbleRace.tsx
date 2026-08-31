@@ -814,9 +814,11 @@ export function MarbleRace({
   const [renderMode, setRenderMode] = useState<MarbleRenderMode>("webgl");
   const [cameraTargetId, setCameraTargetId] = useState<string | null>(null);
   const [cameraStyle, setCameraStyle] = useState<MarbleFollowCameraStyle>("chase");
+  const [cameraDirectorEnabled, setCameraDirectorEnabled] = useState(true);
   const renderModeRef = useRef<MarbleRenderMode>("webgl");
   const cameraTargetRef = useRef<string | null>(null);
   const cameraStyleRef = useRef<MarbleFollowCameraStyle>("chase");
+  const cameraDirectorRef = useRef(true);
   const webglCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const fallbackCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const frameRef = useRef(0);
@@ -876,12 +878,33 @@ export function MarbleRace({
 
   const changeCameraTarget = (nextTargetId: string) => {
     const nextTarget = nextTargetId || null;
+    cameraDirectorRef.current = false;
+    setCameraDirectorEnabled(false);
     cameraTargetRef.current = nextTarget;
     setCameraTargetId(nextTarget);
     fortunaAudio.playClick();
     if (phase !== "racing") {
       paint(phase === "finished" ? race.selected.durationMs + getMarbleCameraIntroMs() : 0, phase);
     }
+  };
+
+  const setDirectorCameraTarget = (nextTargetId: string | null) => {
+    if (cameraTargetRef.current === nextTargetId) return;
+    cameraTargetRef.current = nextTargetId;
+    setCameraTargetId(nextTargetId);
+  };
+
+  const toggleCameraDirector = () => {
+    const nextEnabled = !cameraDirectorRef.current;
+    cameraDirectorRef.current = nextEnabled;
+    setCameraDirectorEnabled(nextEnabled);
+    if (nextEnabled) {
+      const targetId = ranking.length > 0
+        ? (mode === "direct" ? ranking[0] : ranking[ranking.length - 1])?.racer.id
+        : (mode === "direct" ? race.racers[0] : race.racers[race.racers.length - 1])?.id;
+      setDirectorCameraTarget(targetId ?? null);
+    }
+    fortunaAudio.playClick();
   };
 
   const stepCameraTarget = (direction: -1 | 1) => {
@@ -969,6 +992,7 @@ export function MarbleRace({
         const trackedRacer = mode === "direct"
           ? orderedRacers[0]
           : orderedRacers[orderedRacers.length - 1];
+        if (cameraDirectorRef.current) setDirectorCameraTarget(trackedRacer.racer.id);
         const positionEvent: RaceEvent | null = (
           elapsed > cameraIntroMs + 300
           && trackedPositionRef.current
@@ -1097,6 +1121,7 @@ export function MarbleRace({
       data-recovery-racers={race.racers.filter((racer) => racer.recoveryAt < 1).length}
       data-camera-target={cameraTargetId ?? "overview"}
       data-camera-style={cameraTargetId ? cameraStyle : "overview"}
+      data-camera-director={cameraDirectorEnabled ? "automatic" : "manual"}
       data-release-stage="beta"
     >
       <div className="marble-race-status" aria-live="polite">
@@ -1133,7 +1158,7 @@ export function MarbleRace({
 
         <div className="marble-camera-control">
           <Camera size={16} aria-hidden="true" />
-          <span><strong>CÁMARA CINEMÁTICA</strong><small>{followedState?.recovering ? "Rescate automático en cámara" : cameraTargetId ? `${cameraStyleLabels[cameraStyle]} · seguimiento estabilizado` : "Vista general"}</small></span>
+          <span><strong>CÁMARA CINEMÁTICA</strong><small>{followedState?.recovering ? "Rescate automático en cámara" : cameraDirectorEnabled ? mode === "direct" ? "Director: sigue al líder" : "Director: sigue la zona de riesgo" : cameraTargetId ? `${cameraStyleLabels[cameraStyle]} · seguimiento manual` : "Vista general manual"}</small></span>
           <div className="marble-camera-control__switcher">
             <button type="button" onClick={() => stepCameraTarget(-1)} disabled={renderMode === "fallback"} aria-label="Seguir la canica anterior"><ChevronLeft size={15} /></button>
             <select
@@ -1157,15 +1182,27 @@ export function MarbleRace({
             </select>
             <button type="button" onClick={() => stepCameraTarget(1)} disabled={renderMode === "fallback"} aria-label="Seguir la canica siguiente"><ChevronRight size={15} /></button>
           </div>
-          <button
-            type="button"
-            className="marble-camera-control__mode"
-            onClick={cycleCameraStyle}
-            disabled={renderMode === "fallback" || !cameraTargetId}
-            aria-label={`Cambiar estilo de cámara. Estilo actual: ${cameraStyleLabels[cameraStyle]}`}
-          >
-            <Camera size={13} /> {cameraStyleLabels[cameraStyle]}
-          </button>
+          <div className="marble-camera-control__actions">
+            <button
+              type="button"
+              className={`marble-camera-control__director ${cameraDirectorEnabled ? "is-active" : ""}`}
+              onClick={toggleCameraDirector}
+              disabled={renderMode === "fallback"}
+              aria-pressed={cameraDirectorEnabled}
+              aria-label={cameraDirectorEnabled ? "Desactivar director automático" : "Activar director automático"}
+            >
+              <Sparkles size={13} /> AUTO
+            </button>
+            <button
+              type="button"
+              className="marble-camera-control__mode"
+              onClick={cycleCameraStyle}
+              disabled={renderMode === "fallback" || !cameraTargetId}
+              aria-label={`Cambiar estilo de cámara. Estilo actual: ${cameraStyleLabels[cameraStyle]}`}
+            >
+              <Camera size={13} /> {cameraStyleLabels[cameraStyle]}
+            </button>
+          </div>
         </div>
 
         <aside className="marble-live-ranking" aria-label="Clasificación de la carrera">

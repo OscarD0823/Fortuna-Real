@@ -1,14 +1,14 @@
 ============================================================
-                 FORTUNA REAL 1.0.4
+                 FORTUNA REAL 1.0.5
              GUÍA DE INSTALACIÓN Y USO
 ============================================================
 
 CONTENIDO DE ESTA CARPETA
 
-- Fortuna-Real-1.0.4-Instalador.exe
+- Fortuna-Real-1.0.5-Instalador.exe
   Es el instalador de Fortuna Real para Windows.
 
-- Fortuna-Real-1.0.4-Instalador.zip
+- Fortuna-Real-1.0.5-Instalador.zip
   Es una copia comprimida del instalador, su firma y su manifiesto.
 
 - latest.json y el archivo .sig
@@ -31,10 +31,10 @@ CONTENIDO DE ESTA CARPETA
 2. CÓMO INSTALAR FORTUNA REAL
 
 1. Abre la carpeta donde recibiste el instalador.
-2. Haz doble clic en “Fortuna-Real-1.0.4-Instalador.exe”.
+2. Haz doble clic en “Fortuna-Real-1.0.5-Instalador.exe”.
 3. Si Windows muestra “Windows protegió su PC”:
    a. Pulsa “Más información”.
-   b. Comprueba que el archivo sea Fortuna-Real-1.0.4-Instalador.exe.
+   b. Comprueba que el archivo sea Fortuna-Real-1.0.5-Instalador.exe.
    c. Pulsa “Ejecutar de todas formas”.
 4. Sigue las instrucciones del instalador.
 5. Abre “Fortuna Real” desde el menú Inicio o su acceso directo.
@@ -56,6 +56,8 @@ estas prácticas no se guardan ni cambian tu sorteo real.
    Para uno solo, escribe el nombre y pulsa Enter o +.
    Para varios, usa una persona por línea o comas: Ana, Bruno, Camila.
    Después pulsa “Agregar nombres”. Se omiten los nombres repetidos.
+   Con diez nombres o más aparece un buscador para localizar y retirar rápidamente
+   a una persona sin cambiar su número original.
 2. Selecciona Ruleta, Cartas, Pinball 3D, Canicas 3D o Patos 3D.
    Pinball 3D, Canicas 3D y Patos 3D aparecen identificados como BETA mientras
    continúan recibiendo mejoras visuales, de cámara y rendimiento.
@@ -79,7 +81,8 @@ Modo manual:
 - Usa A o flecha izquierda para el flipper izquierdo.
 - Usa D o flecha derecha para el flipper derecho.
 - También puedes usar los tres botones de la pantalla.
-- El selector de cámara permite seguir una pelota en persecución o desde arriba.
+- El selector de cámara permite seguir una pelota en persecución o desde arriba;
+  las flechas cambian de participante sin abrir la lista.
 
 En Ganador directo, la pelota sellada representa al ganador. En Eliminación,
 representa a la persona eliminada. En automático la máquina controla la partida.
@@ -114,6 +117,8 @@ La mesa admite listas de 2 a 200 participantes.
 - En Eliminación, sale la última canica que cruza la meta.
 - Fácil, Medio y Difícil cambian longitud, obstáculos, poderes y duración.
 - La pista se genera de nuevo para cada ronda.
+- El director AUTO sigue al líder en Ganador directo o a la última canica en
+  riesgo durante Eliminación. Puedes desactivarlo para elegir manualmente.
 - El selector de cámara permite seguir a cualquier participante. Las flechas
   cambian de canica; el botón de estilo cambia entre persecución, a bordo, lateral y aérea.
 - Si una canica sale del canal, regresa de forma segura a la salida.
@@ -130,6 +135,8 @@ La mesa admite listas de 2 a 200 participantes.
 - Nombre, color y corona permanecen ocultos hasta el primer impacto oficial.
 - Los refugios esconden también los letreros de los patos. Cada impacto provoca
   una salida colectiva. Paleta, temblor e inversión son efectos temporales.
+- El radar “A CUBIERTO” indica cuántos patos vivos están completamente ocultos
+  en el bosque o el pasto, y el marcador muestra la racha y el récord de aciertos.
 - Puedes apuntar o usar “Siguiente impacto”; “Resolución automática” termina
   el orden sellado sin cambiar la persona ganadora.
 - Si la vista 3D no puede abrirse, aparece un control accesible que consume el

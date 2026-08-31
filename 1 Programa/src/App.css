@@ -3246,3 +3246,126 @@ button:focus-visible, input:focus-visible, textarea:focus-visible {
   .game-demo-scene *,
   .game-demo-scene { animation: none !important; transition: none !important; }
 }
+
+/* Controles de preparación y cámaras v1.0.5. */
+.round-pill__beta {
+  display: inline-flex;
+  margin-left: 5px;
+  padding: 2px 6px;
+  border: 1px solid rgba(246,189,53,.45);
+  border-radius: 999px;
+  color: #ffe08b;
+  background: rgba(89,57,4,.42);
+  font-size: 12px;
+  font-style: normal;
+  line-height: 1;
+  letter-spacing: .5px;
+  vertical-align: 1px;
+}
+
+.participant-search {
+  display: grid;
+  grid-template-columns: 20px minmax(0,1fr) 28px;
+  min-height: 36px;
+  margin: 0 0 8px;
+  align-items: center;
+  padding: 0 5px 0 9px;
+  border: 1px solid rgba(92,145,156,.23);
+  border-radius: 8px;
+  color: #6d9098;
+  background: rgba(2,13,17,.72);
+  transition: border-color .16s, box-shadow .16s;
+}
+.participant-search:focus-within { border-color: rgba(9,224,223,.62); box-shadow: 0 0 0 2px rgba(9,224,223,.08); color: var(--cyan); }
+.participant-search input { width: 100%; min-width: 0; border: 0; outline: 0; color: #eaffff; background: transparent; font: inherit; font-size: 12px; }
+.participant-search input::placeholder { color: #658087; }
+.participant-search button { display: grid; width: 27px; height: 27px; padding: 0; place-items: center; border: 0; border-radius: 6px; color: #7f9ba1; background: transparent; cursor: pointer; }
+.participant-search button:hover { color: #fff; background: rgba(255,255,255,.08); }
+.participant-empty--search { grid-column: 1 / -1; min-height: 118px; }
+
+.marble-camera-control__actions {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: minmax(70px,.7fr) minmax(110px,1.3fr);
+  gap: 5px;
+  margin-top: 5px;
+}
+.marble-camera-control__actions .marble-camera-control__mode { grid-column: auto; margin-top: 0; }
+.marble-camera-control__director {
+  display: flex;
+  min-height: 27px;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  border: 1px solid rgba(93,130,139,.34);
+  border-radius: 6px;
+  color: #9ab2b7;
+  background: rgba(8,24,29,.88);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: .65px;
+  cursor: pointer;
+}
+.marble-camera-control__director.is-active { border-color: rgba(9,224,223,.65); color: #dfffff; background: rgba(5,65,70,.9); box-shadow: inset 0 0 13px rgba(9,224,223,.12); }
+.marble-camera-control__director:hover:not(:disabled) { border-color: var(--cyan); color: #fff; }
+.marble-camera-control__director:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+.marble-camera-control__director:disabled { cursor: not-allowed; opacity: .42; }
+
+.pinball-camera-control__switcher {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: 30px minmax(0,1fr) 30px;
+  gap: 5px;
+  margin-top: 6px;
+}
+.pinball-camera-control__switcher select { grid-column: auto; margin-top: 0; }
+.pinball-camera-control__switcher > button {
+  display: grid;
+  min-width: 30px;
+  min-height: 30px;
+  padding: 0;
+  place-items: center;
+  border: 1px solid rgba(246,189,53,.34);
+  border-radius: 6px;
+  color: #ffe08b;
+  background: rgba(47,31,5,.9);
+  cursor: pointer;
+}
+.pinball-camera-control__switcher > button:hover:not(:disabled) { border-color: var(--gold); background: rgba(78,51,6,.95); }
+.pinball-camera-control__switcher > button:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+.pinball-camera-control__switcher > button:disabled { cursor: not-allowed; opacity: .42; }
+
+.duck-cover-radar {
+  position: absolute;
+  z-index: 6;
+  top: 49px;
+  right: 10px;
+  width: min(235px,31%);
+  display: grid;
+  gap: 4px;
+  padding: 7px 9px;
+  border: 1px solid rgba(194,235,116,.34);
+  border-radius: 8px;
+  color: #dfffa6;
+  background: rgba(11,35,12,.82);
+  box-shadow: 0 8px 24px rgba(0,0,0,.36);
+  backdrop-filter: blur(7px);
+  pointer-events: none;
+}
+.duck-cover-radar > span { display: flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 900; letter-spacing: .45px; }
+.duck-cover-radar > span strong { margin-left: auto; color: #fff9b8; font-variant-numeric: tabular-nums; }
+.duck-cover-radar > div { height: 4px; overflow: hidden; border-radius: 99px; background: rgba(0,0,0,.44); }
+.duck-cover-radar > div i { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg,#69ad2d,#d5ed64); box-shadow: 0 0 8px rgba(173,229,72,.52); transition: width .28s ease; }
+.duck-cover-radar small { overflow: hidden; color: #a8c986; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+
+@media (min-width: 1041px) and (max-width: 1280px) {
+  .game-options--large { grid-template-columns: repeat(6,minmax(0,1fr)); }
+  .game-options--large .game-option { grid-column: span 2; }
+  .game-options--large .game-option:nth-child(4),
+  .game-options--large .game-option:nth-child(5) { grid-column: span 3; }
+}
+@media (max-width: 720px) {
+  .duck-cover-radar { top: 45px; width: min(215px,52%); }
+  .duck-cover-radar small { display: none; }
+}

@@ -1,7 +1,7 @@
 {
   "name": "fortuna-real",
   "private": true,
-  "version": "1.0.4",
+  "version": "1.0.5",
   "type": "module",
   "scripts": {
     "crear-instalador": "powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File ./crear-instalador.ps1",

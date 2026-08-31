@@ -3,6 +3,7 @@ import {
   ClipboardPaste,
   ListChecks,
   Plus,
+  Search,
   Trash2,
   UserPlus,
   Users,
@@ -19,12 +20,17 @@ export function ParticipantPanel() {
   const [bulkText, setBulkText] = useState("");
   const [showBulk, setShowBulk] = useState(false);
   const [notice, setNotice] = useState("");
+  const [query, setQuery] = useState("");
   const participants = useDrawStore((state) => state.participants);
   const game = useDrawStore((state) => state.game);
   const addNames = useDrawStore((state) => state.addNames);
   const removeParticipant = useDrawStore((state) => state.removeParticipant);
   const clearParticipants = useDrawStore((state) => state.clearParticipants);
   const isFull = participants.length >= MAX_PARTICIPANTS;
+  const normalizedQuery = query.trim().toLocaleLowerCase("es");
+  const visibleParticipants = normalizedQuery
+    ? participants.filter((participant) => participant.name.toLocaleLowerCase("es").includes(normalizedQuery))
+    : participants;
 
   const addSingle = () => {
     const outcome = addNames([name]);
@@ -160,8 +166,26 @@ export function ParticipantPanel() {
 
       <div className="full-roster-heading">
         <span><ListChecks size={15} /> Lista completa</span>
-        <small>{participants.length} en total</small>
+        <small>{normalizedQuery ? `${visibleParticipants.length} coincidencia${visibleParticipants.length === 1 ? "" : "s"}` : `${participants.length} en total`}</small>
       </div>
+      {participants.length >= 10 && (
+        <label className="participant-search">
+          <Search size={15} aria-hidden="true" />
+          <span className="sr-only">Buscar participante</span>
+          <input
+            type="search"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Buscar por nombre…"
+            aria-label="Buscar participante por nombre"
+          />
+          {query && (
+            <button type="button" onClick={() => setQuery("")} aria-label="Limpiar búsqueda">
+              <X size={13} />
+            </button>
+          )}
+        </label>
+      )}
       <div className="participant-list participant-list--full" aria-label="Lista completa de participantes">
         {participants.length === 0 ? (
           <div className="participant-empty">
@@ -169,10 +193,18 @@ export function ParticipantPanel() {
             <strong>Aún no hay participantes</strong>
             <span>Escribe un nombre o pega una lista completa.</span>
           </div>
+        ) : visibleParticipants.length === 0 ? (
+          <div className="participant-empty participant-empty--search">
+            <Search size={27} />
+            <strong>Sin coincidencias</strong>
+            <span>Prueba con otra parte del nombre.</span>
+          </div>
         ) : (
-          participants.map((person, index) => (
+          visibleParticipants.map((person) => {
+            const participantIndex = participants.findIndex((participant) => participant.id === person.id);
+            return (
             <div className="participant-chip participant-chip--setup" key={person.id}>
-              <span className="participant-order">{index + 1}</span>
+              <span className="participant-order">{participantIndex + 1}</span>
               <i style={{ background: person.color }} />
               <strong title={person.name}>{person.name}</strong>
               <button
@@ -183,7 +215,8 @@ export function ParticipantPanel() {
                 <X size={14} />
               </button>
             </div>
-          ))
+            );
+          })
         )}
       </div>
     </section>

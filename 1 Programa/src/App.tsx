@@ -800,14 +800,14 @@ function Topbar({
       </div>
 
       {screen !== "setup" ? (
-        <div className="round-pill">
+        <div className="round-pill" data-game={screen}>
           {screen === "roulette" ? <CircleDot size={19} />
             : screen === "cards" ? <Layers3 size={19} />
               : screen === "pinball" ? <Gamepad2 size={19} />
                 : screen === "marbles" ? <Gem size={19} />
                   : <Bird size={19} />}
           <div>
-            <strong>Ronda {roundNumber}</strong>
+            <strong>Ronda {roundNumber} {(["pinball", "marbles", "ducks"] as ActiveScreen[]).includes(screen) && <em className="round-pill__beta">BETA</em>}</strong>
             <span>{activeCount} participantes · {screen === "roulette" ? "ruleta" : screen === "cards" ? "cartas" : screen === "pinball" ? "pinball 3D" : screen === "marbles" ? "canicas 3D" : "patos 3D"}</span>
           </div>
         </div>
@@ -929,7 +929,7 @@ function SetupScreen({
         <div>
           <span className="eyebrow">CREAR NUEVO SORTEO</span>
           <h1>Prepara la fortuna</h1>
-          <p>Carga todos los nombres que necesites: solo aparecerán las casillas ocupadas.</p>
+          <p>Carga los nombres, elige una experiencia y entra con una configuración clara y verificable.</p>
           <div className="setup-hero-help">
             <button type="button" onClick={onOpenTutorial}><HelpCircle size={16} /> Tutorial del inicio</button>
             <button type="button" onClick={() => onOpenDemo(game)}><Play size={15} /> Demo de {selectedGuide.title}</button>

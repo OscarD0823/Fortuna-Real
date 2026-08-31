@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { Bot, Camera, CircleGauge, Crown, Gamepad2, RefreshCw, Rocket, Sparkles, Zap } from "lucide-react";
+import { Bot, Camera, ChevronLeft, ChevronRight, CircleGauge, Crown, Gamepad2, RefreshCw, Rocket, Sparkles, Zap } from "lucide-react";
 import type { DrawMode, Participant, PinballControlMode } from "../../core/types";
 import { fortunaAudio } from "../../shared/audio/audioEngine";
 import {
@@ -209,6 +209,21 @@ export function PinballGame({
     }
   };
 
+  const changeCameraTarget = (nextTargetId: string | null) => {
+    setCameraTargetId(nextTargetId);
+    controllerRef.current?.setFollowBall(nextTargetId);
+    fortunaAudio.playClick();
+  };
+
+  const stepCameraTarget = (direction: -1 | 1) => {
+    if (round.balls.length === 0) return;
+    const currentIndex = cameraTargetId
+      ? round.balls.findIndex((ball) => ball.id === cameraTargetId)
+      : direction > 0 ? -1 : 0;
+    const nextIndex = (currentIndex + direction + round.balls.length) % round.balls.length;
+    changeCameraTarget(round.balls[nextIndex].id);
+  };
+
   const pressManualFlipper = (side: "left" | "right", event: ReactPointerEvent<HTMLButtonElement>) => {
     event.preventDefault();
     const pointers = pointerFlippersRef.current[side];
@@ -270,24 +285,23 @@ export function PinballGame({
         <div className="pinball-camera-control">
           <Camera size={16} aria-hidden="true" />
           <span><strong>CÁMARA</strong><small>{cameraTargetId ? cameraStyle === "overhead" ? "Seguimiento cenital" : "Persecución predictiva" : "Vista general"}</small></span>
-          <label className="sr-only" htmlFor="pinball-camera-target">Seguir a un participante desde su pelota</label>
-          <select
-            id="pinball-camera-target"
-            aria-label="Seguir a un participante desde su pelota"
-            value={cameraTargetId ?? ""}
-            onChange={(event) => {
-              const nextTarget = event.target.value || null;
-              setCameraTargetId(nextTarget);
-              controllerRef.current?.setFollowBall(nextTarget);
-              fortunaAudio.playClick();
-            }}
-            disabled={renderMode === "fallback"}
-          >
-            <option value="">Vista general</option>
-            {round.balls.map((ball) => (
-              <option key={ball.id} value={ball.id}>{ball.number}. {ball.participant.name}</option>
-            ))}
-          </select>
+          <div className="pinball-camera-control__switcher">
+            <button type="button" onClick={() => stepCameraTarget(-1)} disabled={renderMode === "fallback"} aria-label="Seguir la pelota anterior"><ChevronLeft size={14} /></button>
+            <label className="sr-only" htmlFor="pinball-camera-target">Seguir a un participante desde su pelota</label>
+            <select
+              id="pinball-camera-target"
+              aria-label="Seguir a un participante desde su pelota"
+              value={cameraTargetId ?? ""}
+              onChange={(event) => changeCameraTarget(event.target.value || null)}
+              disabled={renderMode === "fallback"}
+            >
+              <option value="">Vista general</option>
+              {round.balls.map((ball) => (
+                <option key={ball.id} value={ball.id}>{ball.number}. {ball.participant.name}</option>
+              ))}
+            </select>
+            <button type="button" onClick={() => stepCameraTarget(1)} disabled={renderMode === "fallback"} aria-label="Seguir la pelota siguiente"><ChevronRight size={14} /></button>
+          </div>
           <button
             type="button"
             className="pinball-camera-control__mode"

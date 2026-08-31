@@ -7,6 +7,8 @@ const instructions = readFileSync(resolve(root, "INSTRUCCIONES - LEER PRIMERO.tx
 const setup = readFileSync(resolve(root, "src/modules/draw/DrawSetup.tsx"), "utf8");
 const marbleRace = readFileSync(resolve(root, "src/games/marbles/MarbleRace.tsx"), "utf8");
 const pinballGame = readFileSync(resolve(root, "src/games/pinball/PinballGame.tsx"), "utf8");
+const participantPanel = readFileSync(resolve(root, "src/modules/participants/ParticipantPanel.tsx"), "utf8");
+const duckGame = readFileSync(resolve(root, "src/games/ducks/DuckHunt.tsx"), "utf8");
 const duckScene = readFileSync(resolve(root, "src/games/ducks/duckHunt3d.ts"), "utf8");
 const app = readFileSync(resolve(root, "src/App.tsx"), "utf8");
 const tutorialContent = readFileSync(resolve(root, "src/shared/tutorial/tutorialContent.ts"), "utf8");
@@ -43,6 +45,18 @@ for (const cameraLabel of ["PERSECUCIÓN", "A BORDO", "LATERAL", "AÉREA"]) {
 for (const cameraLabel of ["CENITAL", "PERSECUCIÓN"]) {
   if (!pinballGame.includes(cameraLabel)) throw new Error(`Falta el modo de cámara de Pinball: ${cameraLabel}`);
 }
+if (!marbleRace.includes("data-camera-director") || !marbleRace.includes("Director: sigue al líder")) {
+  throw new Error("Canicas debe incluir un director automático de cámara verificable.");
+}
+if (!pinballGame.includes("Seguir la pelota anterior") || !pinballGame.includes("Seguir la pelota siguiente")) {
+  throw new Error("Pinball debe permitir recorrer las cámaras sin abrir el selector.");
+}
+if (!duckGame.includes("duck-cover-radar") || !duckGame.includes("data-cover-percent")) {
+  throw new Error("Patos debe mostrar el estado de cobertura del bosque y el pasto.");
+}
+if (!participantPanel.includes("Buscar participante por nombre")) {
+  throw new Error("Las listas grandes deben disponer de búsqueda accesible.");
+}
 for (const modelDetail of ["pupil", "leftFoot", "cameraRecoilUntil"]) {
   if (!duckScene.includes(modelDetail)) throw new Error(`Falta el detalle visual de Patos: ${modelDetail}`);
 }
@@ -69,6 +83,10 @@ console.log(JSON.stringify({
   betaGamesIdentified: ["pinball", "marbles", "ducks"],
   marbleCameraModes: 4,
   pinballCameraModes: 2,
+  automaticMarbleCameraDirector: true,
+  pinballCameraStepper: true,
+  duckCoverRadar: true,
+  participantSearch: true,
   duckModelDetails: ["pupils", "feet", "shotRecoil"],
   guidedDemos: ["roulette", "cards", "pinball", "marbles", "ducks"],
   keyboardAccessibleTutorials: true,

@@ -3,8 +3,10 @@ import {
   Contrast,
   Crosshair,
   Crown,
+  EyeOff,
   Feather,
   FastForward,
+  Flame,
   Heart,
   Palette,
   Play,
@@ -498,6 +500,8 @@ export function DuckHunt({
   };
 
   const accuracy = shots === 0 ? 0 : Math.round((hits / shots) * 100);
+  const hiddenLivingCount = Math.max(0, livingCount - stats.visible);
+  const coverPercent = livingCount === 0 ? 0 : Math.round((hiddenLivingCount / livingCount) * 100);
   const phaseLabel = phase === "ready"
     ? "Bandada preparada y sellada"
     : phase === "flying"
@@ -527,6 +531,8 @@ export function DuckHunt({
       data-wave={waveNumber}
       data-wave-mode={arcadeMode}
       data-wave-shots-left={Math.max(0, DUCK_WAVE_SHOTS - shotsInWave)}
+      data-hidden-living-ducks={hiddenLivingCount}
+      data-cover-percent={coverPercent}
       data-release-stage="beta"
     >
       <div className="duck-hunt__status">
@@ -544,6 +550,7 @@ export function DuckHunt({
           <span><ShieldCheck size={12} /> orden verificado</span>
           <span><Target size={12} /> {hits}/{shots}</span>
           <span><Crosshair size={12} /> tanda {waveNumber}</span>
+          <span><Flame size={12} /> racha {hitStreak} · récord {bestStreak}</span>
           <span>{Math.ceil(waveRemainingMs / 100) / 10}s</span>
           <span>{rendererFailed ? "MODO 2D" : `${stats.fps} FPS`}</span>
         </div>
@@ -571,6 +578,11 @@ export function DuckHunt({
           aria-hidden="true"
         ><span /><i /></div>
         <div className="duck-hunt__render-badge"><span /> {rendererFailed ? "RESPALDO ACCESIBLE" : "CÁMARA CLÁSICA 3D"}</div>
+        <div className="duck-cover-radar" role="status" aria-label={`${hiddenLivingCount} patos a cubierto de ${livingCount} en pie`}>
+          <span><EyeOff size={13} /> A CUBIERTO <strong>{hiddenLivingCount}/{livingCount}</strong></span>
+          <div aria-hidden="true"><i style={{ width: `${coverPercent}%` }} /></div>
+          <small>{phase === "resetting" ? "Reapareciendo desde bosque y pasto" : phase === "flying" ? "Busca movimiento entre la vegetación" : "Identidades protegidas hasta el impacto"}</small>
+        </div>
         <div className="duck-arcade-hud" aria-label={`Tanda ${waveNumber}, ${Math.max(0, DUCK_WAVE_SHOTS - shotsInWave)} disparos disponibles`}>
           <div><small>TANDA</small><strong>{String(waveNumber).padStart(2, "0")}</strong></div>
           <div className="duck-shot-counter"><small>DISPAROS</small><span>{Array.from({ length: DUCK_WAVE_SHOTS }, (_, index) => <i key={index} className={index < DUCK_WAVE_SHOTS - shotsInWave ? "is-loaded" : ""} />)}</span></div>

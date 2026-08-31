@@ -164,7 +164,7 @@ Después de publicar también comprueba que el endpoint `latest.json` informe la
 versión recién creada. La sesión local de `gh` publica los archivos; la clave de
 firma nunca sale del computador.
 
-Hasta publicar el Release correspondiente (por ejemplo `v1.0.4`), la versión local
+Hasta publicar el Release correspondiente (por ejemplo `v1.0.5`), la versión local
 no se ofrecerá como actualización automática. Si no hay ningún Release publicado,
 el endpoint devolverá 404 sin bloquear el programa. El instalador local funciona
 igualmente sin conexión; publicar y verificar el Release es un paso separado.
