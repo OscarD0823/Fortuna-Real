@@ -590,8 +590,23 @@ Proyecto: https://github.com/OscarD0823/Fortuna-Real
             throw "GitHub CLI no tiene una sesión válida. Ejecuta 'gh auth login' y vuelve a intentar."
         }
 
-        & gh.exe release view $releaseTag --repo $ReleaseRepository *> $null
-        if ($LASTEXITCODE -eq 0) {
+        # La ausencia del Release es el caso esperado en una publicación nueva.
+        # PowerShell 7 puede convertir el stderr de un programa nativo en error
+        # terminante cuando ErrorActionPreference está en Stop, por lo que esta
+        # consulta puntual debe inspeccionar únicamente su código de salida.
+        $previousErrorActionPreference = $ErrorActionPreference
+        $previousNativeErrorPreference = $PSNativeCommandUseErrorActionPreference
+        try {
+            $ErrorActionPreference = "Continue"
+            $PSNativeCommandUseErrorActionPreference = $false
+            & gh.exe release view $releaseTag --repo $ReleaseRepository *> $null
+            $releaseAlreadyExists = $LASTEXITCODE -eq 0
+        }
+        finally {
+            $ErrorActionPreference = $previousErrorActionPreference
+            $PSNativeCommandUseErrorActionPreference = $previousNativeErrorPreference
+        }
+        if ($releaseAlreadyExists) {
             throw "Ya existe el Release $releaseTag. Incrementa la versión antes de publicar otra actualización."
         }
 

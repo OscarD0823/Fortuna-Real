@@ -106,6 +106,7 @@ for (const marker of [
   "$env:TAURI_SIGNING_PRIVATE_KEY = $SigningKeyPath",
   "Start-Process -FilePath \"explorer.exe\"",
   "--example verify_installer",
+  "$releaseAlreadyExists = $LASTEXITCODE -eq 0",
 ]) {
   assert.ok(installerCreator.includes(marker), `El creador local no aplica la puerta segura: ${marker}.`);
 }
