@@ -1,6 +1,16 @@
+import { invoke, isTauri } from "@tauri-apps/api/core";
 import type { RoundResult } from "../../core/types";
 
 type StopSound = () => void;
+
+type OfflineNarrationResponse = {
+  audioBase64: string;
+  sampleRate: number;
+  durationMs: number;
+  generationMs: number;
+  engine: string;
+  voice: string;
+};
 
 const narrationVoiceScore = (voice: SpeechSynthesisVoice, online: boolean) => {
   const language = voice.lang.toLocaleLowerCase();
@@ -38,6 +48,8 @@ class FortunaAudioEngine {
   private announcementTimer: number | null = null;
   private voiceRetryTimer: number | null = null;
   private voiceChangeHandler: (() => void) | null = null;
+  private narrationAudio: HTMLAudioElement | null = null;
+  private narrationRequest = 0;
 
   setEnabled(enabled: boolean) {
     this.effectsEnabled = enabled;
@@ -61,6 +73,7 @@ class FortunaAudioEngine {
   setVolume(volume: number) {
     this.volume = Math.min(1, Math.max(0, volume));
     this.output?.gain.setTargetAtTime(this.volume, this.context?.currentTime ?? 0, 0.015);
+    if (this.narrationAudio) this.narrationAudio.volume = this.volume;
   }
 
   private getContext() {
@@ -341,11 +354,8 @@ class FortunaAudioEngine {
     });
   }
 
-  private cancelAnnouncement() {
-    if (this.announcementTimer !== null) {
-      globalThis.clearTimeout(this.announcementTimer);
-      this.announcementTimer = null;
-    }
+  private cancelNarrationPlayback() {
+    this.narrationRequest += 1;
     if (this.voiceRetryTimer !== null) {
       globalThis.clearTimeout(this.voiceRetryTimer);
       this.voiceRetryTimer = null;
@@ -357,38 +367,113 @@ class FortunaAudioEngine {
     if (typeof window !== "undefined" && "speechSynthesis" in window) {
       window.speechSynthesis.cancel();
     }
+    if (this.narrationAudio) {
+      this.narrationAudio.pause();
+      this.narrationAudio.removeAttribute("src");
+      this.narrationAudio.load();
+      this.narrationAudio = null;
+    }
+  }
+
+  private cancelAnnouncement() {
+    if (this.announcementTimer !== null) {
+      globalThis.clearTimeout(this.announcementTimer);
+      this.announcementTimer = null;
+    }
+    this.cancelNarrationPlayback();
+  }
+
+  private speakWithSystemVoice(
+    text: string,
+    naturalRate: number,
+    fallbackRate: number,
+    requestId: number,
+  ) {
+    if (
+      requestId !== this.narrationRequest
+      || !this.voiceEnabled
+      || typeof window === "undefined"
+      || !("speechSynthesis" in window)
+      || typeof SpeechSynthesisUtterance === "undefined"
+    ) return;
+
+    let spoken = false;
+    const speak = (allowDefaultVoice = false) => {
+      if (spoken || requestId !== this.narrationRequest || !this.voiceEnabled) return;
+      const availableVoices = window.speechSynthesis.getVoices();
+      if (availableVoices.length === 0 && !allowDefaultVoice) return;
+      spoken = true;
+      if (this.voiceRetryTimer !== null) window.clearTimeout(this.voiceRetryTimer);
+      this.voiceRetryTimer = null;
+      if (this.voiceChangeHandler) {
+        window.speechSynthesis.removeEventListener("voiceschanged", this.voiceChangeHandler);
+        this.voiceChangeHandler = null;
+      }
+
+      const voice = selectNarrationVoice(availableVoices);
+      const naturalVoice = Boolean(voice && /natural|neural|online/iu.test(`${voice.name} ${voice.voiceURI}`));
+      const narration = new SpeechSynthesisUtterance(text);
+      narration.voice = voice;
+      narration.lang = voice?.lang || "es-CO";
+      narration.rate = naturalVoice ? naturalRate : fallbackRate;
+      narration.pitch = naturalVoice ? 1 : 0.97;
+      narration.volume = this.volume;
+      window.speechSynthesis.speak(narration);
+    };
+
+    this.voiceChangeHandler = () => speak();
+    window.speechSynthesis.addEventListener("voiceschanged", this.voiceChangeHandler, { once: true });
+    speak();
+    if (!spoken) {
+      this.voiceRetryTimer = window.setTimeout(() => {
+        speak(true);
+        if (!spoken) this.voiceChangeHandler = null;
+      }, 1_000);
+    }
+  }
+
+  private speakNarration(text: string, naturalRate: number, fallbackRate: number) {
+    if (!this.voiceEnabled || this.volume <= 0) return;
+    this.cancelNarrationPlayback();
+    const requestId = this.narrationRequest;
+
+    if (isTauri() && typeof Audio !== "undefined") {
+      void invoke<OfflineNarrationResponse>("synthesize_offline_speech", {
+        request: { text, speed: naturalRate },
+      }).then((response) => {
+        if (requestId !== this.narrationRequest || !this.voiceEnabled || this.volume <= 0) return;
+        const narration = new Audio(`data:audio/wav;base64,${response.audioBase64}`);
+        narration.preload = "auto";
+        narration.volume = this.volume;
+        narration.addEventListener("ended", () => {
+          if (this.narrationAudio === narration) this.narrationAudio = null;
+        }, { once: true });
+        this.narrationAudio = narration;
+        void narration.play().catch(() => {
+          if (this.narrationAudio === narration) this.narrationAudio = null;
+          this.speakWithSystemVoice(text, naturalRate, fallbackRate, requestId);
+        });
+      }).catch(() => {
+        this.speakWithSystemVoice(text, naturalRate, fallbackRate, requestId);
+      });
+      return;
+    }
+
+    this.speakWithSystemVoice(text, naturalRate, fallbackRate, requestId);
   }
 
   previewNarration() {
-    if (!this.voiceEnabled || typeof window === "undefined" || !("speechSynthesis" in window)) return;
-    if (typeof SpeechSynthesisUtterance === "undefined") return;
-    this.cancelAnnouncement();
-    const voice = selectNarrationVoice(window.speechSynthesis.getVoices());
-    const naturalVoice = Boolean(voice && /natural|neural|online/iu.test(`${voice.name} ${voice.voiceURI}`));
-    const preview = new SpeechSynthesisUtterance("Fortuna Real. La voz natural está lista para anunciar el próximo resultado.");
-    preview.voice = voice;
-    preview.lang = voice?.lang || "es-CO";
-    preview.rate = naturalVoice ? 0.98 : 0.92;
-    preview.pitch = naturalVoice ? 1 : 0.97;
-    preview.volume = this.volume;
-    window.speechSynthesis.speak(preview);
+    this.speakNarration(
+      "Atención, participantes. La siguiente ronda está a punto de comenzar.",
+      0.9,
+      0.86,
+    );
   }
 
   speakGuide(text: string) {
-    if (!this.voiceEnabled || typeof window === "undefined" || !("speechSynthesis" in window)) return;
-    if (typeof SpeechSynthesisUtterance === "undefined") return;
     const guideText = text.replace(/\s+/gu, " ").trim().slice(0, 780);
     if (!guideText) return;
-    this.cancelAnnouncement();
-    const voice = selectNarrationVoice(window.speechSynthesis.getVoices());
-    const naturalVoice = Boolean(voice && /natural|neural|online/iu.test(`${voice.name} ${voice.voiceURI}`));
-    const narration = new SpeechSynthesisUtterance(guideText);
-    narration.voice = voice;
-    narration.lang = voice?.lang || "es-CO";
-    narration.rate = naturalVoice ? 0.97 : 0.91;
-    narration.pitch = naturalVoice ? 1 : 0.97;
-    narration.volume = this.volume;
-    window.speechSynthesis.speak(narration);
+    this.speakNarration(guideText, 0.92, 0.88);
   }
 
   stopNarration() {
@@ -397,25 +482,9 @@ class FortunaAudioEngine {
 
   announceResult(result: RoundResult) {
     if (!this.voiceEnabled || (result.kind !== "winner" && result.kind !== "eliminated")) return;
-    if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
-    if (typeof SpeechSynthesisUtterance === "undefined") return;
 
     this.cancelAnnouncement();
     this.announcementTimer = window.setTimeout(() => {
-      let spoken = false;
-      const speak = (allowDefaultVoice = false) => {
-        if (spoken || !this.voiceEnabled) return;
-        const availableVoices = window.speechSynthesis.getVoices();
-        if (availableVoices.length === 0 && !allowDefaultVoice) return;
-        spoken = true;
-        if (this.voiceRetryTimer !== null) window.clearTimeout(this.voiceRetryTimer);
-        this.voiceRetryTimer = null;
-        if (this.voiceChangeHandler) {
-          window.speechSynthesis.removeEventListener("voiceschanged", this.voiceChangeHandler);
-          this.voiceChangeHandler = null;
-        }
-      const voice = selectNarrationVoice(availableVoices);
-
       const contextLabel = result.game === "cards"
         ? result.selectionLabel || `Carta ${result.landedNumber}`
         : result.game === "pinball"
@@ -442,24 +511,11 @@ class FortunaAudioEngine {
         this.tone(330, 0.32, { type: "sine", volume: 0.04, delay: 0.19, endFrequency: 220 });
       }
 
-      const naturalVoice = Boolean(voice && /natural|neural|online/iu.test(`${voice.name} ${voice.voiceURI}`));
-      const announcement = new SpeechSynthesisUtterance(announcementText);
-      announcement.voice = voice;
-      announcement.lang = voice?.lang || "es-CO";
-      announcement.rate = result.kind === "winner" ? (naturalVoice ? 0.98 : 0.92) : (naturalVoice ? 0.96 : 0.9);
-      announcement.pitch = naturalVoice ? 1 : 0.97;
-      announcement.volume = this.volume;
-      window.speechSynthesis.speak(announcement);
-      };
-      this.voiceChangeHandler = () => speak();
-      window.speechSynthesis.addEventListener("voiceschanged", this.voiceChangeHandler, { once: true });
-      speak();
-      if (!spoken) {
-        this.voiceRetryTimer = window.setTimeout(() => {
-          speak(true);
-          if (!spoken) this.voiceChangeHandler = null;
-        }, 1_000);
-      }
+      this.speakNarration(
+        announcementText,
+        result.kind === "winner" ? 0.92 : 0.9,
+        result.kind === "winner" ? 0.88 : 0.86,
+      );
       this.announcementTimer = null;
     }, result.kind === "winner" ? 720 : 560);
   }

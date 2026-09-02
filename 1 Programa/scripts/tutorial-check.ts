@@ -13,6 +13,7 @@ const screenFiles = [
 const screenSources = screenFiles.map((path) => readFileSync(resolve(root, path), "utf8")).join("\n");
 const demoSource = readFileSync(resolve(root, "src/shared/tutorial/GameDemoModal.tsx"), "utf8");
 const dialogSource = readFileSync(resolve(root, "src/shared/tutorial/useTutorialDialog.ts"), "utf8");
+const appSource = readFileSync(resolve(root, "src/App.tsx"), "utf8");
 for (const game of games) {
   const guide = gameGuides[game];
   assert.equal(guide.steps.length, 4, `${game}: la demo debe tener cuatro pasos breves.`);
@@ -40,4 +41,6 @@ for (const source of [demoSource, readFileSync(resolve(root, "src/modules/partic
   assert.ok(source.includes('event.key === "Enter"') && source.includes("event.nativeEvent.isComposing"), "Enter debe agregar nombres sin interferir con un teclado de composición.");
 }
 assert.ok(dialogSource.includes('document.documentElement.style.overflow = "hidden"'), "El fondo no debe desplazarse mientras se usa la guía.");
+assert.ok(!appSource.includes("Bienvenido a Fortuna Real. Los sistemas están listos"), "No debe reproducirse un saludo automático al abrir.");
+assert.ok(!appSource.includes("welcomePhase"), "La apertura no debe retrasar el tutorial con un mensaje eliminado.");
 console.log(JSON.stringify({ games, demoSteps: 20, setupSteps: guidedTours.setup.length, isolatedPractice: true, targetsChecked: Object.values(guidedTours).reduce((total, steps) => total + steps.length, 0), status: "passed" }, null, 2));

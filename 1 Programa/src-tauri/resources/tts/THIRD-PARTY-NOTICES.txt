@@ -1,0 +1,40 @@
+Fortuna Real — avisos de la voz neuronal offline
+================================================
+
+Motor de inferencia
+-------------------
+Nombre: sherpa-onnx 1.13.7
+Proyecto: https://github.com/k2-fsa/sherpa-onnx
+Licencia: Apache License 2.0
+Texto: licenses/Apache-2.0.txt
+
+Runtime de inferencia
+---------------------
+Nombre: ONNX Runtime
+Proyecto: https://github.com/microsoft/onnxruntime
+Licencia: MIT
+Texto: licenses/MIT-onnxruntime.txt
+
+Modelo de voz
+-------------
+Nombre: vits-piper-es_AR-daniela-high
+Idioma: Español de Argentina (es-AR)
+Calidad: high, 22.050 Hz, un hablante
+Origen del paquete compatible:
+https://github.com/k2-fsa/sherpa-onnx/releases/tag/tts-models
+Modelo original:
+https://huggingface.co/rhasspy/piper-voices/tree/main/es/es_AR/daniela/high
+
+Modelo entrenado por https://huggingface.co/larcanio/piper-voices y ajustado a
+partir de la voz Lessac, según el MODEL_CARD incluido.
+Conjunto de datos SLR61, Copyright 2018, 2019 Google, Inc.:
+https://www.openslr.org/61/
+Licencia del conjunto de datos: Creative Commons Attribution-ShareAlike 4.0
+International. Fortuna Real no modifica el modelo; aplica filtrado y compresión
+ligeros únicamente al audio generado durante la ejecución.
+El repositorio piper-voices distribuye sus archivos bajo licencia MIT.
+Textos completos: licenses/CC-BY-SA-4.0.txt, licenses/Apache-2.0.txt y
+licenses/MIT-piper-voices.txt
+
+El modelo y el motor se ejecutan localmente. El texto narrado no se envía a
+servicios externos y la aplicación conserva la voz de Windows como respaldo.

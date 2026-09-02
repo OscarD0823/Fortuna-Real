@@ -88,7 +88,7 @@ assert.ok(spoken[0].pitch >= 0.97 && spoken[0].pitch <= 1, "El tono debe mantene
 fortunaAudio.previewNarration();
 assert.equal(spoken.length, 2, "El control de prueba debe reproducir la voz seleccionada.");
 assert.equal(spoken[1].voice, colombianVoice);
-assert.match(spoken[1].text, /voz natural está lista/u);
+assert.match(spoken[1].text, /Atención, participantes/u);
 
 fortunaAudio.speakGuide("Paso uno. Escribe los nombres y después elige un juego.");
 assert.equal(spoken.length, 3, "La guía debe poder narrar un paso bajo demanda.");
@@ -109,5 +109,6 @@ console.log(JSON.stringify({
   continuousAnnouncement: true,
   voicePreview: true,
   narratedTutorials: true,
+  automaticWelcomeRemoved: true,
   status: "passed",
 }));

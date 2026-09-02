@@ -1,0 +1,4 @@
+# Las bibliotecas estáticas oficiales de sherpa-onnx para Windows usan /MT.
+# Compilar Rust con el mismo CRT evita mezclar heaps y elimina LNK4098.
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]

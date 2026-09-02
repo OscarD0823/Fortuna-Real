@@ -38,8 +38,16 @@ El instalador normal es la opción recomendada. Configura Fortuna Real, crea los
 WebView2 silenciosamente si el equipo no lo tiene, con el paquete sin conexión
 incluido. Está preparado para Windows 10/11 x64. El usuario no necesita Internet
 para instalar/jugar, Node.js, Rust, Visual Studio ni copiar el código del proyecto.
-Internet solo se utiliza para buscar o descargar actualizaciones. La voz disponible
-depende de las voces instaladas en Windows; los juegos también funcionan sin voz.
+Internet solo se utiliza para buscar o descargar actualizaciones. El instalador
+incluye una voz neuronal femenina en español que funciona completamente sin conexión;
+si no logra iniciarse, Fortuna Real usa automáticamente una voz española de Windows.
+
+En cada apertura, la aplicación compara su versión con `latest.json` en GitHub
+Releases. Si existe una versión superior, muestra **Actualizando Fortuna Real**,
+descarga el instalador firmado, presenta el porcentaje, verifica la firma, instala
+y vuelve a abrir el programa. No descarga ni ejecuta código fuente. Si GitHub o
+Internet no están disponibles, Fortuna Real inicia normalmente y conserva todos
+los datos locales.
 
 El iniciador de respaldo de `3 Ejecutar/Iniciador GitHub` nunca contiene
 credenciales ni exige iniciar sesión.
@@ -81,6 +89,11 @@ Al terminar se verifica criptográficamente el instalador distribuido contra la
 clave pública incorporada en la aplicación, además de comprobar `latest.json`.
 La firma del actualizador no es un certificado Authenticode: Windows puede mostrar
 un aviso de editor desconocido. El instructivo se copia junto al instalador.
+
+Para que las instalaciones existentes detecten una actualización hay que aumentar
+la versión en los archivos del proyecto y ejecutar `npm run publicar-actualizacion`.
+Un commit común de GitHub no reemplaza una instalación: la actualización aparece
+cuando existe un Release nuevo con `latest.json`, instalador y firma válidos.
 
 ## Modo de desarrollo
 
@@ -160,7 +173,7 @@ Después de publicar también comprueba que el endpoint `latest.json` informe la
 versión recién creada. La sesión local de `gh` publica los archivos; la clave de
 firma nunca sale del computador.
 
-Hasta publicar el Release correspondiente (por ejemplo `v1.0.5`), la versión local
+Hasta publicar el Release correspondiente (por ejemplo `v1.0.6`), la versión local
 no se ofrecerá como actualización automática. Si no hay ningún Release publicado,
 el endpoint devolverá 404 sin bloquear el programa. El instalador local funciona
 igualmente sin conexión; publicar y verificar el Release es un paso separado.

@@ -14,7 +14,10 @@ fn main() -> Result<(), Box<dyn Error>> {
     let installer_path = Path::new(&args[1]);
     let signature_base64 = fs::read_to_string(&args[2])?;
     let manifest_text = fs::read_to_string(&args[3])?;
-    let manifest: Value = serde_json::from_str(manifest_text.trim_start_matches('\u{feff}'))?;
+    if manifest_text.starts_with('\u{feff}') {
+        return Err("latest.json debe ser UTF-8 sin BOM para que Tauri pueda leerlo.".into());
+    }
+    let manifest: Value = serde_json::from_str(&manifest_text)?;
     let config: Value = serde_json::from_str(include_str!("../tauri.conf.json"))?;
     let version = env!("CARGO_PKG_VERSION");
     if manifest["version"].as_str() != Some(version) || config["version"].as_str() != Some(version)

@@ -1,0 +1,2 @@
+"1 Programa/src-tauri/resources/tts/**/*.onnx" filter=lfs diff=lfs merge=lfs -text
+"1 Programa/src-tauri/resources/tts/**" -text whitespace=-blank-at-eol,-blank-at-eof

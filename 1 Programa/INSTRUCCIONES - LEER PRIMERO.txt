@@ -1,14 +1,14 @@
 ============================================================
-                 FORTUNA REAL 1.0.5
+                 FORTUNA REAL 1.0.6
              GUÍA DE INSTALACIÓN Y USO
 ============================================================
 
 CONTENIDO DE ESTA CARPETA
 
-- Fortuna-Real-1.0.5-Instalador.exe
+- Fortuna-Real-1.0.6-Instalador.exe
   Es el instalador de Fortuna Real para Windows.
 
-- Fortuna-Real-1.0.5-Instalador.zip
+- Fortuna-Real-1.0.6-Instalador.zip
   Es una copia comprimida del instalador, su firma y su manifiesto.
 
 - latest.json y el archivo .sig
@@ -31,10 +31,10 @@ CONTENIDO DE ESTA CARPETA
 2. CÓMO INSTALAR FORTUNA REAL
 
 1. Abre la carpeta donde recibiste el instalador.
-2. Haz doble clic en “Fortuna-Real-1.0.5-Instalador.exe”.
+2. Haz doble clic en “Fortuna-Real-1.0.6-Instalador.exe”.
 3. Si Windows muestra “Windows protegió su PC”:
    a. Pulsa “Más información”.
-   b. Comprueba que el archivo sea Fortuna-Real-1.0.5-Instalador.exe.
+   b. Comprueba que el archivo sea Fortuna-Real-1.0.6-Instalador.exe.
    c. Pulsa “Ejecutar de todas formas”.
 4. Sigue las instrucciones del instalador.
 5. Abre “Fortuna Real” desde el menú Inicio o su acceso directo.
@@ -164,8 +164,10 @@ La mesa admite listas de 2 a 200 participantes.
 - Un ganador no se repite hasta que pulses “Volver a incluir”.
 - Volver a incluir no borra los premios anteriores.
 - El altavoz controla los sonidos; el micrófono controla la locución.
-- La voz depende de las voces instaladas en Windows. Si no hay una voz española
-  compatible, las instrucciones y los resultados siguen disponibles en pantalla.
+- El programa incluye una voz neuronal femenina en español que funciona sin
+  Internet, con una cadencia serena de anunciadora. Si el motor local no puede
+  iniciarse, usa una voz de Windows como respaldo; las instrucciones y
+  resultados siempre permanecen en pantalla.
 - El botón de las cuatro esquinas activa la pantalla completa.
 - En Patos, enfoca el campo y pulsa Enter o Espacio para registrar el siguiente
   impacto comprometido. Escape cierra el diálogo de resultado.
@@ -173,10 +175,15 @@ La mesa admite listas de 2 a 200 participantes.
 
 11. ACTUALIZACIONES
 
-- Cuando recibas una versión nueva, abre su instalador sobre la versión actual.
+- En cada apertura, Fortuna Real comprueba en GitHub Releases si existe una
+  versión superior.
+- Si la encuentra, muestra el progreso, descarga el instalador firmado, verifica
+  su firma, lo instala automáticamente y vuelve a abrir el programa.
+- No descarga código fuente ni requiere Node.js, Rust o herramientas de desarrollo.
+- Si no hay Internet o GitHub no responde, el programa continúa normalmente y
+  vuelve a comprobarlo en otra apertura.
 - Los datos guardados se conservan.
-- Instala solo versiones recibidas de la persona de confianza que te entregó
-  Fortuna Real.
+- Solo se aceptan actualizaciones firmadas con la clave de Fortuna Real.
 
 
 12. DESINSTALAR

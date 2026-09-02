@@ -142,6 +142,7 @@ function App() {
   const [duckRoundKey, setDuckRoundKey] = useState(0);
   const [activeTutorial, setActiveTutorial] = useState<TutorialId | null>(null);
   const [demoGame, setDemoGame] = useState<GameId | null>(null);
+  const [startupUpdateCheckComplete, setStartupUpdateCheckComplete] = useState(false);
   const [isSpinning, setIsSpinning] = useState(false);
   const [roundAnimating, setRoundAnimating] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(
@@ -159,6 +160,7 @@ function App() {
   const [currentResult, setCurrentResult] = useState<RoundResult | null>(null);
   const pendingSelection = useRef<RouletteEntry | null>(null);
   const stopSpinSound = useRef<(() => void) | null>(null);
+  const completeStartupUpdateCheck = useCallback(() => setStartupUpdateCheckComplete(true), []);
 
   const participants = useDrawStore((state) => state.participants);
   const eliminatedIds = useDrawStore((state) => state.eliminatedIds);
@@ -251,6 +253,7 @@ function App() {
   useEffect(
     () => () => {
       stopSpinSound.current?.();
+      fortunaAudio.stopNarration();
     },
     [],
   );
@@ -563,11 +566,11 @@ function App() {
   };
 
   useEffect(() => {
-    if (showSplash || activeTutorial || demoGame || roundAnimating || currentResult) return;
+    if (!startupUpdateCheckComplete || showSplash || activeTutorial || demoGame || roundAnimating || currentResult) return;
     if (localStorage.getItem(tutorialSeenKey(screen)) === "seen") return;
     const timer = window.setTimeout(() => setActiveTutorial(screen), screen === "setup" ? 420 : 620);
     return () => window.clearTimeout(timer);
-  }, [activeTutorial, currentResult, demoGame, roundAnimating, screen, showSplash]);
+  }, [activeTutorial, currentResult, demoGame, roundAnimating, screen, showSplash, startupUpdateCheckComplete]);
 
   const closeTutorial = useCallback(() => {
     if (activeTutorial) localStorage.setItem(tutorialSeenKey(activeTutorial), "seen");
@@ -746,9 +749,12 @@ function App() {
           soundEnabled={soundEnabled || voiceEnabled}
         />
       )}
-      {activeTutorial && !currentResult && <GuidedTour key={activeTutorial} tutorialId={activeTutorial} onDone={closeTutorial} canNarrate={voiceEnabled && audioVolume > 0 && "speechSynthesis" in window} />}
-      {demoGame && !currentResult && <GameDemoModal initialGame={demoGame} onDone={closeDemo} canNarrate={voiceEnabled && audioVolume > 0 && "speechSynthesis" in window} />}
-      <AppUpdater blocked={showSplash || screen !== "setup" || roundAnimating || !!activeTutorial || !!demoGame || !!currentResult} />
+      {activeTutorial && !currentResult && <GuidedTour key={activeTutorial} tutorialId={activeTutorial} onDone={closeTutorial} canNarrate={voiceEnabled && audioVolume > 0} />}
+      {demoGame && !currentResult && <GameDemoModal initialGame={demoGame} onDone={closeDemo} canNarrate={voiceEnabled && audioVolume > 0} />}
+      <AppUpdater
+        blocked={showSplash || screen !== "setup" || roundAnimating || !!activeTutorial || !!demoGame || !!currentResult}
+        onStartupCheckComplete={completeStartupUpdateCheck}
+      />
     </div>
   );
 }

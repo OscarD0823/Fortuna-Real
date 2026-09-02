@@ -1581,7 +1581,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible {
 /* Actualizaciones automáticas */
 .update-overlay {
   position: fixed;
-  z-index: 120;
+  z-index: 12000;
   inset: 0;
   display: grid;
   place-items: center;
@@ -1591,7 +1591,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible {
 }
 .update-card {
   position: relative;
-  width: min(430px, 100%);
+  width: min(470px, 100%);
   padding: 34px;
   border: 1px solid rgba(9, 224, 223, .38);
   border-radius: 22px;
@@ -1600,20 +1600,6 @@ button:focus-visible, input:focus-visible, textarea:focus-visible {
     radial-gradient(circle at 50% 0, rgba(9, 224, 223, .14), transparent 44%),
     linear-gradient(155deg, #071923, #02090e 72%);
   box-shadow: 0 30px 90px rgba(0,0,0,.7), 0 0 45px rgba(9,224,223,.12);
-}
-.update-close {
-  position: absolute;
-  top: 14px;
-  right: 14px;
-  width: 34px;
-  height: 34px;
-  display: grid;
-  place-items: center;
-  border: 1px solid var(--line);
-  border-radius: 9px;
-  color: #779199;
-  background: rgba(3,12,18,.8);
-  cursor: pointer;
 }
 .update-icon {
   width: 72px;
@@ -1627,15 +1613,29 @@ button:focus-visible, input:focus-visible, textarea:focus-visible {
   background: rgba(9,224,223,.07);
   box-shadow: 0 0 28px rgba(9,224,223,.18);
 }
+.update-icon--spinning svg { animation: update-icon-spin 1.25s linear infinite; }
 .update-card h2 { margin: 8px 0 10px; font-size: 24px; text-transform: uppercase; }
 .update-card p { margin: 0 auto; color: #91a9ae; font-size: 12px; line-height: 1.6; }
+.update-version-route { display: flex; align-items: center; justify-content: center; gap: 10px; margin: 0 auto 13px; color: #78939a; font-size: 12px; font-weight: 800; }
+.update-version-route span, .update-version-route strong { padding: 5px 9px; border: 1px solid rgba(113,168,181,.2); border-radius: 7px; background: rgba(2,9,13,.72); }
+.update-version-route strong { border-color: rgba(9,224,223,.35); color: var(--cyan); }
 .update-trust { display: flex; align-items: center; justify-content: center; gap: 7px; margin-top: 16px; color: #6e969c; font-size: 12px; text-transform: uppercase; }
 .update-trust svg { color: var(--cyan); }
 .update-actions { display: grid; grid-template-columns: .72fr 1.28fr; gap: 10px; margin-top: 24px; }
 .update-actions .text-button, .update-actions .start-button { width: 100%; height: 44px; }
 .update-progress { height: 9px; margin-top: 23px; overflow: hidden; border: 1px solid rgba(9,224,223,.22); border-radius: 999px; background: #02080c; }
 .update-progress span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #09bfc1, #36f2eb); box-shadow: 0 0 15px rgba(9,224,223,.6); transition: width .2s ease; }
+.update-progress--indeterminate span { width: 38%; animation: update-progress-indeterminate 1.05s ease-in-out infinite; }
 .update-percentage { display: block; margin-top: 9px; color: var(--cyan); font-size: 13px; }
+.update-bytes { display: block; margin-top: 5px; color: #668188; font-size: 12px; }
+.update-card .update-notes { max-height: 58px; margin-top: 13px; overflow: hidden; color: #718b91; }
+.update-card .update-error-help { margin-top: 8px; color: #70878d; }
+
+@keyframes update-icon-spin { to { transform: rotate(360deg); } }
+@keyframes update-progress-indeterminate {
+  from { transform: translateX(-115%); }
+  to { transform: translateX(305%); }
+}
 
 /* Escala de listas densas y registro de premios */
 .setup-right-column {

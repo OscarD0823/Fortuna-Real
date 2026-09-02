@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 
 const readText = (path: string) => readFileSync(path, "utf8").replace(/^\uFEFF/u, "");
 const packageJson = JSON.parse(readText("package.json"));
@@ -7,13 +7,16 @@ const packageLock = JSON.parse(readText("package-lock.json"));
 const tauriConfig = JSON.parse(readText("src-tauri/tauri.conf.json"));
 const cargoToml = readText("src-tauri/Cargo.toml");
 const cargoLock = readText("src-tauri/Cargo.lock");
+const cargoConfig = readText("src-tauri/.cargo/config.toml");
 const repositoryRoot = "..";
 const workflow = readText(`${repositoryRoot}/.github/workflows/release.yml`);
 const launcher = readText("iniciar-fortuna.ps1");
 const updaterUi = readText("src/shared/components/AppUpdater.tsx");
+const updaterWorkflow = readText("src/shared/update/updateWorkflow.ts");
 const installerCreator = readText("crear-instalador.ps1");
 const githubStarter = readText(`${repositoryRoot}/3 Ejecutar/Iniciador GitHub/instalar-desde-github.ps1`);
 const localInstallerDirectory = `${repositoryRoot}/Entrega/2 Instaladores`;
+const ttsDirectory = "src-tauri/resources/tts/vits-piper-es_AR-daniela-high";
 
 for (const requiredPath of [
   `${repositoryRoot}/1 Programa`,
@@ -37,6 +40,21 @@ assert.equal(tauriConfig.bundle?.windows?.nsis?.installMode, "currentUser", "El 
 assert.equal(tauriConfig.bundle?.windows?.nsis?.installerHooks, "windows/installer-hooks.nsh", "El instalador debe crear el acceso exterior del escritorio.");
 assert.ok(readText("src-tauri/windows/installer-hooks.nsh").includes("CreateOrUpdateDesktopShortcut"));
 assert.equal(tauriConfig.build?.frontendDist, "../dist", "El instalador debe incluir el frontend compilado.");
+assert.ok(tauriConfig.bundle?.resources?.includes("resources/tts/"), "El instalador debe incluir la voz neuronal offline.");
+assert.ok(cargoToml.includes('sherpa-onnx = { version = "=1.13.7"'), "El backend debe integrar sherpa-onnx de forma nativa y reproducible.");
+assert.ok(cargoToml.includes('features = ["static"]'), "La voz debe quedar autocontenida sin DLL externas.");
+assert.ok(cargoConfig.includes("target-feature=+crt-static"), "Rust y sherpa-onnx deben usar el mismo CRT en Windows.");
+for (const resource of [
+  `${ttsDirectory}/es_AR-daniela-high.onnx`,
+  `${ttsDirectory}/tokens.txt`,
+  `${ttsDirectory}/espeak-ng-data`,
+  `${ttsDirectory}/MODEL_CARD`,
+]) {
+  assert.ok(existsSync(resource), `Falta un recurso de voz offline: ${resource}.`);
+}
+assert.ok(statSync(`${ttsDirectory}/es_AR-daniela-high.onnx`).size > 100_000_000, "El modelo de voz parece incompleto.");
+assert.ok(existsSync("src-tauri/resources/tts/licenses/CC-BY-SA-4.0.txt"), "Falta la licencia CC BY-SA del conjunto de voz Daniela.");
+assert.ok(readText("src-tauri/resources/tts/THIRD-PARTY-NOTICES.txt").includes("vits-piper-es_AR-daniela-high"), "Los avisos legales deben identificar la voz incluida.");
 
 const updater = tauriConfig.plugins?.updater;
 assert.equal(typeof updater?.pubkey, "string");
@@ -46,8 +64,14 @@ assert.match(updater.endpoints[0], /^https:\/\/github\.com\//u);
 
 let signedLocalArtifacts = false;
 if (process.env.CI !== "true" && existsSync(`${localInstallerDirectory}/latest.json`)) {
-  const latestManifest = JSON.parse(readText(`${localInstallerDirectory}/latest.json`));
+  const latestManifestPath = `${localInstallerDirectory}/latest.json`;
+  const latestManifestBytes = readFileSync(latestManifestPath);
+  const latestManifest = JSON.parse(readText(latestManifestPath));
   if (latestManifest.version === packageJson.version) {
+    assert.ok(
+      !(latestManifestBytes[0] === 0xEF && latestManifestBytes[1] === 0xBB && latestManifestBytes[2] === 0xBF),
+      "latest.json debe estar codificado como UTF-8 sin BOM.",
+    );
     const windowsPlatform = latestManifest.platforms?.["windows-x86_64"];
     assert.equal(typeof windowsPlatform?.signature, "string");
     assert.ok(windowsPlatform.signature.length > 100, "latest.json no contiene una firma válida.");
@@ -103,6 +127,9 @@ for (const marker of [
   "maximumPasswordAttempts",
   "ProtectedData]::Protect",
   "ProtectedData]::Unprotect",
+  "Write-Utf8WithoutBom -LiteralPath $latestPath -Value $latestJson",
+  "New-Object Text.UTF8Encoding($false)",
+  "manifiesto remoto contiene una marca BOM",
   "$env:TAURI_SIGNING_PRIVATE_KEY = $SigningKeyPath",
   "Start-Process -FilePath \"explorer.exe\"",
   "--example verify_installer",
@@ -116,8 +143,13 @@ assert.ok(updaterUi.includes("navigator.onLine"), "El actualizador debe respetar
 assert.ok(updaterUi.includes("Comprobación automática aplazada"), "La comprobación automática debe fallar sin interrumpir el arranque.");
 assert.ok(!updaterUi.includes("Actualizaciones no comprobadas"), "El arranque no debe mostrar una falsa alarma de conexión.");
 assert.ok(updaterUi.includes("visible && !blocked"), "Las actualizaciones deben esperar al cierre de las guías y partidas.");
+assert.ok(updaterUi.includes("installSignedUpdate(update"), "La interfaz debe iniciar automáticamente el flujo firmado.");
+assert.ok(updaterWorkflow.includes("await update.download("), "La versión nueva debe descargarse automáticamente.");
+assert.ok(updaterWorkflow.includes("await update.install()"), "El paquete firmado debe instalarse automáticamente.");
+assert.ok(updaterUi.includes("ACTUALIZACIÓN AUTOMÁTICA SEGURA"), "El usuario debe ver que Fortuna Real se está actualizando.");
+assert.ok(!updaterUi.includes("Actualizar ahora"), "La actualización detectada no debe depender de una acción manual.");
 const signatureVerifier = readText("src-tauri/examples/verify_installer.rs");
-for (const marker of ["PublicKey::decode", "verify_stream", "verifier.finalize()", "include_str!(\"../tauri.conf.json\")"]) {
+for (const marker of ["PublicKey::decode", "verify_stream", "verifier.finalize()", "include_str!(\"../tauri.conf.json\")", "latest.json debe ser UTF-8 sin BOM"]) {
   assert.ok(signatureVerifier.includes(marker), `Falta la validación criptográfica del instalador: ${marker}.`);
 }
 for (const marker of [
@@ -164,4 +196,5 @@ console.log(JSON.stringify({
   distributedSignatureVerification: true,
   deliveryFolders: ["1 Programa", "2 Instaladores", "3 Ejecutar"],
   publicRepositoryStarter: true,
+  offlineNeuralVoiceBundled: true,
 }));

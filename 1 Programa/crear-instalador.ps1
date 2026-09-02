@@ -28,6 +28,15 @@ function Write-Step {
     Write-Host "`n  $Message" -ForegroundColor Cyan
 }
 
+function Write-Utf8WithoutBom {
+    param(
+        [Parameter(Mandatory = $true)][string]$LiteralPath,
+        [Parameter(Mandatory = $true)][string]$Value
+    )
+    $encoding = New-Object Text.UTF8Encoding($false)
+    [IO.File]::WriteAllText($LiteralPath, $Value, $encoding)
+}
+
 function Get-RemoteJson {
     param([Parameter(Mandatory = $true)][string]$Uri)
     $response = Invoke-WebRequest -UseBasicParsing -Uri $Uri -TimeoutSec 30
@@ -36,7 +45,10 @@ function Get-RemoteJson {
     } else {
         [string]$response.Content
     }
-    return $text.TrimStart([char]0xFEFF) | ConvertFrom-Json
+    if ($text.StartsWith([char]0xFEFF)) {
+        throw "El manifiesto remoto contiene una marca BOM y no es JSON UTF-8 canónico."
+    }
+    return $text | ConvertFrom-Json
 }
 
 function Get-DependencyFingerprint {
@@ -441,7 +453,8 @@ try {
         }
     }
     $latestPath = Join-Path $InstallerOutput "latest.json"
-    $latestUpdate | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $latestPath -Encoding utf8
+    $latestJson = $latestUpdate | ConvertTo-Json -Depth 5
+    Write-Utf8WithoutBom -LiteralPath $latestPath -Value $latestJson
 
     Write-Step "Verificando la firma del instalador con la clave publica de la aplicacion..."
     & cargo.exe run --release --locked --manifest-path "src-tauri/Cargo.toml" --example verify_installer -- $destination $signatureDestination $latestPath
