@@ -107,6 +107,7 @@ for (const command of [
   "test:types",
   "cargo test",
   "cargo clippy",
+  "lfs: true",
   'working-directory: "1 Programa"',
   'cache-dependency-path: "1 Programa/package-lock.json"',
   "firma local",
