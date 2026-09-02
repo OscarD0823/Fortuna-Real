@@ -51,6 +51,34 @@ function Get-RemoteJson {
     return $text | ConvertFrom-Json
 }
 
+function Wait-ForRemoteManifest {
+    param(
+        [Parameter(Mandatory = $true)][string]$Uri,
+        [Parameter(Mandatory = $true)][string]$ExpectedVersion,
+        [int]$MaximumAttempts = 8,
+        [int]$RetryDelaySeconds = 5
+    )
+    $lastFailure = "El manifiesto todavía no está disponible."
+    for ($attempt = 1; $attempt -le $MaximumAttempts; $attempt++) {
+        try {
+            $manifest = Get-RemoteJson -Uri $Uri
+            if ($manifest.version -eq $ExpectedVersion) {
+                return $manifest
+            }
+            $lastFailure = "latest.json informa la versión $($manifest.version) en lugar de $ExpectedVersion."
+        }
+        catch {
+            $lastFailure = $_.Exception.Message
+        }
+
+        if ($attempt -lt $MaximumAttempts) {
+            Write-Host "  GitHub todavía está propagando el Release; reintento $attempt de $MaximumAttempts..." -ForegroundColor DarkGray
+            Start-Sleep -Seconds $RetryDelaySeconds
+        }
+    }
+    throw "El Release se publicó, pero su manifiesto no se propagó correctamente. Último resultado: $lastFailure"
+}
+
 function Get-DependencyFingerprint {
     # Node también admite la clave vacía de package-lock.json en PowerShell 5.1.
     $dependencyHash = & node.exe (Join-Path $ProjectRoot "scripts\dependency-fingerprint.mjs")
@@ -640,10 +668,7 @@ Proyecto: https://github.com/OscarD0823/Fortuna-Real
 
         Write-Step "Verificando el manifiesto remoto..."
         $remoteManifestUrl = "https://github.com/$ReleaseRepository/releases/latest/download/latest.json"
-        $remoteManifest = Get-RemoteJson -Uri $remoteManifestUrl
-        if ($remoteManifest.version -ne $version) {
-            throw "El Release se publicó, pero latest.json informa la versión $($remoteManifest.version) en lugar de $version."
-        }
+        $remoteManifest = Wait-ForRemoteManifest -Uri $remoteManifestUrl -ExpectedVersion $version
     }
 
     Write-Host ""
