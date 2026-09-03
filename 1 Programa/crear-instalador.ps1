@@ -55,7 +55,7 @@ function Wait-ForRemoteManifest {
     param(
         [Parameter(Mandatory = $true)][string]$Uri,
         [Parameter(Mandatory = $true)][string]$ExpectedVersion,
-        [int]$MaximumAttempts = 24,
+        [int]$MaximumAttempts = 48,
         [int]$RetryDelaySeconds = 5
     )
     $lastFailure = "El manifiesto todavía no está disponible."

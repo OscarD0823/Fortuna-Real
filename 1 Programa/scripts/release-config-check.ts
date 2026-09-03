@@ -146,7 +146,7 @@ for (const marker of [
   "New-Object Text.UTF8Encoding($false)",
   "manifiesto remoto contiene una marca BOM",
   "Wait-ForRemoteManifest -Uri $remoteManifestUrl -ExpectedVersion $version",
-  "MaximumAttempts = 24",
+  "MaximumAttempts = 48",
   "fortuna_version=$ExpectedVersion&attempt=$attempt",
   "GitHub todavía está propagando el Release",
   "$env:TAURI_SIGNING_PRIVATE_KEY = $SigningKeyPath",
