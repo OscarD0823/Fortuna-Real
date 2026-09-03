@@ -55,13 +55,18 @@ function Wait-ForRemoteManifest {
     param(
         [Parameter(Mandatory = $true)][string]$Uri,
         [Parameter(Mandatory = $true)][string]$ExpectedVersion,
-        [int]$MaximumAttempts = 8,
+        [int]$MaximumAttempts = 24,
         [int]$RetryDelaySeconds = 5
     )
     $lastFailure = "El manifiesto todavía no está disponible."
     for ($attempt = 1; $attempt -le $MaximumAttempts; $attempt++) {
         try {
-            $manifest = Get-RemoteJson -Uri $Uri
+            # El alias /releases/latest puede conservar durante unos segundos el
+            # manifiesto de la versión anterior. Una consulta única por intento
+            # evita esa caché sin cambiar la URL canónica usada por la aplicación.
+            $separator = if ($Uri.Contains("?")) { "&" } else { "?" }
+            $requestUri = "$Uri${separator}fortuna_version=$ExpectedVersion&attempt=$attempt"
+            $manifest = Get-RemoteJson -Uri $requestUri
             if ($manifest.version -eq $ExpectedVersion) {
                 return $manifest
             }
