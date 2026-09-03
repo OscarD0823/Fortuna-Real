@@ -493,6 +493,11 @@ try {
 
     Write-Step "Preparando las tres carpetas de entrega..."
     $instructionsPath = Join-Path $InstallerOutput "INSTRUCCIONES - LEER PRIMERO.txt"
+    $installerUpdateLauncherName = "INSTALAR O ACTUALIZAR.cmd"
+    $installerUpdateLauncherPath = Join-Path $RepositoryRoot "3 Ejecutar\$installerUpdateLauncherName"
+    if (-not (Test-Path -LiteralPath $installerUpdateLauncherPath)) {
+        throw "Falta el iniciador de instalación o actualización: $installerUpdateLauncherPath"
+    }
     $zipPath = Join-Path $InstallerOutput "Fortuna-Real-$version-Instalador.zip"
     $zipStage = Join-Path $BuildCache "installer-zip-stage"
     if (Test-Path -LiteralPath $zipStage) { Remove-Item -LiteralPath $zipStage -Recurse -Force }
@@ -500,6 +505,7 @@ try {
     foreach ($zipSource in @($destination, $signatureDestination, $latestPath, $instructionsPath)) {
         Copy-Item -LiteralPath $zipSource -Destination $zipStage -Force
     }
+    Copy-Item -LiteralPath $installerUpdateLauncherPath -Destination $zipStage -Force
     if (Test-Path -LiteralPath $zipPath) { Remove-Item -LiteralPath $zipPath -Force }
     [IO.Compression.ZipFile]::CreateFromDirectory(
         $zipStage,
@@ -546,6 +552,29 @@ Autor: OscarD0823
     Move-Item -LiteralPath $starterZipTemporary -Destination $starterZipPath -Force
     Remove-Item -LiteralPath $starterStage -Recurse -Force
 
+    $driveZipPath = Join-Path $InstallerOutput "Fortuna-Real-$version-Para-Drive.zip"
+    $driveZipTemporary = Join-Path $BuildCache "Fortuna-Real-$version-Para-Drive.zip"
+    $driveStage = Join-Path $BuildCache "drive-zip-stage"
+    if (Test-Path -LiteralPath $driveStage) { Remove-Item -LiteralPath $driveStage -Recurse -Force }
+    if (Test-Path -LiteralPath $driveZipTemporary) { Remove-Item -LiteralPath $driveZipTemporary -Force }
+    New-Item -ItemType Directory -Force -Path $driveStage | Out-Null
+    Copy-Item -LiteralPath $destination -Destination $driveStage -Force
+    Copy-Item -LiteralPath $installerUpdateLauncherPath -Destination $driveStage -Force
+    Copy-Item -LiteralPath $instructionsPath -Destination $driveStage -Force
+    Copy-Item -LiteralPath (Join-Path $RepositoryRoot "README.md") -Destination $driveStage -Force
+    $driveStarterDirectory = Join-Path $driveStage "Descargar desde GitHub"
+    New-Item -ItemType Directory -Force -Path $driveStarterDirectory | Out-Null
+    Get-ChildItem -LiteralPath (Join-Path $RepositoryRoot "3 Ejecutar\Iniciador GitHub") -Force |
+        Copy-Item -Destination $driveStarterDirectory -Recurse -Force
+    [IO.Compression.ZipFile]::CreateFromDirectory(
+        $driveStage,
+        $driveZipTemporary,
+        [IO.Compression.CompressionLevel]::Optimal,
+        $false
+    )
+    Move-Item -LiteralPath $driveZipTemporary -Destination $driveZipPath -Force
+    Remove-Item -LiteralPath $driveStage -Recurse -Force
+
     $portableLauncherPath = Join-Path $LauncherOutput "Ejecutar Fortuna Real.cmd"
     @"
 @echo off
@@ -571,14 +600,21 @@ if not exist "%FORTUNA_INSTALLER%" (
   pause
   exit /b 1
 )
-start "" "%FORTUNA_INSTALLER%"
+reg query "HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\Fortuna Real" /v DisplayVersion >nul 2>&1
+if %errorlevel% equ 0 (
+  echo Actualizando la instalacion existente de Fortuna Real...
+  start "" "%FORTUNA_INSTALLER%" /UPDATE
+) else (
+  echo Instalando Fortuna Real por primera vez...
+  start "" "%FORTUNA_INSTALLER%"
+)
 "@ | Set-Content -LiteralPath $installerLauncherPath -Encoding ascii
     @"
 FORTUNA REAL $version - EJECUTAR
 ================================
 
 - Ejecutar Fortuna Real.cmd abre la version portatil de 1 Programa.
-- Instalar Fortuna Real.cmd abre el instalador normal de 2 Instaladores.
+- Instalar Fortuna Real.cmd instala por primera vez o actualiza la copia existente.
 - Al instalar, Windows crea accesos fuera de la carpeta interna del programa.
 
 Proyecto: https://github.com/OscarD0823/Fortuna-Real
@@ -597,6 +633,7 @@ Proyecto: https://github.com/OscarD0823/Fortuna-Real
         (Split-Path -Leaf $latestPath),
         (Split-Path -Leaf $zipPath),
         (Split-Path -Leaf $starterZipPath),
+        (Split-Path -Leaf $driveZipPath),
         "INSTRUCCIONES - LEER PRIMERO.txt"
     )
     Get-ChildItem -LiteralPath $InstallerOutput -Force |
@@ -682,6 +719,7 @@ Proyecto: https://github.com/OscarD0823/Fortuna-Real
     Write-Host "  $latestPath" -ForegroundColor White
     Write-Host "  $zipPath" -ForegroundColor White
     Write-Host "  $starterZipPath" -ForegroundColor White
+    Write-Host "  $driveZipPath" -ForegroundColor White
     Write-Host "  $ProgramOutput" -ForegroundColor White
     Write-Host "  $LauncherOutput" -ForegroundColor White
     Write-Host ""

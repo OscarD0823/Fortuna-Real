@@ -1,4 +1,4 @@
-import type { DrawMode, MarbleDifficulty, Participant } from "../../core/types";
+import type { DrawMode, MarbleDifficulty, MarbleFinishRule, Participant } from "../../core/types";
 
 export type MarblePower = "boost" | "shield" | "freeze" | "reverse" | "giant" | "tiny" | "restart";
 export type TrackObstacleType = "spinner" | "bumpers" | "gate" | "boost" | "ice" | "portal" | "hammer" | "funnel";
@@ -14,6 +14,7 @@ export type TrackSectionType =
   | "ice-zone"
   | "finish";
 export type TrackZoneType = "launch" | "turbo" | "turbine" | "ice" | "portal" | "forge" | "gravity" | "royal";
+export type MarbleTrackEventType = "freeze" | "river" | "tornado" | "quake";
 
 export interface TrackPoint {
   x: number;
@@ -52,6 +53,18 @@ export interface TrackPowerZone {
   power: MarblePower;
   zoneId: string;
   scale: number;
+}
+
+export interface MarbleTrackEvent {
+  id: string;
+  type: MarbleTrackEventType;
+  title: string;
+  detail: string;
+  color: string;
+  progress: number;
+  startProgress: number;
+  endProgress: number;
+  intensity: number;
 }
 
 export interface TrackSection {
@@ -101,9 +114,11 @@ export interface MarbleTrack {
   zones: TrackZone[];
   obstacles: TrackObstacle[];
   powerZones: TrackPowerZone[];
+  events: MarbleTrackEvent[];
   checkpoints: number[];
   risk: number;
   trackWidth: number;
+  mapScale: number;
   lengthRating: "Corta" | "Larga" | "Extrema";
 }
 
@@ -137,6 +152,7 @@ export interface PreparedMarbleRace {
   selected: MarbleRacer;
   mode: DrawMode;
   difficulty: MarbleDifficulty;
+  finishRule: MarbleFinishRule;
 }
 
 export interface TrackValidationResult {
@@ -159,6 +175,8 @@ export interface MarbleMotionState {
   powerActive: boolean;
   incomingPowerActive: boolean;
   activePower: MarblePower | null;
+  activeTrackEvent: MarbleTrackEventType | null;
+  trackEventIntensity: number;
   recovering: boolean;
   recoveryPhase: number;
   recoveryDrop: number;
@@ -179,50 +197,66 @@ interface DifficultyConfig {
   risk: number;
   trackWidth: number;
   featureScale: number;
+  mapScale: number;
+  maximumElevation: number;
+  maximumBridgeLift: number;
+  eventCount: number;
   lengthRating: MarbleTrack["lengthRating"];
 }
 
 export const marbleDifficultyConfig: Record<MarbleDifficulty, DifficultyConfig> = {
   easy: {
     rows: 3,
-    sectionCount: 20,
+    sectionCount: 22,
     zoneTypes: ["launch", "turbo", "turbine", "royal"],
-    obstacleMin: 1,
-    obstacleMax: 1,
+    obstacleMin: 2,
+    obstacleMax: 3,
     powerZones: 1,
     powerChance: 0.2,
-    durationBaseMs: 9000,
+    durationBaseMs: 10500,
     risk: 1,
     trackWidth: 68,
     featureScale: 0.82,
+    mapScale: 1.18,
+    maximumElevation: 1.35,
+    maximumBridgeLift: 1.6,
+    eventCount: 2,
     lengthRating: "Corta",
   },
   medium: {
     rows: 4,
-    sectionCount: 32,
+    sectionCount: 38,
     zoneTypes: ["launch", "turbo", "turbine", "ice", "forge", "royal"],
-    obstacleMin: 5,
-    obstacleMax: 7,
+    obstacleMin: 7,
+    obstacleMax: 10,
     powerZones: 5,
     powerChance: 0.58,
-    durationBaseMs: 12800,
+    durationBaseMs: 15500,
     risk: 3,
     trackWidth: 76,
     featureScale: 1,
+    mapScale: 1.48,
+    maximumElevation: 3.2,
+    maximumBridgeLift: 3.1,
+    eventCount: 4,
     lengthRating: "Larga",
   },
   hard: {
     rows: 5,
-    sectionCount: 44,
+    sectionCount: 56,
     zoneTypes: ["launch", "turbo", "turbine", "ice", "portal", "forge", "gravity", "royal"],
-    obstacleMin: 10,
-    obstacleMax: 14,
+    obstacleMin: 16,
+    obstacleMax: 22,
     powerZones: 9,
     powerChance: 0.9,
-    durationBaseMs: 17000,
+    durationBaseMs: 22000,
     risk: 5,
     trackWidth: 84,
     featureScale: 1.2,
+    mapScale: 1.82,
+    maximumElevation: 5.3,
+    maximumBridgeLift: 5.3,
+    eventCount: 6,
     lengthRating: "Extrema",
   },
 };
@@ -247,6 +281,33 @@ const POWER_COLORS: Record<MarblePower, string> = {
   giant: "#f6bd35",
   tiny: "#c779ff",
   restart: "#9c62ff",
+};
+
+const TRACK_EVENT_LIBRARY: Record<MarbleTrackEventType, Omit<MarbleTrackEvent, "id" | "progress" | "startProgress" | "endProgress" | "intensity">> = {
+  freeze: {
+    type: "freeze",
+    title: "La pista se congeló",
+    detail: "El canal pierde agarre y las canicas derrapan",
+    color: "#8fe9ff",
+  },
+  river: {
+    type: "river",
+    title: "Un río cruzó la pista",
+    detail: "La corriente empuja las canicas de lado",
+    color: "#32a9ff",
+  },
+  tornado: {
+    type: "tornado",
+    title: "Tornado en el circuito",
+    detail: "El viento cambia la trayectoria y levanta las canicas",
+    color: "#d679ff",
+  },
+  quake: {
+    type: "quake",
+    title: "Temblor en la fábrica",
+    detail: "La pista vibra y desestabiliza la carrera",
+    color: "#ff7a45",
+  },
 };
 
 export const powersByDifficulty: Record<MarbleDifficulty, MarblePower[]> = {
@@ -673,8 +734,9 @@ const buildVerticalProfile = (
   random: () => number,
   difficulty: MarbleDifficulty,
 ) => {
-  const variation = difficulty === "easy" ? 0.042 : difficulty === "medium" ? 0.072 : 0.1;
-  const maximumElevation = difficulty === "easy" ? 0.72 : difficulty === "medium" ? 1.2 : 1.72;
+  const config = marbleDifficultyConfig[difficulty];
+  const variation = difficulty === "easy" ? 0.065 : difficulty === "medium" ? 0.13 : 0.21;
+  const maximumElevation = config.maximumElevation;
   const rawElevations = [0];
   let elevation = 0;
   drafts.forEach((draft, index) => {
@@ -696,11 +758,11 @@ const buildVerticalProfile = (
     const progress = index / drafts.length;
     const returnToDeck = value - drift * progress;
     const mountainEnvelope = Math.sin(progress * Math.PI);
-    const elevatedBackbone = mountainEnvelope * maximumElevation * (difficulty === "easy" ? 0.38 : difficulty === "medium" ? 0.5 : 0.58);
+    const elevatedBackbone = mountainEnvelope * maximumElevation * (difficulty === "easy" ? 0.52 : difficulty === "medium" ? 0.66 : 0.76);
     const rollingHills = Math.sin(progress * Math.PI * (difficulty === "hard" ? 5 : 3))
       * mountainEnvelope
       * maximumElevation
-      * 0.16;
+      * (difficulty === "hard" ? 0.22 : 0.18);
     return returnToDeck + elevatedBackbone + rollingHills;
   });
   const range = Math.max(...leveled.map((value) => Math.abs(value)), 0.001);
@@ -780,7 +842,7 @@ export const generateMarbleTrack = (
   });
   const elevations = buildVerticalProfile(sectionDrafts, random, difficulty);
   const maximumBank = difficulty === "easy" ? 0.16 : difficulty === "medium" ? 0.24 : 0.31;
-  const maximumBridgeLift = difficulty === "easy" ? 0.72 : difficulty === "medium" ? 1.18 : 1.68;
+  const maximumBridgeLift = config.maximumBridgeLift;
   const bridgeLifts = sectionDrafts.map((draft) => draft.clearance < 0.07
     ? roundPoint(maximumBridgeLift * clamp(1 - draft.clearance / 0.07, 0.24, 1))
     : 0,
@@ -872,8 +934,29 @@ export const generateMarbleTrack = (
       scale: config.featureScale * (0.9 + random() * 0.2),
     };
   });
+  const eventTypes: MarbleTrackEventType[] = difficulty === "easy"
+    ? ["freeze", "river"]
+    : difficulty === "medium"
+      ? ["freeze", "river", "tornado", "quake"]
+      : ["quake", "tornado", "freeze", "river"];
+  const eventIndexes = pickSpreadIndexes(config.eventCount, sections.length, random);
+  const events = eventIndexes.map((sectionIndex, index) => {
+    const section = sections[sectionIndex];
+    const progress = section.startProgress + (section.endProgress - section.startProgress) * (0.42 + random() * 0.18);
+    const type = eventTypes[(index + Math.floor(random() * eventTypes.length)) % eventTypes.length];
+    const metadata = TRACK_EVENT_LIBRARY[type];
+    const halfWindow = difficulty === "easy" ? 0.027 : difficulty === "medium" ? 0.024 : 0.021;
+    return {
+      ...metadata,
+      id: `event-${index}-${hashSeed(`${seed}-event-${type}-${index}`).toString(16)}`,
+      progress,
+      startProgress: clamp(progress - halfWindow, 0.05, 0.92),
+      endProgress: clamp(progress + halfWindow, 0.08, 0.95),
+      intensity: roundPoint((difficulty === "easy" ? 0.66 : difficulty === "medium" ? 0.84 : 1.04) + random() * 0.18),
+    } satisfies MarbleTrackEvent;
+  });
   const checkpoints = zones.slice(0, -1).map((zone) => zone.endProgress);
-  const signature = `${difficulty}-${hashSeed(`${seed}-${points.map((point) => `${point.x},${point.y},${point.elevation}`).join("|")}-${sections.map((section) => section.moduleId).join("|")}`).toString(36)}`;
+  const signature = `${difficulty}-${hashSeed(`${seed}-${points.map((point) => `${point.x},${point.y},${point.elevation}`).join("|")}-${sections.map((section) => section.moduleId).join("|")}-${events.map((event) => `${event.type}:${event.progress}`).join("|")}`).toString(36)}`;
 
   return {
     seed,
@@ -885,9 +968,11 @@ export const generateMarbleTrack = (
     zones,
     obstacles,
     powerZones,
+    events,
     checkpoints,
     risk: config.risk,
     trackWidth: config.trackWidth,
+    mapScale: config.mapScale,
     lengthRating: config.lengthRating,
   };
 };
@@ -923,6 +1008,7 @@ export const prepareMarbleRace = (
   seed: string,
   difficulty: MarbleDifficulty = "medium",
   previousWinnerIds: ReadonlySet<string> = new Set(),
+  finishRule: MarbleFinishRule = mode === "direct" ? "first" : "last",
 ): PreparedMarbleRace => {
   if (participants.length < 2) throw new Error("La carrera necesita al menos dos participantes.");
   const track = generateMarbleTrack(seed, difficulty);
@@ -1025,11 +1111,11 @@ export const prepareMarbleRace = (
     target.incomingPowerSourceId = attacker.id;
     target.durationMs += powerDurationModifier[attacker.power];
   });
-  const selected = mode === "direct"
+  const selected = finishRule === "first"
     ? racers.reduce((best, racer) => racer.durationMs < best.durationMs ? racer : best)
     : racers.reduce((last, racer) => racer.durationMs > last.durationMs ? racer : last);
 
-  return { track, racers, selected, mode, difficulty };
+  return { track, racers, selected, mode, difficulty, finishRule };
 };
 
 interface TrackMotionProfile {
@@ -1189,6 +1275,13 @@ export const getMarbleMotion = (
   const unadjustedProgress = profileProgressAtTime(track, raw * raw * (2 - raw));
   const beforeRecoveryProgress = powerOnlyProgress(racer, track, raw);
   const section = sectionAtProgress(track, progress);
+  const activeTrackEvent = track.events.find((event) =>
+    progress >= event.startProgress && progress <= event.endProgress,
+  ) ?? null;
+  const eventLocal = activeTrackEvent
+    ? clamp((progress - activeTrackEvent.startProgress) / Math.max(0.0001, activeTrackEvent.endProgress - activeTrackEvent.startProgress), 0, 1)
+    : 0;
+  const eventEnvelope = activeTrackEvent ? Math.sin(eventLocal * Math.PI) * activeTrackEvent.intensity : 0;
   const deltaRaw = 0.0015;
   const before = powerAdjustedProgress(racer, track, Math.max(0, raw - deltaRaw));
   const after = powerAdjustedProgress(racer, track, Math.min(1, raw + deltaRaw));
@@ -1226,17 +1319,41 @@ export const getMarbleMotion = (
     ? (1 - nearestObstacleDistance / 0.018) * nearestObstacleScale
     : 0;
   const gripDrift = (1 - Math.min(1, section.surfaceGrip)) * Math.sin(progress * 93 + racer.number * 1.77);
+  const boostInstability = racer.power === "boost" && powerActive
+    ? Math.sin(elapsedMs / 34 + racer.number * 2.17) * (1.8 + track.risk * 0.3)
+    : 0;
+  const trackEventDrift = activeTrackEvent?.type === "freeze"
+    ? Math.sin(elapsedMs / 76 + racer.number * 0.91) * 1.55 * eventEnvelope
+    : activeTrackEvent?.type === "river"
+      ? (0.9 + Math.sin(elapsedMs / 125 + racer.number) * 0.55) * racer.recoveryDirection * eventEnvelope
+      : activeTrackEvent?.type === "tornado"
+        ? Math.sin(elapsedMs / 42 + racer.number * 1.31) * 2.75 * eventEnvelope
+        : activeTrackEvent?.type === "quake"
+          ? Math.sin(elapsedMs / 23 + racer.number * 2.7) * 1.9 * eventEnvelope
+          : 0;
   const lateralImpulse = clamp(
     gripDrift * 0.72
       + Math.sin(elapsedMs / 48 + racer.number * 1.71) * collisionStrength
+      + boostInstability
+      + trackEventDrift
       + racer.recoveryDirection * recoveryArc * 5.2,
-    -5.4,
-    5.4,
+    -7.8,
+    7.8,
   );
   const sectionSpan = Math.max(0.0001, section.endProgress - section.startProgress);
   const sectionLocal = clamp((progress - section.startProgress) / sectionSpan, 0, 1);
   const connectorBounce = Math.sin(sectionLocal * Math.PI * 2) * 0.012 * Math.min(1, velocity * 9);
-  const verticalOffset = Math.max(0, Math.sin(collisionStrength * Math.PI) * 0.11 + connectorBounce);
+  const eventLift = activeTrackEvent?.type === "tornado"
+    ? eventEnvelope * (0.18 + Math.abs(Math.sin(elapsedMs / 58 + racer.number)) * 0.28)
+    : activeTrackEvent?.type === "quake"
+      ? Math.abs(Math.sin(elapsedMs / 25 + racer.number)) * eventEnvelope * 0.12
+      : activeTrackEvent?.type === "river"
+        ? Math.abs(Math.sin(elapsedMs / 95 + racer.number)) * eventEnvelope * 0.055
+        : 0;
+  const turboBounce = racer.power === "boost" && powerActive
+    ? Math.abs(Math.sin(elapsedMs / 31 + racer.number)) * 0.16
+    : 0;
+  const verticalOffset = Math.max(0, Math.sin(collisionStrength * Math.PI) * 0.11 + connectorBounce + eventLift + turboBounce);
 
   return {
     raw,
@@ -1249,6 +1366,8 @@ export const getMarbleMotion = (
     powerActive,
     incomingPowerActive,
     activePower: incomingPowerActive ? racer.incomingPower : powerActive ? racer.power : null,
+    activeTrackEvent: activeTrackEvent?.type ?? null,
+    trackEventIntensity: eventEnvelope,
     recovering,
     recoveryPhase,
     recoveryDrop: recoveryArc * (1.15 + track.risk * 0.13),
@@ -1268,6 +1387,8 @@ export const getMarbleProgress = (racer: MarbleRacer, elapsedMs: number, track?:
     powerActive: racer.power !== null && raw >= racer.powerAt && raw <= racer.powerAt + 0.115,
     incomingPowerActive: false,
     activePower: racer.power !== null && raw >= racer.powerAt && raw <= racer.powerAt + 0.115 ? racer.power : null,
+    activeTrackEvent: null,
+    trackEventIntensity: 0,
     recovering: false,
     recoveryPhase: 0,
     recoveryDrop: 0,

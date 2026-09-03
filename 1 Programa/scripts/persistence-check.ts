@@ -98,6 +98,12 @@ assert.equal(migrated.winnerRecords.length, 1);
 assert.deepEqual(migrated.eliminatedIds, []);
 assert.deepEqual(migrated.history, []);
 assert.equal(migrated.activeSession, null);
+assert.equal(migrated.marbleFinishRule, "first");
+const migratedElimination = mergePersistedDrawState(
+  migratePersistedDrawState({ mode: "elimination", game: "marbles" }, 4),
+  initial,
+);
+assert.equal(migratedElimination.marbleFinishRule, "last");
 assert.deepEqual(migratePersistedDrawState({ participants: [ana] }, DRAW_STATE_VERSION + 1), {});
 
 const persistedSession = mergePersistedDrawState({
@@ -137,6 +143,7 @@ const resetStore = () => useDrawStore.setState({
   mode: "elimination",
   game: "roulette",
   marbleDifficulty: "medium",
+  marbleFinishRule: "first",
   pinballControlMode: "automatic",
   prize: "Premio del sorteo",
   roundNumber: 1,
@@ -223,6 +230,7 @@ console.log(JSON.stringify({
   persistenceVersion: DRAW_STATE_VERSION,
   corruptStateRecovery: true,
   legacyMigration: true,
+  legacyMarbleRuleRecovery: true,
   activeSessionRecovery: true,
   capacityLimit: MAX_PARTICIPANTS,
   normalizedDedupe: true,

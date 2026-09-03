@@ -83,6 +83,13 @@ try {
         Refresh-Path
     }
 
+    & git.exe lfs version *> $null
+    if ($LASTEXITCODE -ne 0) {
+        throw "La instalación de Git no incluye Git LFS. Actualiza Git for Windows y vuelve a intentarlo."
+    }
+    & git.exe lfs install --skip-repo
+    if ($LASTEXITCODE -ne 0) { throw "No se pudo preparar Git LFS para descargar la voz neuronal." }
+
     if (-not $DestinationPath) { $DestinationPath = Select-Destination }
     if (-not $DestinationPath) {
         Write-Host "`n  Operacion cancelada. No se descargo ningun archivo." -ForegroundColor Yellow
@@ -120,6 +127,14 @@ try {
         Write-Step "Descargando el proyecto publico desde GitHub..."
         & git.exe clone --branch main --single-branch --depth 1 -- $ExpectedRemote $DestinationPath
         if ($LASTEXITCODE -ne 0) { throw "No se pudo descargar Fortuna Real." }
+    }
+
+    Write-Step "Descargando el modelo completo de voz neuronal..."
+    & git.exe -C $DestinationPath lfs pull
+    if ($LASTEXITCODE -ne 0) { throw "Git LFS no pudo descargar el modelo de voz." }
+    $voiceModelPath = Join-Path $programPath "src-tauri\resources\tts\vits-piper-es_AR-daniela-high\es_AR-daniela-high.onnx"
+    if (-not (Test-Path -LiteralPath $voiceModelPath) -or (Get-Item -LiteralPath $voiceModelPath).Length -lt 100MB) {
+        throw "La descarga terminó sin el modelo completo de voz neuronal."
     }
 
     $sourceLauncher = Join-Path $programPath "iniciar-fortuna.ps1"

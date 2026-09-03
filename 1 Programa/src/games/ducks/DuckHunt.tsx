@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Contrast,
+  CloudFog,
+  CloudLightning,
   Crosshair,
   Crown,
   EyeOff,
@@ -17,6 +19,7 @@ import {
   Trophy,
   TriangleAlert,
   Vibrate,
+  Wind,
 } from "lucide-react";
 import type { Participant } from "../../core/types";
 import { fortunaAudio } from "../../shared/audio/audioEngine";
@@ -28,6 +31,7 @@ import {
 import {
   createDuckSeed,
   duckSabotageDefinitions,
+  getDuckForestEvent,
   duckLivesLabel,
   getDuckResetDuration,
   hitDuckContestant,
@@ -35,6 +39,7 @@ import {
   prepareDuckNextFlight,
   prepareDuckContestants,
   type DuckContestant,
+  type DuckForestEvent,
   type DuckSabotagePower,
 } from "./duckHuntEngine";
 import {
@@ -91,6 +96,7 @@ export function DuckHunt({
   resumedCommitment?: { commitmentId: string; seed: string } | null;
 }) {
   const [visualSeed, setVisualSeed] = useState(() => createDuckSeed());
+  const [forestEvent, setForestEvent] = useState<DuckForestEvent>(() => getDuckForestEvent(visualSeed, 1));
   const [commitmentSeed, setCommitmentSeed] = useState(
     () => resumedCommitment?.seed ?? createDuckCommitmentSeed(),
   );
@@ -174,9 +180,10 @@ export function DuckHunt({
     setWaveRemainingMs(getDuckWaveDuration(1));
     setRecentWaveHits([]);
     setWaveEscaped(false);
+    setForestEvent(getDuckForestEvent(visualSeed, 1));
     commitmentCursorRef.current = 0;
     knockoutOrderRef.current = [];
-  }, [initialContestants]);
+  }, [initialContestants, visualSeed]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -207,6 +214,10 @@ export function DuckHunt({
     contestantsRef.current = contestants;
     controllerRef.current?.updateContestants(contestants.map(concealContestant));
   }, [contestants]);
+
+  useEffect(() => {
+    controllerRef.current?.setForestEvent(forestEvent.type);
+  }, [forestEvent]);
 
   const livingCount = contestants.filter((contestant) => !contestant.knockedOut).length;
   const sortedContestants = useMemo(
@@ -274,9 +285,12 @@ export function DuckHunt({
     controllerRef.current?.setRunning(true);
     const livingIds = contestantsRef.current.filter((contestant) => !contestant.knockedOut).map((contestant) => contestant.id);
     const firstWaveIds = selectDuckWaveIds(livingIds, 1, arcadeMode);
+    const firstForestEvent = getDuckForestEvent(visualSeed, 1);
     currentWaveIdsRef.current = firstWaveIds;
     waveModeRef.current = arcadeMode;
     controllerRef.current?.beginWave(firstWaveIds);
+    controllerRef.current?.setForestEvent(firstForestEvent.type);
+    setForestEvent(firstForestEvent);
     setWaveNumber(1);
     waveRef.current = 1;
     setShotsInWave(0);
@@ -361,6 +375,7 @@ export function DuckHunt({
         setShotsInWave(0);
         setWaveRemainingMs(getDuckWaveDuration(nextWave));
         setWaveEscaped(false);
+        setForestEvent(getDuckForestEvent(visualSeed, nextWave));
         controllerRef.current?.beginWave(nextWaveIds);
         applyPhase("flying");
         setLastHit(null);
@@ -422,6 +437,7 @@ export function DuckHunt({
       setShotsInWave(0);
       setWaveRemainingMs(getDuckWaveDuration(nextWave));
       setWaveEscaped(false);
+      setForestEvent(getDuckForestEvent(visualSeed, nextWave));
       controllerRef.current?.beginWave(nextWaveIds);
       applyPhase("flying");
       fortunaAudio.playDuckTakeoff();
@@ -515,6 +531,13 @@ export function DuckHunt({
     : activePower?.power === "shake"
       ? Vibrate
       : Contrast;
+  const ForestEventIcon = forestEvent.type === "wind"
+    ? Wind
+    : forestEvent.type === "mist"
+      ? CloudFog
+      : forestEvent.type === "storm"
+        ? CloudLightning
+        : Sparkles;
 
   return (
     <div
@@ -533,6 +556,7 @@ export function DuckHunt({
       data-wave-shots-left={Math.max(0, DUCK_WAVE_SHOTS - shotsInWave)}
       data-hidden-living-ducks={hiddenLivingCount}
       data-cover-percent={coverPercent}
+      data-forest-event={forestEvent.type}
       data-release-stage="beta"
     >
       <div className="duck-hunt__status">
@@ -578,6 +602,11 @@ export function DuckHunt({
           aria-hidden="true"
         ><span /><i /></div>
         <div className="duck-hunt__render-badge"><span /> {rendererFailed ? "RESPALDO ACCESIBLE" : "CÁMARA CLÁSICA 3D"}</div>
+        <div className={`duck-forest-event duck-forest-event--${forestEvent.type}`} role="status" aria-live="polite">
+          <ForestEventIcon size={16} />
+          <strong>{forestEvent.label}</strong>
+          <span>{forestEvent.description}</span>
+        </div>
         <div className="duck-cover-radar" role="status" aria-label={`${hiddenLivingCount} patos a cubierto de ${livingCount} en pie`}>
           <span><EyeOff size={13} /> A CUBIERTO <strong>{hiddenLivingCount}/{livingCount}</strong></span>
           <div aria-hidden="true"><i style={{ width: `${coverPercent}%` }} /></div>

@@ -42,6 +42,7 @@ import type {
   DrawMode,
   GameId,
   MarbleDifficulty,
+  MarbleFinishRule,
   Participant,
   Parity,
   PinballControlMode,
@@ -173,6 +174,7 @@ function App() {
   const prize = useDrawStore((state) => state.prize);
   const pinballControlMode = useDrawStore((state) => state.pinballControlMode);
   const marbleDifficulty = useDrawStore((state) => state.marbleDifficulty);
+  const marbleFinishRule = useDrawStore((state) => state.marbleFinishRule);
   const roundNumber = useDrawStore((state) => state.roundNumber);
   const activeSession = useDrawStore((state) => state.activeSession);
   const beginSession = useDrawStore((state) => state.beginSession);
@@ -183,6 +185,7 @@ function App() {
   const recordDuckSurvival = useDrawStore((state) => state.recordDuckSurvival);
   const reenableWinner = useDrawStore((state) => state.reenableWinner);
   const setMarbleDifficulty = useDrawStore((state) => state.setMarbleDifficulty);
+  const setMarbleFinishRule = useDrawStore((state) => state.setMarbleFinishRule);
 
   const activeParticipants = useMemo(
     () => {
@@ -507,9 +510,10 @@ function App() {
       seed,
       marbleDifficulty,
       previousWinnerIds,
+      marbleFinishRule,
     );
     const proof = JSON.stringify({
-      version: 2,
+      version: 3,
       track: prepared.track.signature,
       participants: activeParticipants.map((participant) => participant.id),
       selectedParticipantId: prepared.selected.participant.id,
@@ -517,6 +521,7 @@ function App() {
       selectedDurationMs: prepared.selected.durationMs,
       mode,
       difficulty: marbleDifficulty,
+      finishRule: marbleFinishRule,
     });
     commitSeededSession(
       seed,
@@ -524,7 +529,7 @@ function App() {
       prepared.selected.participant.id,
       prepared.selected.number,
     );
-  }, [activeParticipants, commitSeededSession, marbleDifficulty, mode, previousWinnerIds]);
+  }, [activeParticipants, commitSeededSession, marbleDifficulty, marbleFinishRule, mode, previousWinnerIds]);
 
   const commitDuckSession = useCallback((commitmentId: string, seed: string, survivorId: string) => {
     ensureSession();
@@ -702,6 +707,7 @@ function App() {
             latestResult={latestResult}
             mode={mode}
             difficulty={marbleDifficulty}
+            finishRule={marbleFinishRule}
             prize={prize}
             roundNumber={roundNumber}
             sessionWinner={sessionWinner}
@@ -711,6 +717,9 @@ function App() {
             onFinish={finishMarbleSelection}
             onDifficultyChange={(difficulty) => {
               if (!roundLocked) setMarbleDifficulty(difficulty);
+            }}
+            onFinishRuleChange={(finishRule) => {
+              if (!roundLocked) setMarbleFinishRule(finishRule);
             }}
             onRestart={restartSession}
             restartDisabled={roundLocked}
@@ -933,9 +942,9 @@ function SetupScreen({
     <section className="setup-page">
       <div className="setup-hero">
         <div>
-          <span className="eyebrow">CREAR NUEVO SORTEO</span>
-          <h1>Prepara la fortuna</h1>
-          <p>Carga los nombres, elige una experiencia y entra con una configuración clara y verificable.</p>
+          <span className="eyebrow">CONFIGURACIÓN GUIADA</span>
+          <h1>Tu sorteo listo en 3 pasos</h1>
+          <p>1. Agrega los nombres. 2. Elige el juego. 3. Define cómo se decide. Después pulsa el botón principal.</p>
           <div className="setup-hero-help">
             <button type="button" onClick={onOpenTutorial}><HelpCircle size={16} /> Tutorial del inicio</button>
             <button type="button" onClick={() => onOpenDemo(game)}><Play size={15} /> Demo de {selectedGuide.title}</button>
@@ -959,7 +968,7 @@ function SetupScreen({
               ? "Agrega al menos dos participantes"
               : `Entrar a ${game === "roulette" ? "la ruleta" : game === "cards" ? "la mesa de cartas" : game === "pinball" ? "Pinball 3D" : game === "marbles" ? "Canicas 3D" : "Patos 3D"}`}
           >
-            <Play size={21} fill="currentColor" /> Iniciar sorteo
+            <Play size={21} fill="currentColor" /> {eligibleCount < 2 ? "Faltan participantes" : `Entrar a ${selectedGuide.title}`}
           </button>
         </div>
       </div>
@@ -1524,6 +1533,7 @@ function MarblesScreen({
   latestResult,
   mode,
   difficulty,
+  finishRule,
   prize,
   roundNumber,
   sessionWinner,
@@ -1532,6 +1542,7 @@ function MarblesScreen({
   initialSeed,
   onFinish,
   onDifficultyChange,
+  onFinishRuleChange,
   onRestart,
   restartDisabled,
 }: {
@@ -1543,6 +1554,7 @@ function MarblesScreen({
   latestResult: RoundResult | null;
   mode: DrawMode;
   difficulty: MarbleDifficulty;
+  finishRule: MarbleFinishRule;
   prize: string;
   roundNumber: number;
   sessionWinner: RoundResult | null;
@@ -1551,6 +1563,7 @@ function MarblesScreen({
   initialSeed?: string;
   onFinish: (racer: MarbleRacer, label: string) => void;
   onDifficultyChange: (difficulty: MarbleDifficulty) => void;
+  onFinishRuleChange: (finishRule: MarbleFinishRule) => void;
   onRestart: () => void;
   restartDisabled: boolean;
 }) {
@@ -1610,11 +1623,13 @@ function MarblesScreen({
             participants={activeParticipants}
             mode={mode}
             difficulty={difficulty}
+            finishRule={finishRule}
             disabled={cannotPlay}
             previousWinnerIds={previousWinnerIds}
             initialSeed={initialSeed}
             onCommit={onCommit}
             onDifficultyChange={onDifficultyChange}
+            onFinishRuleChange={onFinishRuleChange}
             onTrackPrepared={setTrackInfo}
             onFinish={onFinish}
           />
@@ -1626,8 +1641,8 @@ function MarblesScreen({
           <div className="panel-title"><Flag size={18} /> {modeLabels[mode]}</div>
           <p className="mode-description">
             {mode === "direct"
-              ? "La primera canica en cruzar la meta gana. La persona ganadora queda fuera hasta que decidas habilitarla nuevamente."
-              : "La última canica en cruzar queda eliminada. En cada ronda se genera una pista nueva."}
+              ? `La canica que llegue ${finishRule === "first" ? "primera" : "última"} gana. La persona ganadora queda fuera hasta que decidas habilitarla nuevamente.`
+              : `La canica que llegue ${finishRule === "first" ? "primera" : "última"} queda eliminada. En cada ronda se genera una pista nueva.`}
           </p>
           <div className="cards-process-mini marbles-process-mini">
             <span>1 · Pista</span><span>2 · Poderes</span><span>3 · Carrera</span><span>4 · Meta</span>
@@ -1647,6 +1662,8 @@ function MarblesScreen({
               <span><small>Secciones</small><strong>{trackInfo.sections.length}</strong></span>
               <span><small>Trampas</small><strong>{trackInfo.obstacles.length}</strong></span>
               <span><small>Poderes</small><strong>{trackInfo.powerZones.length}</strong></span>
+              <span><small>Eventos</small><strong>{trackInfo.events.length}</strong></span>
+              <span><small>Escala</small><strong>{trackInfo.mapScale.toFixed(2)}×</strong></span>
             </div>
           ) : (
             <div className="history-empty">{finalWinner ? "Carrera finalizada" : "Generando módulos compatibles…"}</div>
@@ -1696,7 +1713,7 @@ function MarblesScreen({
               <div className="history-row casino-history-row" key={result.id}>
                 <span>R{result.round} · canica {result.landedNumber}</span>
                 <strong>{result.participantName}</strong>
-                <em className={result.kind}>{result.kind === "winner" ? "GANÓ" : "ÚLTIMA"}</em>
+                <em className={result.kind}>{result.kind === "winner" ? "GANÓ" : finishRule === "first" ? "PRIMERA" : "ÚLTIMA"}</em>
               </div>
             ))}
           </div>

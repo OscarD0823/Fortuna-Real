@@ -4,6 +4,7 @@ import {
   getMarbleMotion,
   getTrackPosition,
   powerLabels,
+  type MarbleTrackEvent,
   type MarbleTrack,
   type PreparedMarbleRace,
   type TrackObstacleType,
@@ -49,6 +50,7 @@ interface MarbleSceneState {
   startPoint: TrackWorldPoint;
   motionPoint: TrackWorldPoint;
   lookAheadPoint: TrackWorldPoint;
+  cameraAnchorPoint: TrackWorldPoint;
   matrix: THREE.Matrix4;
   quaternion: THREE.Quaternion;
   scaleVector: THREE.Vector3;
@@ -108,6 +110,9 @@ const hashText = (value: string) => {
 
 const trackWidthToWorld = (track: MarbleTrack) => track.trackWidth / 33;
 
+const trackWorldWidth = (track: MarbleTrack) => WORLD_WIDTH * track.mapScale;
+const trackWorldDepth = (track: MarbleTrack) => WORLD_DEPTH * track.mapScale;
+
 const trackElevation = (track: MarbleTrack, progress: number) => {
   const phase = (hashText(track.signature) % 628) / 100;
   const piece = getTrackPosition(track.points, progress);
@@ -120,14 +125,14 @@ const worldPointAt = (track: MarbleTrack, progress: number): TrackWorldPoint => 
   const after = getTrackPosition(track.points, Math.min(1, clamped + 0.002));
   const source = getTrackPosition(track.points, clamped);
   const position = new THREE.Vector3(
-    (source.x - 0.5) * WORLD_WIDTH,
+    (source.x - 0.5) * trackWorldWidth(track),
     trackElevation(track, clamped),
-    (source.y - 0.5) * WORLD_DEPTH,
+    (source.y - 0.5) * trackWorldDepth(track),
   );
   const tangent = new THREE.Vector3(
-    (after.x - before.x) * WORLD_WIDTH,
+    (after.x - before.x) * trackWorldWidth(track),
     trackElevation(track, Math.min(1, clamped + 0.002)) - trackElevation(track, Math.max(0, clamped - 0.002)),
-    (after.y - before.y) * WORLD_DEPTH,
+    (after.y - before.y) * trackWorldDepth(track),
   ).normalize();
   const flatTangent = new THREE.Vector3(tangent.x, 0, tangent.z).normalize();
   const normal = new THREE.Vector3(-flatTangent.z, 0, flatTangent.x)
@@ -158,6 +163,26 @@ const sampleWorldPoint = (
   target.normal.lerpVectors(samples[startIndex].normal, samples[endIndex].normal, local).normalize();
   target.up.lerpVectors(samples[startIndex].up, samples[endIndex].up, local).normalize();
   return target;
+};
+
+const findOverheadTrackY = (
+  samples: readonly TrackWorldPoint[],
+  racerProgress: number,
+  referenceY: number,
+  x: number,
+  z: number,
+  radius: number,
+) => {
+  const radiusSq = radius * radius;
+  let ceilingY = Number.POSITIVE_INFINITY;
+  samples.forEach((sample, index) => {
+    const sampleProgress = index / Math.max(1, samples.length - 1);
+    if (Math.abs(sampleProgress - racerProgress) < 0.075) return;
+    if (sample.position.y < referenceY + 2.45) return;
+    const distanceSq = (sample.position.x - x) ** 2 + (sample.position.z - z) ** 2;
+    if (distanceSq <= radiusSq) ceilingY = Math.min(ceilingY, sample.position.y);
+  });
+  return ceilingY;
 };
 
 const metalMaterial = (color: THREE.ColorRepresentation, roughness = 0.3) => new THREE.MeshStandardMaterial({
@@ -894,6 +919,59 @@ const addPowerZone = (
   animatedParts.push({ object: halo, update: (object, time) => { object.rotation.z = time * 1.5; object.rotation.y = time * 0.7; } });
 };
 
+const addTrackEventFeature = (
+  scene: THREE.Scene,
+  track: MarbleTrack,
+  event: MarbleTrackEvent,
+  animatedParts: AnimatedPart[],
+) => {
+  const group = new THREE.Group();
+  group.name = `EVT_${event.type}_${event.id}`;
+  orientGroupOnTrack(group, track, event.progress);
+  scene.add(group);
+  const width = trackWidthToWorld(track) * 1.25;
+  const eventMaterial = glowMaterial(event.color, 1.2 + event.intensity * 0.35);
+  const label = createLabelSprite(event.title.toUpperCase(), event.color, true, true);
+  label.userData.trackLabel = true;
+  label.position.set(width * 0.66, 1.55, 0);
+  label.scale.multiplyScalar(0.55);
+  group.add(label);
+
+  if (event.type === "freeze") {
+    const ice = addMesh(group, new THREE.BoxGeometry(width * 1.7, 0.045, 1.55), glassMaterial(event.color), [0, 0.1, 0]);
+    ice.material.transparent = true;
+    [-0.62, 0, 0.62].forEach((offset, index) => {
+      const crystal = addMesh(group, new THREE.ConeGeometry(0.12, 0.55 + index * 0.09, 5), glassMaterial(event.color), [offset * width, 0.38, index % 2 ? 0.46 : -0.42]);
+      crystal.rotation.z = index % 2 ? 0.12 : -0.12;
+    });
+  } else if (event.type === "river") {
+    const water = addMesh(
+      group,
+      new THREE.PlaneGeometry(width * 2.25, 2.2, 10, 4),
+      new THREE.MeshPhysicalMaterial({ color: event.color, emissive: event.color, emissiveIntensity: 0.42, transparent: true, opacity: 0.58, roughness: 0.12, metalness: 0.08 }),
+      [0, 0.13, 0],
+      [-Math.PI / 2, 0, 0],
+    );
+    animatedParts.push({ object: water, update: (object, time) => { object.position.x = Math.sin(time * 1.8 + event.progress * 8) * 0.18; } });
+  } else if (event.type === "tornado") {
+    const funnel = new THREE.Group();
+    funnel.position.y = 0.2;
+    group.add(funnel);
+    for (let ring = 0; ring < 6; ring += 1) {
+      const radius = 0.34 + ring * 0.12;
+      addMesh(funnel, new THREE.TorusGeometry(radius, 0.035, 6, 22), eventMaterial, [0, ring * 0.34, 0], [Math.PI / 2, 0, ring * 0.22]);
+    }
+    animatedParts.push({ object: funnel, update: (object, time) => { object.rotation.y = time * (1.5 + event.intensity); object.position.x = Math.sin(time * 1.1) * 0.24; } });
+  } else {
+    [-1, 1].forEach((side) => {
+      const pylon = addMesh(group, new THREE.ConeGeometry(0.18, 0.75, 5), eventMaterial, [side * width * 0.72, 0.35, 0]);
+      pylon.rotation.z = side * 0.16;
+    });
+    const quakeRing = addMesh(group, new THREE.RingGeometry(width * 0.38, width * 0.46, 28), new THREE.MeshBasicMaterial({ color: event.color, transparent: true, opacity: 0.72, side: THREE.DoubleSide }), [0, 0.12, 0], [-Math.PI / 2, 0, 0]);
+    animatedParts.push({ object: quakeRing, update: (object, time) => { const pulse = 1 + Math.sin(time * 7) * 0.16; object.scale.setScalar(pulse); } });
+  }
+};
+
 const addStartFinishAndBay = (scene: THREE.Scene, race: PreparedMarbleRace) => {
   const track = race.track;
   const width = trackWidthToWorld(track);
@@ -951,9 +1029,10 @@ const addStartFinishAndBay = (scene: THREE.Scene, race: PreparedMarbleRace) => {
   finishGroup.add(finishLabel);
 };
 
-const addFactoryBoard = (scene: THREE.Scene) => {
+const addFactoryBoard = (scene: THREE.Scene, mapScale: number) => {
   const board = new THREE.Group();
   board.name = "GRP_FactoryBoard";
+  board.scale.set(mapScale, 1, mapScale);
   scene.add(board);
   const structuralSteel = metalMaterial(0x11191c, 0.34);
   const panelSteel = metalMaterial(0x202a2d, 0.42);
@@ -1067,10 +1146,10 @@ const addFactoryBoard = (scene: THREE.Scene) => {
   board.add(grid);
 };
 
-const addEnvironment = (scene: THREE.Scene, difficulty: MarbleTrack["difficulty"]) => {
+const addEnvironment = (scene: THREE.Scene, difficulty: MarbleTrack["difficulty"], mapScale: number) => {
   scene.background = new THREE.Color(0x02080b);
   scene.fog = new THREE.FogExp2(0x02080b, 0.0135);
-  addFactoryBoard(scene);
+  addFactoryBoard(scene, mapScale);
 
   scene.add(new THREE.AmbientLight(0x72a4ab, difficulty === "hard" ? 0.34 : 0.42));
   scene.add(new THREE.HemisphereLight(0x75c9d1, 0x090301, difficulty === "hard" ? 0.86 : 1));
@@ -1078,10 +1157,10 @@ const addEnvironment = (scene: THREE.Scene, difficulty: MarbleTrack["difficulty"
   key.position.set(-8, 18, 10);
   key.castShadow = true;
   key.shadow.mapSize.set(1024, 1024);
-  key.shadow.camera.left = -18;
-  key.shadow.camera.right = 18;
-  key.shadow.camera.top = 14;
-  key.shadow.camera.bottom = -14;
+  key.shadow.camera.left = -18 * mapScale;
+  key.shadow.camera.right = 18 * mapScale;
+  key.shadow.camera.top = 14 * mapScale;
+  key.shadow.camera.bottom = -14 * mapScale;
   key.shadow.bias = -0.0004;
   scene.add(key);
   const fill = new THREE.DirectionalLight(0x6feeff, 0.9);
@@ -1262,9 +1341,9 @@ const buildScene = (renderer: THREE.WebGLRenderer, race: PreparedMarbleRace, key
   try {
   const camera = new THREE.OrthographicCamera(-16, 16, 11, -11, 0.1, 90);
   camera.name = "CAM_MarbleRace";
-  const followCamera = new THREE.PerspectiveCamera(62, 1, 0.12, 70);
+  const followCamera = new THREE.PerspectiveCamera(64, 1, 0.12, 110);
   followCamera.name = "CAM_MarblePOV";
-  addEnvironment(scene, race.track.difficulty);
+  addEnvironment(scene, race.track.difficulty, race.track.mapScale);
   const animatedParts: AnimatedPart[] = [];
   const glowMaterials: THREE.MeshStandardMaterial[] = [];
   const count = race.racers.length;
@@ -1293,11 +1372,12 @@ const buildScene = (renderer: THREE.WebGLRenderer, race: PreparedMarbleRace, key
   const contentSize = trackBounds.getSize(new THREE.Vector3());
   const cameraDepthDirection = bayStart.position.z < contentCenter.z ? -1 : 1;
   const cameraSide = hashText(race.track.signature) % 2 === 0 ? 1 : -1;
+  const overviewHeight = 19 + race.track.mapScale * 4.2 + Math.max(0, contentSize.y * 0.82);
   const overviewCameraTarget = new THREE.Vector3(contentCenter.x, Math.max(0.2, contentCenter.y * 0.42), contentCenter.z);
   const overviewCameraPosition = new THREE.Vector3(
-    contentCenter.x + 11.5 * cameraSide,
-    22,
-    contentCenter.z + 16.5 * cameraDepthDirection,
+    contentCenter.x + 11.5 * race.track.mapScale * cameraSide,
+    overviewHeight,
+    contentCenter.z + 16.5 * race.track.mapScale * cameraDepthDirection,
   );
   const cameraForward = overviewCameraTarget.clone().sub(overviewCameraPosition).normalize();
   const cameraRight = cameraForward.clone().cross(Y_AXIS).normalize();
@@ -1305,9 +1385,9 @@ const buildScene = (renderer: THREE.WebGLRenderer, race: PreparedMarbleRace, key
   overviewCameraPosition.addScaledVector(cameraRight, overlayClearance);
   overviewCameraTarget.addScaledVector(cameraRight, overlayClearance);
   const bayCameraPosition = new THREE.Vector3(
-    bayStart.position.x + 5.5 * cameraSide,
-    21.5,
-    bayStart.position.z + 8.5 * cameraDepthDirection,
+    bayStart.position.x + 5.5 * race.track.mapScale * cameraSide,
+    overviewHeight - 0.5,
+    bayStart.position.z + 8.5 * race.track.mapScale * cameraDepthDirection,
   ).addScaledVector(cameraRight, overlayClearance);
   const bayCameraTarget = bayStart.position.clone()
     .addScaledVector(bayStart.up, 0.35)
@@ -1367,6 +1447,7 @@ const buildScene = (renderer: THREE.WebGLRenderer, race: PreparedMarbleRace, key
     glowMaterials,
     false,
   ));
+  race.track.events.forEach((event) => addTrackEventFeature(scene, race.track, event, animatedParts));
   addStartFinishAndBay(scene, race);
 
   const sphereDetail = count > 150 ? [9, 6] : count > 100 ? [11, 7] : count > 40 ? [16, 10] : [18, 10];
@@ -1514,8 +1595,8 @@ const buildScene = (renderer: THREE.WebGLRenderer, race: PreparedMarbleRace, key
   selectedRing.visible = false;
   const followBeacon = addMesh(
     scene,
-    new THREE.SphereGeometry(1, 10, 7),
-    new THREE.MeshBasicMaterial({ color: 0x5ffff7, transparent: true, opacity: 0.76, wireframe: true, depthTest: false }),
+    new THREE.RingGeometry(0.34, 0.47, 32),
+    new THREE.MeshBasicMaterial({ color: 0x5ffff7, transparent: true, opacity: 0.7, depthTest: false, side: THREE.DoubleSide }),
     [0, -20, 0],
   );
   followBeacon.visible = false;
@@ -1558,6 +1639,7 @@ const buildScene = (renderer: THREE.WebGLRenderer, race: PreparedMarbleRace, key
     startPoint: samples[0],
     motionPoint: createEmptyWorldPoint(),
     lookAheadPoint: createEmptyWorldPoint(),
+    cameraAnchorPoint: createEmptyWorldPoint(),
     matrix: new THREE.Matrix4(),
     quaternion: new THREE.Quaternion(),
     scaleVector: new THREE.Vector3(),
@@ -1696,7 +1778,7 @@ const resizeRenderer = (state: MarbleSceneState, canvas: HTMLCanvasElement) => {
   const aspect = width / height;
   const paddedWidth = state.projectedContentWidth * 0.96;
   const paddedHeight = state.projectedContentHeight;
-  const viewHeight = THREE.MathUtils.clamp(Math.max(paddedHeight, paddedWidth / aspect), 11, 30);
+  const viewHeight = THREE.MathUtils.clamp(Math.max(paddedHeight, paddedWidth / aspect), 12, 46);
   state.camera.left = -(viewHeight * aspect) / 2;
   state.camera.right = (viewHeight * aspect) / 2;
   state.camera.top = viewHeight / 2;
@@ -1871,8 +1953,9 @@ export const drawMarbleRace3D = (
       const raceElapsed = Math.max(0, elapsedMs - introMs);
       const motion = getMarbleMotion(followedRacer, race.track, raceElapsed);
       const trackPoint = sampleWorldPoint(state.trackSamples, motion.progress, state.motionPoint);
+      const cameraContextScale = race.track.difficulty === "hard" ? 1.65 : race.track.difficulty === "medium" ? 0.7 : 0;
       const lookAheadProgress = THREE.MathUtils.clamp(
-        motion.progress + 0.018 + THREE.MathUtils.clamp(motion.velocity * 0.12, 0, 0.035),
+        motion.progress + 0.032 + cameraContextScale * 0.012 + THREE.MathUtils.clamp(motion.velocity * 0.18, 0, 0.07),
         0,
         1,
       );
@@ -1880,43 +1963,92 @@ export const drawMarbleRace3D = (
       const baseRadius = race.racers.length > 150 ? 0.085 : race.racers.length > 90 ? 0.105 : race.racers.length > 48 ? 0.13 : race.racers.length > 22 ? 0.16 : 0.22;
       const followedRadius = baseRadius * motion.radiusScale;
       const speedBlend = THREE.MathUtils.clamp(motion.velocity * 8, 0, 1);
+      const cameraPathLag = 0.027 + cameraContextScale * 0.006 + speedBlend * 0.01;
+      const cameraAnchorProgress = Math.max(0, motion.progress - cameraPathLag);
+      const cameraAnchorPoint = sampleWorldPoint(state.trackSamples, cameraAnchorProgress, state.cameraAnchorPoint);
+      const launchRetreat = followCameraStyle === "chase"
+        ? THREE.MathUtils.clamp((cameraPathLag - motion.progress) / cameraPathLag, 0, 1) * (6.4 + cameraContextScale * 0.8)
+        : 0;
       const cameraSide = hashText(followedRacer.id) % 2 === 0 ? 1 : -1;
       state.followCameraForward.copy(trackPoint.tangent).lerp(lookAheadPoint.tangent, 0.62).normalize();
+      if (followCameraStyle !== "onboard") {
+        state.followCameraForward.y = 0;
+        if (state.followCameraForward.lengthSq() < 0.01) state.followCameraForward.copy(Z_AXIS);
+        state.followCameraForward.normalize();
+      }
       const rescueBlend = motion.recovering ? Math.sin(motion.recoveryPhase * Math.PI) : 0;
       const cameraDistance = followCameraStyle === "onboard"
-        ? 2.55 + speedBlend * 0.42 + rescueBlend * 2.2
+        ? 3.45 + speedBlend * 0.62 + rescueBlend * 2.2
         : followCameraStyle === "trackside"
-          ? 1.15 + speedBlend * 0.45 + rescueBlend * 1.1
+          ? 2.4 + speedBlend * 0.8 + rescueBlend * 1.25
         : followCameraStyle === "aerial"
-          ? 5.7 + speedBlend * 1.25 + rescueBlend * 0.9
-          : 3.9 + speedBlend * 1.15 + rescueBlend * 1.35;
+          ? 8.6 + speedBlend * 1.6 + rescueBlend * 1.1
+          : 0;
       const cameraHeight = followCameraStyle === "onboard"
-        ? 1.78 + followedRadius * 1.2 + speedBlend * 0.2 + rescueBlend * 2.15
+        ? 2.25 + followedRadius * 1.2 + speedBlend * 0.28 + rescueBlend * 2.15
         : followCameraStyle === "trackside"
-          ? 2.55 + followedRadius + speedBlend * 0.3 + rescueBlend * 1.55
+          ? 3.9 + followedRadius + speedBlend * 0.42 + rescueBlend * 1.65
         : followCameraStyle === "aerial"
-          ? 4.7 + speedBlend * 0.8 + rescueBlend * 1.25
-          : 2.05 + followedRadius * 1.3 + speedBlend * 0.48 + rescueBlend * 1.8;
+          ? 7.4 + speedBlend * 1.05 + rescueBlend * 1.35
+          : 3.75 + cameraContextScale * 0.28 + followedRadius * 1.1 + speedBlend * 0.48 + rescueBlend * 1.5;
       const cameraShoulder = followCameraStyle === "onboard"
         ? 0
         : cameraSide * (
           followCameraStyle === "trackside"
-            ? 4.4 + speedBlend * 0.75 + rescueBlend * 0.35
-            : followCameraStyle === "aerial" ? 1.15 : 0.38 + speedBlend * 0.2 + rescueBlend * 0.18
+            ? 5.8 + speedBlend * 0.9 + rescueBlend * 0.42
+            : followCameraStyle === "aerial" ? 1.8 : 2.35 + speedBlend * 0.34 + rescueBlend * 0.18
         );
-      const desiredPosition = state.positionVector.copy(state.racerPositions[followIndex])
-        .addScaledVector(trackPoint.up, cameraHeight)
+      const desiredPosition = state.positionVector.copy(
+        followCameraStyle === "chase" ? cameraAnchorPoint.position : state.racerPositions[followIndex],
+      )
+        .addScaledVector(followCameraStyle === "chase" ? cameraAnchorPoint.up : trackPoint.up, cameraHeight)
         .addScaledVector(state.followCameraForward, -cameraDistance)
-        .addScaledVector(trackPoint.normal, cameraShoulder);
-      desiredPosition.y = Math.max(
-        desiredPosition.y,
-        state.racerPositions[followIndex].y + (followCameraStyle === "onboard" ? 1.62 : 1.55),
-        (followCameraStyle === "onboard" ? 2.25 : 2.15) + rescueBlend * 0.8,
-      );
+        .addScaledVector(cameraAnchorPoint.tangent, -launchRetreat)
+        .addScaledVector(followCameraStyle === "chase" ? cameraAnchorPoint.normal : trackPoint.normal, cameraShoulder);
+      const turboTurbulence = followedRacer.power === "boost" && motion.powerActive ? 0.16 : 0;
+      const eventTurbulence = motion.activeTrackEvent === "quake"
+        ? motion.trackEventIntensity * 0.2
+        : motion.activeTrackEvent === "tornado"
+          ? motion.trackEventIntensity * 0.13
+          : 0;
+      if (!state.reducedMotion && turboTurbulence + eventTurbulence > 0) {
+        const turbulence = turboTurbulence + eventTurbulence;
+        desiredPosition
+          .addScaledVector(trackPoint.normal, Math.sin(elapsedSeconds * 17 + followedRacer.number) * turbulence)
+          .addScaledVector(trackPoint.up, Math.cos(elapsedSeconds * 21 + followedRacer.number) * turbulence * 0.55);
+      }
+      const minimumCameraHeight = followCameraStyle === "chase"
+        ? Math.max(2.15, cameraAnchorPoint.position.y + 2.75)
+        : Math.max(
+          state.racerPositions[followIndex].y + (followCameraStyle === "onboard" ? 2.05 : 4.45),
+          (followCameraStyle === "onboard" ? 2.7 : 4.8) + rescueBlend * 0.8,
+        );
+      desiredPosition.y = Math.max(desiredPosition.y, minimumCameraHeight);
+      let underpassActive = false;
+      if (followCameraStyle === "chase" || followCameraStyle === "trackside") {
+        const overheadTrackY = findOverheadTrackY(
+          state.trackSamples,
+          cameraAnchorProgress,
+          cameraAnchorPoint.position.y,
+          desiredPosition.x,
+          desiredPosition.z,
+          followCameraStyle === "trackside" ? 4.1 : 3.6,
+        );
+        if (Number.isFinite(overheadTrackY)) {
+          const minimumCameraY = Math.max(1.85, cameraAnchorPoint.position.y + 1.08);
+          const underDeckY = overheadTrackY - 1.12;
+          if (underDeckY >= minimumCameraY) {
+            const nextCameraY = Math.min(desiredPosition.y, underDeckY);
+            underpassActive = nextCameraY < desiredPosition.y - 0.08;
+            desiredPosition.y = nextCameraY;
+          }
+        }
+      }
+      canvas.dataset.cameraOcclusionGuard = underpassActive ? "underpass" : "clear";
       const desiredTarget = state.stagingVector.copy(state.racerPositions[followIndex])
         .lerp(
           lookAheadPoint.position,
-          motion.recovering ? 0.16 : followCameraStyle === "onboard" ? 0.84 : followCameraStyle === "trackside" ? 0.46 : followCameraStyle === "aerial" ? 0.2 : 0.28,
+          motion.recovering ? 0.18 : followCameraStyle === "onboard" ? 0.76 : followCameraStyle === "trackside" ? 0.56 : followCameraStyle === "aerial" ? 0.34 : 0.72,
         )
         .addScaledVector(trackPoint.up, followedRadius * 0.45 + (followCameraStyle === "onboard" ? 0.58 : 0.24) + rescueBlend * 0.32);
       state.followCameraUp.copy(Y_AXIS).lerp(
@@ -1932,23 +2064,43 @@ export const drawMarbleRace3D = (
       } else {
         const cameraResponse = state.reducedMotion
           ? 1
-          : 1 - Math.exp(-THREE.MathUtils.clamp(state.averageFrameMs, 8, 34) / (motion.recovering ? 72 : 94));
+          : 1 - Math.exp(-THREE.MathUtils.clamp(state.averageFrameMs, 8, 34) / (motion.recovering ? 95 : 145));
         state.followCamera.position.lerp(desiredPosition, cameraResponse);
         state.followCameraTarget.lerp(desiredTarget, Math.min(1, cameraResponse * 1.28));
         state.followCamera.up.lerp(state.followCameraUp, cameraResponse * 0.7).normalize();
       }
+      if (followCameraStyle === "chase" || followCameraStyle === "trackside") {
+        const cameraCeilingY = findOverheadTrackY(
+          state.trackSamples,
+          cameraAnchorProgress,
+          cameraAnchorPoint.position.y,
+          state.followCamera.position.x,
+          state.followCamera.position.z,
+          1.9,
+        );
+        const forcedUnderDeckY = cameraCeilingY - 1.05;
+        if (
+          Number.isFinite(cameraCeilingY)
+          && forcedUnderDeckY > state.followCameraTarget.y + 0.52
+          && state.followCamera.position.y > forcedUnderDeckY
+        ) {
+          state.followCamera.position.y = forcedUnderDeckY;
+          canvas.dataset.cameraOcclusionGuard = "underpass";
+        }
+      }
       const desiredFov = followCameraStyle === "onboard"
-        ? 66 + speedBlend * 4 + rescueBlend * 2
+        ? 68 + speedBlend * 4 + rescueBlend * 2
         : followCameraStyle === "trackside"
-          ? 52 + speedBlend * 3 + rescueBlend * 2
+          ? 57 + speedBlend * 3 + rescueBlend * 2
         : followCameraStyle === "aerial"
-          ? 48 + speedBlend * 2 + rescueBlend * 2
-          : 59 + speedBlend * 4.5 + rescueBlend * 2;
+          ? 52 + speedBlend * 2 + rescueBlend * 2
+          : 64 + speedBlend * 4.5 + rescueBlend * 2;
       if (Math.abs(state.followCamera.fov - desiredFov) > 0.05) {
         state.followCamera.fov = desiredFov;
         state.followCamera.updateProjectionMatrix();
       }
       state.followCamera.lookAt(state.followCameraTarget);
+      state.followBeacon.quaternion.copy(state.followCamera.quaternion);
       state.racerRings.visible = false;
       state.racerShadows.visible = false;
       state.racerGlow.visible = false;
@@ -1961,10 +2113,11 @@ export const drawMarbleRace3D = (
       state.selectedRing.scale.setScalar(0.82 + speedBlend * 0.12);
       state.followBeacon.visible = followCameraStyle !== "onboard";
       state.followBeacon.position.copy(state.racerPositions[followIndex]);
-      state.followBeacon.scale.setScalar(Math.max(0.22, followedRadius * 2.5));
-      state.followBeacon.rotation.y = elapsedSeconds * 1.4;
+      state.followBeacon.position.y += followedRadius * 0.12;
+      state.followBeacon.scale.setScalar(Math.max(0.7, followedRadius * 3.1));
       const beaconMaterial = state.followBeacon.material as THREE.MeshBasicMaterial;
       beaconMaterial.color.setHex(motion.recovering ? 0xff7a3d : 0x5ffff7);
+      beaconMaterial.opacity = state.reducedMotion ? 0.72 : 0.6 + Math.sin(elapsedSeconds * 4.2) * 0.12;
       state.activeFollowRacerId = followIdentity;
       renderCamera = state.followCamera;
       const cameraStyleLabel = followCameraStyle === "onboard"
@@ -1974,6 +2127,7 @@ export const drawMarbleRace3D = (
           : followCameraStyle === "aerial" ? "aerial-follow" : "cinematic-chase";
       if (canvas.dataset.cameraStyle !== cameraStyleLabel) canvas.dataset.cameraStyle = cameraStyleLabel;
       canvas.dataset.cameraRecovery = motion.recovering ? "active" : "none";
+      canvas.dataset.trackEvent = motion.activeTrackEvent ?? "none";
       const cameraMode = `marble-${followedRacer.participant.id}-${followCameraStyle}`;
       if (canvas.dataset.cameraMode !== cameraMode) canvas.dataset.cameraMode = cameraMode;
     } else {
@@ -1993,6 +2147,8 @@ export const drawMarbleRace3D = (
       if (canvas.dataset.cameraStyle !== "overview") canvas.dataset.cameraStyle = "overview";
       if (canvas.dataset.cameraMode !== "overview") canvas.dataset.cameraMode = "overview";
       canvas.dataset.cameraRecovery = "none";
+      canvas.dataset.cameraOcclusionGuard = "clear";
+      canvas.dataset.trackEvent = "none";
     }
     if (state.renderer.shadowMap.enabled && !state.shadowReady) state.renderer.shadowMap.needsUpdate = true;
     const showTrackLabels = renderCamera === state.camera;

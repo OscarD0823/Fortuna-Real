@@ -3,6 +3,37 @@ import type { Participant } from "../../core/types";
 export const DUCK_STARTING_LIVES = 3;
 
 export type DuckSabotagePower = "palette" | "shake" | "invert";
+export type DuckForestEventType = "wind" | "mist" | "fireflies" | "storm";
+
+export interface DuckForestEvent {
+  type: DuckForestEventType;
+  label: string;
+  description: string;
+  color: string;
+}
+
+export const duckForestEventDefinitions: Record<DuckForestEventType, Omit<DuckForestEvent, "type">> = {
+  wind: {
+    label: "Ráfaga entre los árboles",
+    description: "Las copas y el pasto anuncian desde dónde saldrá la bandada.",
+    color: "#b8f28d",
+  },
+  mist: {
+    label: "Niebla sobre el estanque",
+    description: "La bruma cubre el fondo, pero los objetivos mantienen su silueta.",
+    color: "#b9e8f5",
+  },
+  fireflies: {
+    label: "Enjambre de luciérnagas",
+    description: "Destellos dorados recorren el bosque mientras los patos cambian de refugio.",
+    color: "#e8ff72",
+  },
+  storm: {
+    label: "Tormenta del bosque",
+    description: "El cielo oscurece y relámpagos breves marcan el inicio de la tanda.",
+    color: "#9eb7ff",
+  },
+};
 
 export const DUCK_SABOTAGE_POWERS: readonly DuckSabotagePower[] = [
   "palette",
@@ -89,6 +120,12 @@ const hashString = (value: string) => {
     hash = Math.imul(hash, 16777619);
   }
   return hash >>> 0;
+};
+
+export const getDuckForestEvent = (seed: string, waveNumber: number): DuckForestEvent => {
+  const types = Object.keys(duckForestEventDefinitions) as DuckForestEventType[];
+  const type = types[hashString(`${seed}:forest-event:${Math.max(1, waveNumber)}`) % types.length];
+  return { type, ...duckForestEventDefinitions[type] };
 };
 
 const mulberry32 = (seed: number) => () => {

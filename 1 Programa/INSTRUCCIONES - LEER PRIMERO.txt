@@ -8,6 +8,10 @@ CONTENIDO DE ESTA CARPETA
 - Fortuna-Real-1.0.6-Instalador.exe
   Es el instalador de Fortuna Real para Windows.
 
+- INSTALAR O ACTUALIZAR.cmd
+  Es la forma recomendada de abrir el instalador. Detecta si Fortuna Real ya
+  existe y actualiza esa misma instalación sin crear una copia adicional.
+
 - Fortuna-Real-1.0.6-Instalador.zip
   Es una copia comprimida del instalador, su firma y su manifiesto.
 
@@ -31,13 +35,19 @@ CONTENIDO DE ESTA CARPETA
 2. CÓMO INSTALAR FORTUNA REAL
 
 1. Abre la carpeta donde recibiste el instalador.
-2. Haz doble clic en “Fortuna-Real-1.0.6-Instalador.exe”.
+2. Haz doble clic en “INSTALAR O ACTUALIZAR.cmd”. Si no recibiste ese acceso,
+   abre “Fortuna-Real-1.0.6-Instalador.exe”; utiliza siempre la misma carpeta.
 3. Si Windows muestra “Windows protegió su PC”:
    a. Pulsa “Más información”.
    b. Comprueba que el archivo sea Fortuna-Real-1.0.6-Instalador.exe.
    c. Pulsa “Ejecutar de todas formas”.
 4. Sigue las instrucciones del instalador.
 5. Abre “Fortuna Real” desde el menú Inicio o su acceso directo.
+
+Si ya existe una versión anterior, el acceso ejecuta el instalador en modo
+actualización: reemplaza los archivos del programa en la ubicación registrada,
+actualiza los accesos directos y conserva participantes, historial, premios y
+preferencias guardados. No instala una segunda copia.
 
 La advertencia puede aparecer porque esta es una aplicación privada y no usa
 un certificado comercial. Continúa solamente si recibiste la carpeta de una

@@ -3,6 +3,7 @@ import {
   DUCK_SABOTAGE_POWERS,
   getDuckCoverAmount,
   getDuckCoverKind,
+  getDuckForestEvent,
   getDuckHitRadius,
   getDuckResetDuration,
   getDuckSpeed,
@@ -86,6 +87,8 @@ if (!adaptivePrepared[0].previousWinner || adaptivePrepared.slice(1).some((conte
   throw new Error("La corona de ganador anterior no se asignó correctamente.");
 }
 const coverFlock = prepareDuckContestants(makeParticipants(60), "forest-cover-check");
+const forestEvents = Array.from({ length: 64 }, (_, index) => getDuckForestEvent("forest-cover-check", index + 1));
+const repeatedForestEvents = Array.from({ length: 64 }, (_, index) => getDuckForestEvent("forest-cover-check", index + 1));
 const coverSamples = coverFlock.flatMap((contestant) => [3, 6, 9, 12, 15, 18, 21]
   .map((time) => getDuckCoverAmount(contestant, time)));
 if (
@@ -94,6 +97,8 @@ if (
   || !coverSamples.some((amount) => amount < 0.1)
   || new Set(coverFlock.map(getDuckCoverKind)).size !== 2
   || new Set(coverFlock.map((contestant) => contestant.power)).size !== DUCK_SABOTAGE_POWERS.length
+  || new Set(forestEvents.map((event) => event.type)).size !== 4
+  || JSON.stringify(forestEvents) !== JSON.stringify(repeatedForestEvents)
 ) {
   throw new Error("Los refugios aleatorios o los poderes de la bandada no cubren todas sus variantes.");
 }
@@ -171,6 +176,7 @@ console.log(JSON.stringify({
   adaptiveFlight: "passed",
   adaptiveTargets: "passed",
   forestCover: "passed",
+  forestEvents: Array.from(new Set(forestEvents.map((event) => event.type))),
   sabotagePowers: DUCK_SABOTAGE_POWERS,
   maximumLogicMs: Number(maximumLogicMs.toFixed(2)),
   totalMs: Number((performance.now() - startedAt).toFixed(2)),

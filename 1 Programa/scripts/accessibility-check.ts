@@ -6,10 +6,14 @@ const css = readFileSync(resolve(root, "src/App.css"), "utf8");
 const instructions = readFileSync(resolve(root, "INSTRUCCIONES - LEER PRIMERO.txt"), "utf8");
 const setup = readFileSync(resolve(root, "src/modules/draw/DrawSetup.tsx"), "utf8");
 const marbleRace = readFileSync(resolve(root, "src/games/marbles/MarbleRace.tsx"), "utf8");
+const marbleScene = readFileSync(resolve(root, "src/games/marbles/marbleRace3d.ts"), "utf8");
 const pinballGame = readFileSync(resolve(root, "src/games/pinball/PinballGame.tsx"), "utf8");
 const participantPanel = readFileSync(resolve(root, "src/modules/participants/ParticipantPanel.tsx"), "utf8");
 const duckGame = readFileSync(resolve(root, "src/games/ducks/DuckHunt.tsx"), "utf8");
 const duckScene = readFileSync(resolve(root, "src/games/ducks/duckHunt3d.ts"), "utf8");
+const duckEngine = readFileSync(resolve(root, "src/games/ducks/duckHuntEngine.ts"), "utf8");
+const pinballScene = readFileSync(resolve(root, "src/games/pinball/pinball3d.ts"), "utf8");
+const pinballEngine = readFileSync(resolve(root, "src/games/pinball/pinballEngine.ts"), "utf8");
 const app = readFileSync(resolve(root, "src/App.tsx"), "utf8");
 const tutorialContent = readFileSync(resolve(root, "src/shared/tutorial/tutorialContent.ts"), "utf8");
 const guidedTour = readFileSync(resolve(root, "src/shared/tutorial/GuidedTour.tsx"), "utf8");
@@ -45,14 +49,48 @@ for (const cameraLabel of ["PERSECUCIÓN", "A BORDO", "LATERAL", "AÉREA"]) {
 for (const cameraLabel of ["CENITAL", "PERSECUCIÓN"]) {
   if (!pinballGame.includes(cameraLabel)) throw new Error(`Falta el modo de cámara de Pinball: ${cameraLabel}`);
 }
-if (!marbleRace.includes("data-camera-director") || !marbleRace.includes("Director: sigue al líder")) {
+if (!marbleRace.includes("data-camera-director") || !marbleRace.includes("Director estable: sigue al líder")) {
   throw new Error("Canicas debe incluir un director automático de cámara verificable.");
+}
+if (!marbleRace.includes("Posición que decide el resultado") || !setup.includes("¿Qué posición decide?")) {
+  throw new Error("Canicas debe permitir elegir de forma accesible si decide el primero o el último.");
+}
+for (const eventName of ["Pista congelada", "Río", "Tornado", "Temblor"]) {
+  if (!marbleRace.includes(eventName)) throw new Error(`Falta explicar el evento de Canicas: ${eventName}.`);
+}
+if (
+  !marbleScene.includes("turboTurbulence")
+  || !marbleScene.includes("cameraDistance")
+  || !marbleScene.includes("cameraOcclusionGuard")
+  || !marbleScene.includes("findOverheadTrackY")
+  || !marbleScene.includes('"underpass"')
+) {
+  throw new Error("La cámara de Canicas no contiene el encuadre amplio, corredor bajo puentes y descontrol de Turbo.");
+}
+if (!css.includes(".marble-race { width: 100%; max-width: 100%; min-width: 0;")) {
+  throw new Error("Canicas debe ajustarse al ancho disponible sin crear desplazamiento horizontal.");
 }
 if (!pinballGame.includes("Seguir la pelota anterior") || !pinballGame.includes("Seguir la pelota siguiente")) {
   throw new Error("Pinball debe permitir recorrer las cámaras sin abrir el selector.");
 }
+if (
+  !pinballGame.includes('event.code === "ArrowUp"')
+  || !pinballGame.includes('event.code === "KeyW"')
+  || !pinballGame.includes("AMBOS FLIPPERS")
+  || !pinballScene.includes("followBeacon")
+  || !pinballScene.includes("flipperAssist")
+  || !pinballEngine.includes("getPinballAutomaticFlipperThreat")
+) {
+  throw new Error("Pinball debe incluir control manual dual, seguimiento visible y piloto automático predictivo.");
+}
 if (!duckGame.includes("duck-cover-radar") || !duckGame.includes("data-cover-percent")) {
   throw new Error("Patos debe mostrar el estado de cobertura del bosque y el pasto.");
+}
+for (const eventType of ["wind", "mist", "fireflies", "storm"]) {
+  if (!duckEngine.includes(`${eventType}: {`)) throw new Error(`Falta el evento de bosque: ${eventType}.`);
+}
+if (!duckGame.includes("data-forest-event") || !duckScene.includes("setForestEvent")) {
+  throw new Error("Patos debe anunciar y representar en 3D el evento vivo del bosque.");
 }
 if (!participantPanel.includes("Buscar participante por nombre")) {
   throw new Error("Las listas grandes deben disponer de búsqueda accesible.");
@@ -84,8 +122,16 @@ console.log(JSON.stringify({
   marbleCameraModes: 4,
   pinballCameraModes: 2,
   automaticMarbleCameraDirector: true,
+  marbleCameraOcclusionGuard: true,
+  marbleUnderpassCamera: true,
+  marbleResponsiveWidth: true,
+  marbleFinishRules: ["first", "last"],
+  marbleTrackEvents: ["freeze", "river", "tornado", "quake"],
   pinballCameraStepper: true,
+  pinballPredictiveAutomaticMode: true,
+  pinballDualManualControl: true,
   duckCoverRadar: true,
+  duckForestEvents: ["wind", "mist", "fireflies", "storm"],
   participantSearch: true,
   duckModelDetails: ["pupils", "feet", "shotRecoil"],
   guidedDemos: ["roulette", "cards", "pinball", "marbles", "ducks"],

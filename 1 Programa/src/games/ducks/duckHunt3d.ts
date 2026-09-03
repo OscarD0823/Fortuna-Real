@@ -7,7 +7,7 @@ import {
   getDuckResetDuration,
   getDuckVisualScale,
 } from "./duckHuntEngine";
-import type { DuckContestant } from "./duckHuntEngine";
+import type { DuckContestant, DuckForestEventType } from "./duckHuntEngine";
 
 export interface DuckHuntStats {
   fps: number;
@@ -23,6 +23,7 @@ export interface DuckHuntController {
   escapeWave: () => void;
   shoot: (clientX: number, clientY: number) => DuckShotTarget;
   castPower: (casterId: string) => void;
+  setForestEvent: (event: DuckForestEventType) => void;
   resetFlock: (targetId: string, labelOverride?: string) => void;
   regenerateFormation: () => void;
   dispose: () => void;
@@ -145,6 +146,8 @@ export const createDuckHunt3D = (
   let cameraRecoilUntil = 0;
   let cameraRecoilX = 0;
   let cameraRecoilY = 0;
+  let forestEvent: DuckForestEventType = "wind";
+  let forestEventStartedAt = performance.now();
 
   const renderer = new THREE.WebGLRenderer({
     canvas,
@@ -159,6 +162,7 @@ export const createDuckHunt3D = (
   canvas.dataset.renderQuality = "high";
   canvas.dataset.environment = "classic-duck-field-3d";
   canvas.dataset.cameraMode = "classic-fixed";
+  canvas.dataset.forestEvent = forestEvent;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.12;
@@ -167,7 +171,10 @@ export const createDuckHunt3D = (
 
   const scene = new THREE.Scene();
   scene.name = "SC_DuckHunt";
-  scene.background = new THREE.Color("#63b9e9");
+  const skyColor = new THREE.Color("#63b9e9");
+  const targetSkyColor = new THREE.Color();
+  const targetFogColor = new THREE.Color();
+  scene.background = skyColor;
   scene.fog = new THREE.Fog("#8dd1ee", 28, 58);
   const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 90);
   const classicCameraPosition = new THREE.Vector3(0, 5.3, 20.8);
@@ -190,9 +197,10 @@ export const createDuckHunt3D = (
   skyRim.position.set(-8.8, 9.5, -5.8);
   scene.add(skyRim);
 
+  const groundMaterial = new THREE.MeshStandardMaterial({ color: "#527c24", roughness: 0.96, metalness: 0.02 });
   const ground = new THREE.Mesh(
     new THREE.PlaneGeometry(44, 28),
-    new THREE.MeshStandardMaterial({ color: "#527c24", roughness: 0.96, metalness: 0.02 }),
+    groundMaterial,
   );
   ground.rotation.x = -Math.PI / 2;
   ground.position.set(0, -0.05, -2);
@@ -306,16 +314,18 @@ export const createDuckHunt3D = (
   lilyFlowers.instanceMatrix.needsUpdate = true;
   scene.add(lilyFlowers);
 
+  const horizonMaterial = new THREE.MeshBasicMaterial({ color: "#77c7e9", fog: true });
   const horizon = new THREE.Mesh(
     new THREE.PlaneGeometry(45, 15),
-    new THREE.MeshBasicMaterial({ color: "#77c7e9", fog: true }),
+    horizonMaterial,
   );
   horizon.position.set(0, 6.5, -10.5);
   scene.add(horizon);
 
+  const sunDiscMaterial = new THREE.MeshBasicMaterial({ color: "#fff2a8", transparent: true, opacity: 0.94, fog: false });
   const sunDisc = new THREE.Mesh(
     new THREE.CircleGeometry(1.35, 40),
-    new THREE.MeshBasicMaterial({ color: "#fff2a8", transparent: true, opacity: 0.94, fog: false }),
+    sunDiscMaterial,
   );
   sunDisc.position.set(-8.8, 8.2, -9.9);
   scene.add(sunDisc);
@@ -961,6 +971,44 @@ export const createDuckHunt3D = (
       camera.updateProjectionMatrix();
     }
     camera.lookAt(recoilCameraTarget);
+    const forestEventSeconds = Math.max(0, (now - forestEventStartedAt) / 1000);
+    const windWave = reducedMotion ? 0 : Math.sin(forestEventSeconds * 2.4) * 0.13;
+    const windTarget = forestEvent === "wind" ? windWave : forestEvent === "storm" ? windWave * 0.72 : 0;
+    lowerCrowns.position.x = THREE.MathUtils.lerp(lowerCrowns.position.x, windTarget, 0.08);
+    upperCrowns.position.x = THREE.MathUtils.lerp(upperCrowns.position.x, windTarget * 1.45, 0.08);
+    grass.position.x = THREE.MathUtils.lerp(grass.position.x, windTarget * 0.48, 0.1);
+    reeds.rotation.z = THREE.MathUtils.lerp(reeds.rotation.z, windTarget * 0.05, 0.08);
+    const targetFogNear = forestEvent === "mist" ? 17 : forestEvent === "storm" ? 23 : 28;
+    const targetFogFar = forestEvent === "mist" ? 42 : forestEvent === "storm" ? 50 : 58;
+    const targetSky = forestEvent === "storm"
+      ? "#243348"
+      : forestEvent === "mist"
+        ? "#91acb5"
+        : forestEvent === "fireflies" ? "#294d67" : "#63b9e9";
+    const targetFog = forestEvent === "storm"
+      ? "#3e5263"
+      : forestEvent === "mist"
+        ? "#afc6c8"
+        : forestEvent === "fireflies" ? "#466c72" : "#8dd1ee";
+    skyColor.lerp(targetSkyColor.set(targetSky), 0.055);
+    horizonMaterial.color.lerp(targetSkyColor.set(forestEvent === "storm" ? "#33465a" : forestEvent === "fireflies" ? "#426c76" : targetSky), 0.055);
+    groundMaterial.color.lerp(targetSkyColor.set(forestEvent === "storm" ? "#253f22" : forestEvent === "fireflies" ? "#315724" : "#527c24"), 0.045);
+    if (scene.fog instanceof THREE.Fog) {
+      scene.fog.near = THREE.MathUtils.lerp(scene.fog.near, targetFogNear, 0.045);
+      scene.fog.far = THREE.MathUtils.lerp(scene.fog.far, targetFogFar, 0.045);
+      scene.fog.color.lerp(targetFogColor.set(targetFog), 0.055);
+    }
+    const lightning = forestEvent === "storm" && !reducedMotion && forestEventSeconds % 4.2 < 0.1 ? 1 : 0;
+    sun.intensity = THREE.MathUtils.lerp(sun.intensity, forestEvent === "storm" ? 2.45 + lightning * 3.2 : 3.8, 0.08);
+    skyRim.intensity = THREE.MathUtils.lerp(skyRim.intensity, forestEvent === "storm" ? 10 + lightning * 22 : 18, 0.08);
+    const targetExposure = forestEvent === "storm"
+      ? 0.76 + lightning * 0.34
+      : forestEvent === "fireflies" ? 0.88 : forestEvent === "mist" ? 1.02 : 1.12;
+    renderer.toneMappingExposure = THREE.MathUtils.lerp(renderer.toneMappingExposure, targetExposure, 0.055);
+    const cloudMaterial = clouds.material as THREE.MeshBasicMaterial;
+    cloudMaterial.opacity = THREE.MathUtils.lerp(cloudMaterial.opacity, forestEvent === "storm" ? 0.78 : 0.46, 0.06);
+    cloudMaterial.color.lerp(targetSkyColor.set(forestEvent === "storm" ? "#718098" : forestEvent === "fireflies" ? "#b2bdc5" : "#f4fbff"), 0.055);
+    sunDiscMaterial.opacity = THREE.MathUtils.lerp(sunDiscMaterial.opacity, forestEvent === "storm" ? 0.16 + lightning * 0.6 : forestEvent === "fireflies" ? 0.5 : 0.94, 0.06);
     pond.rotation.z = reducedMotion ? 0 : Math.sin(now / 2200) * 0.012;
     if (!reducedMotion) {
       clouds.position.x = Math.sin(now / 6_600) * 0.42;
@@ -968,8 +1016,11 @@ export const createDuckHunt3D = (
       lilyPads.rotation.y = Math.sin(now / 4_200) * 0.018;
       lilyFlowers.rotation.y = lilyPads.rotation.y;
       fireflies.rotation.y = Math.sin(now / 4_800) * 0.08;
-      (fireflies.material as THREE.PointsMaterial).opacity = 0.66 + Math.sin(now / 540) * 0.14;
     }
+    const fireflyMaterial = fireflies.material as THREE.PointsMaterial;
+    const fireflyPulse = reducedMotion ? 0 : Math.sin(now / 310) * 0.16;
+    fireflyMaterial.opacity = forestEvent === "fireflies" ? 0.88 + fireflyPulse : 0.42 + fireflyPulse * 0.35;
+    fireflyMaterial.size = THREE.MathUtils.lerp(fireflyMaterial.size, forestEvent === "fireflies" ? 0.115 : 0.075, 0.08);
     const flashMaterial = flash.material as THREE.SpriteMaterial;
     flashMaterial.opacity = shotFlashUntil > now ? Math.max(0, (shotFlashUntil - now) / 120) : 0;
     renderer.render(scene, camera);
@@ -1095,6 +1146,11 @@ export const createDuckHunt3D = (
     castPower(casterId) {
       powerCasterId = casterId;
       powerPulseUntil = performance.now() + 1_250;
+    },
+    setForestEvent(event) {
+      forestEvent = event;
+      forestEventStartedAt = performance.now();
+      canvas.dataset.forestEvent = event;
     },
     resetFlock(targetId, labelOverride) {
       const entropy = new Uint32Array(1);

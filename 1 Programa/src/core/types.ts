@@ -2,6 +2,7 @@ export type DrawMode = "direct" | "elimination";
 export type GameId = "roulette" | "cards" | "pinball" | "marbles" | "ducks";
 export type PinballControlMode = "automatic" | "manual";
 export type MarbleDifficulty = "easy" | "medium" | "hard";
+export type MarbleFinishRule = "first" | "last";
 export type Parity = "even" | "odd";
 
 export interface Participant {

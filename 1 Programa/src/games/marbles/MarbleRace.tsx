@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Camera, ChevronLeft, ChevronRight, Crown, Flag, Gauge, Gem, Play, RefreshCw, Sparkles, WandSparkles } from "lucide-react";
-import type { DrawMode, MarbleDifficulty, Participant } from "../../core/types";
+import type { DrawMode, MarbleDifficulty, MarbleFinishRule, Participant } from "../../core/types";
 import { fortunaAudio } from "../../shared/audio/audioEngine";
 import {
   createMarbleSeed,
@@ -11,6 +11,7 @@ import {
   prepareMarbleRace,
   type MarblePower,
   type MarbleRacer,
+  type MarbleTrackEventType,
   type MarbleTrack,
   type PreparedMarbleRace,
   type TrackObstacleType,
@@ -39,6 +40,7 @@ interface RankingItem {
   powerActive: boolean;
   incomingPowerActive: boolean;
   activePower: MarblePower | null;
+  activeTrackEvent: MarbleTrackEventType | null;
   recovering: boolean;
   position: number;
 }
@@ -47,7 +49,7 @@ interface RaceEvent {
   id: string;
   title: string;
   detail: string;
-  tone: MarblePower | "race" | "risk" | "finish";
+  tone: MarblePower | MarbleTrackEventType | "race" | "risk" | "finish";
 }
 
 const powerDescriptions: Record<MarblePower, string> = {
@@ -58,6 +60,13 @@ const powerDescriptions: Record<MarblePower, string> = {
   giant: "aumenta tamaño",
   tiny: "reduce a un rival que va adelante",
   restart: "envía a un rival delantero al inicio",
+};
+
+const trackEventLabels: Record<MarbleTrackEventType, string> = {
+  freeze: "Pista congelada",
+  river: "Río",
+  tornado: "Tornado",
+  quake: "Temblor",
 };
 
 const compactRanking = <T extends { racer: MarbleRacer }>(items: T[]) => {
@@ -550,6 +559,42 @@ const drawPowerZones = (
   });
 };
 
+const drawTrackEvents = (
+  context: CanvasRenderingContext2D,
+  track: MarbleTrack,
+  scalePoint: (point: { x: number; y: number }) => ScaledTrackPoint,
+  elapsedMs: number,
+) => {
+  track.events.forEach((event, index) => {
+    const point = getTrackPosition(track.points, event.progress);
+    const scaled = scalePoint(point);
+    const pulse = 1 + Math.sin(elapsedMs / 180 + index) * 0.12;
+    context.save();
+    context.translate(scaled.x, scaled.y);
+    context.rotate(Math.atan2(point.tangentY, point.tangentX));
+    context.scale(pulse, pulse);
+    context.strokeStyle = event.color;
+    context.fillStyle = `${event.color}35`;
+    context.shadowColor = event.color;
+    context.shadowBlur = 14;
+    context.lineWidth = event.type === "quake" ? 4 : 3;
+    if (event.type === "river") {
+      context.fillRect(-48, -17, 96, 34);
+      [-10, 0, 10].forEach((offset) => {
+        context.beginPath(); context.moveTo(-44, offset); context.bezierCurveTo(-18, offset - 7, 18, offset + 7, 44, offset); context.stroke();
+      });
+    } else if (event.type === "tornado") {
+      [12, 21, 30].forEach((radius) => { context.beginPath(); context.ellipse(0, 0, radius, radius * 0.45, elapsedMs / 800, 0, Math.PI * 1.72); context.stroke(); });
+    } else if (event.type === "freeze") {
+      context.fillRect(-46, -18, 92, 36);
+      context.beginPath(); context.moveTo(-38, 12); context.lineTo(-12, -12); context.lineTo(7, 10); context.lineTo(35, -11); context.stroke();
+    } else {
+      [-34, -12, 10].forEach((offset) => { context.beginPath(); context.moveTo(offset, -17); context.lineTo(offset + 12, 0); context.lineTo(offset + 3, 17); context.stroke(); });
+    }
+    context.restore();
+  });
+};
+
 const drawStartAndFinish = (
   context: CanvasRenderingContext2D,
   start: ScaledTrackPoint,
@@ -669,6 +714,7 @@ const drawRace = (
     drawZoneFeature(context, zone.type, zone.label, zone.color, scaled.x, scaled.y, Math.atan2(point.tangentY, point.tangentX), zone.scale, elapsedMs);
   });
   drawPowerZones(context, race.track, scalePoint, elapsedMs);
+  drawTrackEvents(context, race.track, scalePoint, elapsedMs);
 
   race.track.obstacles.forEach((obstacle) => {
     const point = getTrackPosition(race.track.points, obstacle.progress);
@@ -716,6 +762,7 @@ const drawRace = (
       : 0;
     const offset = racer.lane * Math.min(race.track.trackWidth * 0.34, 12 + count * 0.08)
       + collisionWobble
+      + ("lateralImpulse" in state ? state.lateralImpulse * 2.35 : 0)
       + recoveryOffset;
     const trackX = scaled.x - point.tangentY * offset;
     const trackY = scaled.y + point.tangentX * offset;
@@ -783,22 +830,26 @@ export function MarbleRace({
   participants,
   mode,
   difficulty,
+  finishRule,
   disabled,
   previousWinnerIds,
   initialSeed,
   onCommit,
   onDifficultyChange,
+  onFinishRuleChange,
   onTrackPrepared,
   onFinish,
 }: {
   participants: Participant[];
   mode: DrawMode;
   difficulty: MarbleDifficulty;
+  finishRule: MarbleFinishRule;
   disabled: boolean;
   previousWinnerIds: ReadonlySet<string>;
   initialSeed?: string;
   onCommit: (seed: string) => void;
   onDifficultyChange: (difficulty: MarbleDifficulty) => void;
+  onFinishRuleChange: (finishRule: MarbleFinishRule) => void;
   onTrackPrepared?: (track: MarbleTrack) => void;
   onFinish: (racer: MarbleRacer, label: string) => void;
 }) {
@@ -826,9 +877,11 @@ export function MarbleRace({
   const mountedRef = useRef(true);
   const triggeredPowersRef = useRef(new Set<string>());
   const trackedPositionRef = useRef<string | null>(null);
+  const directorCandidateRef = useRef<{ id: string | null; since: number }>({ id: null, since: 0 });
+  const directorLastSwitchRef = useRef(0);
   const race = useMemo(
-    () => prepareMarbleRace(roundParticipants, mode, seed, difficulty, roundPreviousWinnerIds),
-    [difficulty, mode, roundParticipants, roundPreviousWinnerIds, seed],
+    () => prepareMarbleRace(roundParticipants, mode, seed, difficulty, roundPreviousWinnerIds, finishRule),
+    [difficulty, finishRule, mode, roundParticipants, roundPreviousWinnerIds, seed],
   );
 
   const paint = useCallback((elapsedMs: number, currentPhase: RacePhase) => {
@@ -873,6 +926,8 @@ export function MarbleRace({
     setRanking([]);
     setRaceEvents([]);
     trackedPositionRef.current = null;
+    directorCandidateRef.current = { id: null, since: 0 };
+    directorLastSwitchRef.current = 0;
     triggeredPowersRef.current.clear();
   };
 
@@ -900,8 +955,8 @@ export function MarbleRace({
     setCameraDirectorEnabled(nextEnabled);
     if (nextEnabled) {
       const targetId = ranking.length > 0
-        ? (mode === "direct" ? ranking[0] : ranking[ranking.length - 1])?.racer.id
-        : (mode === "direct" ? race.racers[0] : race.racers[race.racers.length - 1])?.id;
+        ? (finishRule === "first" ? ranking[0] : ranking[ranking.length - 1])?.racer.id
+        : (finishRule === "first" ? race.racers[0] : race.racers[race.racers.length - 1])?.id;
       setDirectorCameraTarget(targetId ?? null);
     }
     fortunaAudio.playClick();
@@ -939,6 +994,14 @@ export function MarbleRace({
     resetPreparedRace();
   };
 
+  const changeFinishRule = (nextFinishRule: MarbleFinishRule) => {
+    if (phase !== "ready" || resumedSeed || nextFinishRule === finishRule) return;
+    fortunaAudio.playClick();
+    onFinishRuleChange(nextFinishRule);
+    setSeed(createMarbleSeed());
+    resetPreparedRace();
+  };
+
   const startRace = () => {
     if (disabled || phase !== "ready") return;
     try {
@@ -956,6 +1019,8 @@ export function MarbleRace({
       tone: "race",
     }]);
     trackedPositionRef.current = null;
+    directorCandidateRef.current = { id: null, since: performance.now() };
+    directorLastSwitchRef.current = 0;
     triggeredPowersRef.current.clear();
     fortunaAudio.playMarbleStart();
     const startedAt = performance.now();
@@ -983,29 +1048,55 @@ export function MarbleRace({
               powerActive: state.powerActive,
               incomingPowerActive: state.incomingPowerActive,
               activePower: state.activePower,
+              activeTrackEvent: state.activeTrackEvent,
               recovering: state.recovering,
             };
           })
           .sort((first, second) => second.progress - first.progress)
           .map((item, index) => ({ ...item, position: index + 1 }));
         setRanking(compactRanking(orderedRacers));
-        const trackedRacer = mode === "direct"
+        const trackedRacer = finishRule === "first"
           ? orderedRacers[0]
           : orderedRacers[orderedRacers.length - 1];
-        if (cameraDirectorRef.current) setDirectorCameraTarget(trackedRacer.racer.id);
+        if (cameraDirectorRef.current) {
+          const candidate = directorCandidateRef.current;
+          if (candidate.id !== trackedRacer.racer.id) {
+            directorCandidateRef.current = { id: trackedRacer.racer.id, since: now };
+          } else if (
+            cameraTargetRef.current !== trackedRacer.racer.id
+            && now - candidate.since >= 850
+            && now - directorLastSwitchRef.current >= 1_350
+          ) {
+            setDirectorCameraTarget(trackedRacer.racer.id);
+            directorLastSwitchRef.current = now;
+          }
+        }
         const positionEvent: RaceEvent | null = (
           elapsed > cameraIntroMs + 300
           && trackedPositionRef.current
           && trackedPositionRef.current !== trackedRacer.racer.id
         ) ? {
             id: `position-${trackedRacer.racer.id}-${Math.round(elapsed)}`,
-            title: mode === "direct" ? "Cambio de líder" : "Zona de riesgo",
-            detail: mode === "direct"
+            title: finishRule === "first" ? "Cambio de líder" : "Cambio en la cola",
+            detail: finishRule === "first"
               ? `${trackedRacer.racer.participant.name} toma la punta`
               : `${trackedRacer.racer.participant.name} marcha en último lugar`,
-            tone: mode === "direct" ? "race" : "risk",
+            tone: finishRule === "first" ? "race" : "risk",
           } satisfies RaceEvent : null;
         trackedPositionRef.current = trackedRacer.racer.id;
+        const activeGlobalEvent = race.track.events.find((event) =>
+          trackedRacer.progress >= event.startProgress && trackedRacer.progress <= event.endProgress,
+        );
+        const globalEventId = activeGlobalEvent ? `track-event-${activeGlobalEvent.id}` : null;
+        const globalEvent: RaceEvent | null = activeGlobalEvent && globalEventId && !triggeredPowersRef.current.has(globalEventId)
+          ? {
+              id: `${globalEventId}-${Math.round(elapsed)}`,
+              title: activeGlobalEvent.title,
+              detail: activeGlobalEvent.detail,
+              tone: activeGlobalEvent.type,
+            }
+          : null;
+        if (globalEventId && globalEvent) triggeredPowersRef.current.add(globalEventId);
         const newEvents = orderedRacers.flatMap(({ racer, powerActive, recovering }) => {
           const events: RaceEvent[] = [];
           const powerEventId = `power-${racer.id}`;
@@ -1035,10 +1126,15 @@ export function MarbleRace({
           }
           return events;
         }).slice(0, 3);
-        if (positionEvent || newEvents.length > 0) {
-          setRaceEvents((current) => [...newEvents, ...(positionEvent ? [positionEvent] : []), ...current].slice(0, 4));
+        if (globalEvent || positionEvent || newEvents.length > 0) {
+          setRaceEvents((current) => [
+            ...(globalEvent ? [globalEvent] : []),
+            ...newEvents,
+            ...(positionEvent ? [positionEvent] : []),
+            ...current,
+          ].slice(0, 4));
         }
-        if (newEvents.length > 0) {
+        if (globalEvent || newEvents.length > 0) {
           fortunaAudio.playMarblePower();
         }
         lastUiUpdate = now;
@@ -1055,16 +1151,12 @@ export function MarbleRace({
         setRaceEvents((current) => [({
           id: `finish-${race.selected.id}`,
           title: "Resultado en meta",
-          detail: mode === "direct"
-            ? `${race.selected.participant.name} cruza primero`
-            : `${race.selected.participant.name} cruza en último lugar`,
+          detail: `${race.selected.participant.name} cruza ${finishRule === "first" ? "primero" : "en último lugar"}`,
           tone: "finish",
         } satisfies RaceEvent), ...current].slice(0, 4));
         paint(finishAt + cameraIntroMs, "finished");
         fortunaAudio.playMarbleFinish();
-        const resultLabel = mode === "direct"
-          ? `Canica #${race.selected.number} · llegó primera`
-          : `Canica #${race.selected.number} · llegó de última`;
+        const resultLabel = `Canica #${race.selected.number} · llegó ${finishRule === "first" ? "primera" : "de última"}`;
         finishTimerRef.current = window.setTimeout(() => {
           if (mountedRef.current) onFinish(race.selected, resultLabel);
         }, 650);
@@ -1080,9 +1172,7 @@ export function MarbleRace({
   const status = phase === "ready" ? "Pista lista" : phase === "racing" ? "Carrera en vivo" : "Resultado confirmado";
   const statusDetail = phase === "ready"
     ? `${race.track.name} · compromiso ${race.track.signature.toUpperCase()}`
-    : mode === "direct"
-      ? "La primera canica en meta gana"
-      : "La última canica en meta queda eliminada";
+    : `${finishRule === "first" ? "La primera" : "La última"} canica en meta ${mode === "direct" ? "gana" : "queda eliminada"}`;
   const displayedRanking: RankingItem[] = ranking.length > 0
     ? ranking
     : compactRanking(race.racers.map((racer, index) => ({
@@ -1092,6 +1182,7 @@ export function MarbleRace({
         powerActive: false,
         incomingPowerActive: false,
         activePower: null,
+        activeTrackEvent: null,
         recovering: false,
         position: index + 1,
       })));
@@ -1117,6 +1208,9 @@ export function MarbleRace({
       data-track-width={race.track.trackWidth}
       data-obstacles={race.track.obstacles.length}
       data-power-zones={race.track.powerZones.length}
+      data-track-events={race.track.events.length}
+      data-map-scale={race.track.mapScale}
+      data-finish-rule={finishRule}
       data-comeback-powers={race.racers.filter((racer) => racer.powerTargetId).length}
       data-recovery-racers={race.racers.filter((racer) => racer.recoveryAt < 1).length}
       data-camera-target={cameraTargetId ?? "overview"}
@@ -1131,6 +1225,7 @@ export function MarbleRace({
           <span className="is-primary">{difficultyLabels[difficulty]}</span>
           <span>Riesgo {race.track.risk}/5</span>
           <span>{race.track.powerZones.length} poderes</span>
+          <span>{race.track.events.length} eventos</span>
           <span>Altura {maximumTrackHeight.toFixed(1)} m</span>
           <span>{phase === "racing" ? `${fps} FPS` : `${participants.length} canicas`}</span>
         </div>
@@ -1158,7 +1253,7 @@ export function MarbleRace({
 
         <div className="marble-camera-control">
           <Camera size={16} aria-hidden="true" />
-          <span><strong>CÁMARA CINEMÁTICA</strong><small>{followedState?.recovering ? "Rescate automático en cámara" : cameraDirectorEnabled ? mode === "direct" ? "Director: sigue al líder" : "Director: sigue la zona de riesgo" : cameraTargetId ? `${cameraStyleLabels[cameraStyle]} · seguimiento manual` : "Vista general manual"}</small></span>
+          <span><strong>CÁMARA CINEMÁTICA</strong><small>{followedState?.recovering ? "Rescate automático en cámara" : cameraDirectorEnabled ? finishRule === "first" ? "Director estable: sigue al líder" : "Director estable: sigue la última" : cameraTargetId ? `${cameraStyleLabels[cameraStyle]} · seguimiento manual` : "Vista general manual"}</small></span>
           <div className="marble-camera-control__switcher">
             <button type="button" onClick={() => stepCameraTarget(-1)} disabled={renderMode === "fallback"} aria-label="Seguir la canica anterior"><ChevronLeft size={15} /></button>
             <select
@@ -1208,7 +1303,7 @@ export function MarbleRace({
         <aside className="marble-live-ranking" aria-label="Clasificación de la carrera">
           <div className="marble-live-ranking__heading">
             <span><Gauge size={14} /> {phase === "ready" ? "Participantes listos" : "Clasificación"}</span>
-            <small>{mode === "direct" ? "LÍDER GANA" : "ÚLTIMO EN RIESGO"}</small>
+            <small>{finishRule === "first" ? "PRIMERO DECIDE" : "ÚLTIMO DECIDE"}</small>
           </div>
           <div className="marble-live-ranking__list" role="list">
             {displayedRanking.map((item, index) => {
@@ -1258,42 +1353,65 @@ export function MarbleRace({
               ))}
             </div>
           ) : (
-            <strong className="marble-event-feed__empty">Sin eventos de poder todavía</strong>
+            <strong className="marble-event-feed__empty">Los eventos aparecerán durante la carrera</strong>
           )}
         </section>
 
         <div className="marble-map-hud">
           <span>MAPA ACTUAL</span>
           <strong>{race.track.name}</strong>
-          <div><small>{difficultyLabels[difficulty]}</small><small>{race.track.lengthRating}</small><small>Altura {maximumTrackHeight.toFixed(1)} m</small><small>Riesgo {race.track.risk}/5</small></div>
+          <div><small>{difficultyLabels[difficulty]}</small><small>{race.track.lengthRating}</small><small>Altura {maximumTrackHeight.toFixed(1)} m</small><small>{race.track.events.length} eventos</small><small>Riesgo {race.track.risk}/5</small></div>
         </div>
       </div>
 
-      <div className="marble-power-quick-legend" aria-label="Poderes disponibles en esta dificultad">
-        <span><WandSparkles size={13} /> Poderes</span>
+      <div className="marble-power-quick-legend" aria-label="Poderes y eventos disponibles en esta dificultad">
+        <span><WandSparkles size={13} /> Poderes y eventos</span>
         {race.track.powerZones.map((zone) => zone.power).filter((power, index, powers) => powers.indexOf(power) === index).map((power) => (
           <small className={`marble-power-quick marble-power-quick--${power}`} key={power} title={powerDescriptions[power]} aria-label={`${powerLabels[power]}: ${powerDescriptions[power]}`}>
             <i /> {powerLabels[power]}
           </small>
         ))}
+        {race.track.events.map((event) => event.type).filter((event, index, events) => events.indexOf(event) === index).map((event) => (
+          <small className={`marble-power-quick marble-power-quick--event-${event}`} key={`event-${event}`}>
+            <i /> {trackEventLabels[event]}
+          </small>
+        ))}
       </div>
 
       <div className="marble-controls">
-        <div className="marble-difficulty-switch" role="radiogroup" aria-label="Dificultad de la pista">
-          <span>Dificultad</span>
-          {(["easy", "medium", "hard"] as const).map((level) => (
-            <button
-              type="button"
-              role="radio"
-              aria-checked={difficulty === level}
-              key={level}
-              className={difficulty === level ? "is-active" : ""}
-              onClick={() => changeDifficulty(level)}
-              disabled={phase !== "ready" || resumedSeed}
-            >
-              {difficultyLabels[level]}
-            </button>
-          ))}
+        <div className="marble-preflight-options">
+          <div className="marble-difficulty-switch" role="radiogroup" aria-label="Dificultad de la pista">
+            <span>Dificultad</span>
+            {(["easy", "medium", "hard"] as const).map((level) => (
+              <button
+                type="button"
+                role="radio"
+                aria-checked={difficulty === level}
+                key={level}
+                className={difficulty === level ? "is-active" : ""}
+                onClick={() => changeDifficulty(level)}
+                disabled={phase !== "ready" || resumedSeed}
+              >
+                {difficultyLabels[level]}
+              </button>
+            ))}
+          </div>
+          <div className="marble-finish-rule-switch" role="radiogroup" aria-label="Posición que decide el resultado">
+            <span>Decide</span>
+            {(["first", "last"] as const).map((rule) => (
+              <button
+                type="button"
+                role="radio"
+                aria-checked={finishRule === rule}
+                key={rule}
+                className={finishRule === rule ? "is-active" : ""}
+                onClick={() => changeFinishRule(rule)}
+                disabled={phase !== "ready" || resumedSeed}
+              >
+                {rule === "first" ? "Primero" : "Último"}
+              </button>
+            ))}
+          </div>
         </div>
         <button type="button" className="start-button marble-start-button" onClick={startRace} disabled={disabled || phase !== "ready"} aria-describedby="marble-race-help">
           {phase === "racing" ? <><span className="spinner-dot" /> Carrera en curso…</> : phase === "finished" ? <><Flag size={18} /> Carrera finalizada</> : <><Play size={19} fill="currentColor" /> Iniciar carrera</>}

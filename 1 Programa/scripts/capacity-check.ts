@@ -8,6 +8,7 @@ import {
   generatePinballLayout,
   getPinballFlipperCollider,
   getPinballFinishCrossing,
+  getPinballAutomaticFlipperThreat,
   getPinballTargetColliders,
   launchPinballPhysicsBall,
   preparePinballRound,
@@ -167,6 +168,17 @@ for (let count = 2; count <= 200; count += 1) {
     || !/^PIN-[0-9A-F]{64}$/u.test(simulation.commitmentId)
   ) {
     throw new Error(`Pinball no conservó salida simultánea, dispersión visible y resultado sellado para ${count} pelotas.`);
+  }
+  const automaticThreat = getPinballAutomaticFlipperThreat([
+    { ...physicsBalls[0], x: -2.1, z: 7.15, vx: -0.4, vz: 3.2 },
+    { ...physicsBalls[Math.min(1, physicsBalls.length - 1)], x: 0.04, z: 7.35, vx: 0.1, vz: 3.6 },
+  ]);
+  const ignoredThreat = getPinballAutomaticFlipperThreat([
+    { ...physicsBalls[0], x: 2.4, z: 4.1, vx: 0.2, vz: -1.5 },
+  ]);
+  if (!automaticThreat.left || !automaticThreat.right || automaticThreat.imminentBalls !== 2
+    || ignoredThreat.left || ignoredThreat.right || ignoredThreat.imminentBalls !== 0) {
+    throw new Error(`El piloto predictivo de pinball no anticipó correctamente las trayectorias para ${count} pelotas.`);
   }
   const baselineBall = createPinballPhysicsBall(simulation.balls[0], simulation.layout);
   launchPinballPhysicsBall(baselineBall, simulation.balls[0], simulation.layout);

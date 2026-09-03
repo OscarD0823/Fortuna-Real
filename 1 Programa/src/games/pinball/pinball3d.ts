@@ -7,6 +7,7 @@ import {
   createPinballRandom,
   createPinballPhysicsBall,
   getPinballFlipperCollider,
+  getPinballAutomaticFlipperThreat,
   getPinballFinishCrossing,
   getPinballTargetColliders,
   launchPinballPhysicsBall,
@@ -1088,6 +1089,14 @@ export const createPinballScene = (
   followTrail.visible = false;
   followTrail.renderOrder = 9;
   cabinet.add(followTrail);
+  const followBeacon = new THREE.Mesh(
+    new THREE.TorusGeometry(0.42, 0.055, 7, 28),
+    new THREE.MeshBasicMaterial({ color: 0x69fff8, transparent: true, opacity: 0.86, depthTest: false, depthWrite: false }),
+  );
+  followBeacon.rotation.x = Math.PI / 2;
+  followBeacon.visible = false;
+  followBeacon.renderOrder = 12;
+  cabinet.add(followBeacon);
 
   const winnerCrowns = new THREE.InstancedMesh(
     new THREE.CylinderGeometry(0.18, 0.25, 0.24, 5, 1, true),
@@ -1107,6 +1116,7 @@ export const createPinballScene = (
     debugGroup,
     plunger,
     ballsMesh,
+    followBeacon,
     winnerCrowns,
   ]);
 
@@ -1154,6 +1164,10 @@ export const createPinballScene = (
   let followedBallIndex = -1;
   let followCameraPrimed = false;
   let followCameraStyle: PinballCameraStyle = "chase";
+  let automaticLeftPulseUntil = 0;
+  let automaticRightPulseUntil = 0;
+  let automaticLeftCooldownUntil = 0;
+  let automaticRightCooldownUntil = 0;
 
   const launchAt = (index: number) => {
     const item = runtime[index];
@@ -1230,17 +1244,22 @@ export const createPinballScene = (
     }
 
     if (running && round.controlMode === "automatic") {
-      let approachingLeft = false;
-      let approachingRight = false;
-      for (let index = 0; index < runtime.length; index += 1) {
-        const physics = runtime[index].physics;
-        if (!physics.launched || physics.drained || physics.z <= 6.2 || physics.z >= 9.45 || physics.vz <= 0) continue;
-        if (physics.x <= -0.62) approachingLeft = true;
-        if (physics.x >= 0.62) approachingRight = true;
+      const threat = getPinballAutomaticFlipperThreat(runtime.map((item) => item.physics));
+      const approachingLeft = threat.left;
+      const approachingRight = threat.right;
+      if (approachingLeft && now >= automaticLeftCooldownUntil) {
+        automaticLeftPulseUntil = now + 138;
+        automaticLeftCooldownUntil = now + 198;
       }
-      const pulseOpen = Math.floor(gameplayElapsed / 145) % 4 === 0;
-      automaticFlippers.left = approachingLeft && !pulseOpen;
-      automaticFlippers.right = approachingRight && !pulseOpen;
+      if (approachingRight && now >= automaticRightCooldownUntil) {
+        automaticRightPulseUntil = now + 138;
+        automaticRightCooldownUntil = now + 198;
+      }
+      automaticFlippers.left = now < automaticLeftPulseUntil;
+      automaticFlippers.right = now < automaticRightPulseUntil;
+      canvas.dataset.flipperAssist = threat.imminentBalls > 0 ? "predicting" : "scanning";
+    } else {
+      canvas.dataset.flipperAssist = round.controlMode === "manual" ? "manual" : "idle";
     }
     const overtimeActive = running && gameplayElapsed >= round.overtimeAfterMs;
     const effectiveFlippers = overtimeActive
@@ -1466,16 +1485,22 @@ export const createPinballScene = (
       }
       (followTrailGeometry.getAttribute("position") as THREE.BufferAttribute).needsUpdate = true;
       followTrail.visible = true;
+      followBeacon.visible = true;
+      followBeacon.position.set(followedPhysics.x, 0.79, followedPhysics.z);
+      followBeacon.scale.setScalar(0.92 + Math.sin(elapsed * 0.009) * 0.12);
+      followBeacon.rotation.z = elapsed * 0.0018;
       if (followCameraStyle === "overhead") {
-        followCameraPosition.set(followedPhysics.x, 9.2 + speedBlend * 0.8, followedPhysics.z + 3.6);
+        followCameraPosition.set(followedPhysics.x, 10.4 + speedBlend * 0.85, followedPhysics.z + 4.25);
         followCameraLookTarget.set(followedPhysics.x, 0.7, followedPhysics.z)
-          .addScaledVector(followDirection, 0.65 + speedBlend * 0.45);
+          .addScaledVector(followDirection, 1.05 + speedBlend * 0.72);
         followCameraUp.set(0, 0, -1);
       } else {
-        followCameraPosition.set(followedPhysics.x, 2.75 + speedBlend * 0.72, followedPhysics.z)
-          .addScaledVector(followDirection, -(2.25 + speedBlend * 0.95));
+        followCameraPosition.set(followedPhysics.x, 3.65 + speedBlend * 0.82, followedPhysics.z)
+          .addScaledVector(followDirection, -(3.55 + speedBlend * 1.2));
+        followCameraPosition.x = THREE.MathUtils.clamp(followCameraPosition.x, -7.35, 7.35);
+        followCameraPosition.z = THREE.MathUtils.clamp(followCameraPosition.z, -11.2, 11.45);
         followCameraLookTarget.set(followedPhysics.x, 0.76, followedPhysics.z)
-          .addScaledVector(followDirection, 1.3 + speedBlend * 1.35);
+          .addScaledVector(followDirection, 2.05 + speedBlend * 1.65);
         followCameraUp.set(THREE.MathUtils.clamp(-followedPhysics.vx * 0.014, -0.13, 0.13), 1, 0).normalize();
       }
       if (!followCameraPrimed) {
@@ -1488,7 +1513,7 @@ export const createPinballScene = (
         cameraTarget.lerp(followCameraLookTarget, Math.min(1, cameraResponse * 1.2));
         camera.up.lerp(followCameraUp, cameraResponse * 0.7).normalize();
       }
-      const desiredFollowFov = followCameraStyle === "overhead" ? 46 + speedBlend * 3 : 57 + speedBlend * 9;
+      const desiredFollowFov = followCameraStyle === "overhead" ? 48 + speedBlend * 3 : 60 + speedBlend * 7;
       if (Math.abs(camera.fov - desiredFollowFov) > 0.05) {
         camera.fov = THREE.MathUtils.lerp(camera.fov, desiredFollowFov, reducedMotion ? 1 : 0.16);
         camera.updateProjectionMatrix();
@@ -1499,6 +1524,7 @@ export const createPinballScene = (
       canvas.dataset.cameraStyle = followCameraStyle === "overhead" ? "overhead-ball-follow" : "predictive-ball-follow";
     } else {
       followTrail.visible = false;
+      followBeacon.visible = false;
       const cameraBlend = running ? reducedMotion ? 1 : smoothstep(elapsed / cameraIntroMs) : 0;
       camera.position.lerpVectors(presentationCameraPosition, overviewCameraPosition, cameraBlend);
       cameraTarget.lerpVectors(presentationCameraTarget, overviewCameraTarget, cameraBlend);

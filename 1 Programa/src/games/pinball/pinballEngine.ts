@@ -87,6 +87,12 @@ export interface PinballPhysicsBall {
   collisions: number;
 }
 
+export interface PinballAutomaticFlipperThreat {
+  left: boolean;
+  right: boolean;
+  imminentBalls: number;
+}
+
 export interface PinballFlipperState {
   left: boolean;
   right: boolean;
@@ -479,6 +485,36 @@ export const launchPinballPhysicsBall = (
   ball.launched = true;
   ball.drained = false;
   ball.respawnAtMs = 0;
+};
+
+/**
+ * Predicts which flipper must move before a descending ball reaches the drain.
+ * Keeping this decision outside the renderer makes the automatic mode stable,
+ * deterministic and directly testable without WebGL.
+ */
+export const getPinballAutomaticFlipperThreat = (
+  balls: readonly PinballPhysicsBall[],
+): PinballAutomaticFlipperThreat => {
+  let left = false;
+  let right = false;
+  let imminentBalls = 0;
+
+  for (const ball of balls) {
+    if (!ball.launched || ball.drained || ball.z <= 5.7 || ball.z >= 9.65 || ball.vz <= 0.2) continue;
+    const timeToFlipperLine = clamp((8.05 - ball.z) / Math.max(0.2, ball.vz), 0, 0.52);
+    const predictedX = ball.x + ball.vx * timeToFlipperLine * 0.78;
+    if (ball.z < 6.85 && timeToFlipperLine > 0.36) continue;
+
+    imminentBalls += 1;
+    if (predictedX < -0.18 || ball.x < -1.2) left = true;
+    if (predictedX > 0.18 || ball.x > 1.2) right = true;
+    if (Math.abs(predictedX) <= 0.52) {
+      left = true;
+      right = true;
+    }
+  }
+
+  return { left, right, imminentBalls };
 };
 
 const collideCircle = (

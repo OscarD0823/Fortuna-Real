@@ -5,6 +5,7 @@ import {
   Check,
   ChevronRight,
   CircleDot,
+  Flag,
   Gem,
   Gamepad2,
   Layers3,
@@ -20,10 +21,12 @@ export function DrawSetup({ onOpenDemo }: { onOpenDemo: (game: GameId) => void }
   const mode = useDrawStore((state) => state.mode);
   const prize = useDrawStore((state) => state.prize);
   const pinballControlMode = useDrawStore((state) => state.pinballControlMode);
+  const marbleFinishRule = useDrawStore((state) => state.marbleFinishRule);
   const setGame = useDrawStore((state) => state.setGame);
   const setMode = useDrawStore((state) => state.setMode);
   const setPrize = useDrawStore((state) => state.setPrize);
   const setPinballControlMode = useDrawStore((state) => state.setPinballControlMode);
+  const setMarbleFinishRule = useDrawStore((state) => state.setMarbleFinishRule);
   const selectedGuide = gameGuides[game];
   const selectedIcon = game === "roulette"
     ? <CircleDot size={24} />
@@ -200,9 +203,23 @@ export function DrawSetup({ onOpenDemo }: { onOpenDemo: (game: GameId) => void }
         )}
 
         {game === "marbles" && (
-          <div className="direct-rule-preview marbles-rule-preview">
-            <Gem size={17} />
-            <p>La pista 3D se genera por módulos. Trampas, poderes, elevaciones y curvas cambian con cada semilla.</p>
+          <div className="marble-finish-choice">
+            <div className="marble-finish-choice__heading">
+              <Flag size={17} />
+              <span><strong>¿Qué posición decide?</strong><small>Elige antes de entrar; el resultado se sella al iniciar la carrera.</small></span>
+            </div>
+            <div className="marble-finish-choice__options" role="radiogroup" aria-label="Posición de llegada que decide el resultado de Canicas">
+              <button type="button" role="radio" aria-checked={marbleFinishRule === "first"} className={marbleFinishRule === "first" ? "is-active" : ""} onClick={() => setMarbleFinishRule("first")}>
+                <Trophy size={19} /><span><strong>Primero</strong><small>{mode === "direct" ? "La primera canica gana" : "La primera canica sale"}</small></span>
+              </button>
+              <button type="button" role="radio" aria-checked={marbleFinishRule === "last"} className={marbleFinishRule === "last" ? "is-active" : ""} onClick={() => setMarbleFinishRule("last")}>
+                <Flag size={19} /><span><strong>Último</strong><small>{mode === "direct" ? "La última canica gana" : "La última canica sale"}</small></span>
+              </button>
+            </div>
+            <div className="direct-rule-preview marbles-rule-preview">
+              <Gem size={17} />
+              <p>Fácil usa un recorrido corto; Media amplía mapa y altura; Difícil añade más niveles, trampas y eventos extremos.</p>
+            </div>
           </div>
         )}
 

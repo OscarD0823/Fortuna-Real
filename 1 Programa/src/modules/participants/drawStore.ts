@@ -4,6 +4,7 @@ import type {
   DrawMode,
   GameId,
   MarbleDifficulty,
+  MarbleFinishRule,
   Participant,
   Parity,
   PinballControlMode,
@@ -25,7 +26,7 @@ const PALETTE = [
 
 export const MAX_PARTICIPANTS = 200;
 export const MAX_PARTICIPANT_NAME_LENGTH = 42;
-export const DRAW_STATE_VERSION = 4;
+export const DRAW_STATE_VERSION = 5;
 const MAX_PRIZE_LENGTH = 60;
 const MAX_HISTORY_RECORDS = 1_000;
 const MAX_WINNER_RECORDS = 1_000;
@@ -60,6 +61,9 @@ const normalizePinballControlMode = (mode: unknown): PinballControlMode =>
 
 const normalizeMarbleDifficulty = (difficulty: unknown): MarbleDifficulty =>
   difficulty === "easy" || difficulty === "hard" ? difficulty : "medium";
+
+const normalizeMarbleFinishRule = (rule: unknown): MarbleFinishRule =>
+  rule === "last" ? "last" : "first";
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
@@ -296,6 +300,7 @@ export interface DrawState {
   mode: DrawMode;
   game: GameId;
   marbleDifficulty: MarbleDifficulty;
+  marbleFinishRule: MarbleFinishRule;
   pinballControlMode: PinballControlMode;
   prize: string;
   roundNumber: number;
@@ -308,6 +313,7 @@ export interface DrawState {
   setMode: (mode: DrawMode) => void;
   setGame: (game: GameId) => void;
   setMarbleDifficulty: (difficulty: MarbleDifficulty) => void;
+  setMarbleFinishRule: (rule: MarbleFinishRule) => void;
   setPinballControlMode: (mode: PinballControlMode) => void;
   setPrize: (prize: string) => void;
   beginSession: (options?: BeginDrawSessionOptions) => ActiveDrawSession;
@@ -624,6 +630,12 @@ export const mergePersistedDrawState = (
     mode,
     game,
     marbleDifficulty: normalizeMarbleDifficulty(stored.marbleDifficulty),
+    marbleFinishRule:
+      stored.marbleFinishRule === "first" || stored.marbleFinishRule === "last"
+        ? normalizeMarbleFinishRule(stored.marbleFinishRule)
+        : mode === "elimination"
+          ? "last"
+          : "first",
     pinballControlMode: normalizePinballControlMode(stored.pinballControlMode),
     prize: sanitizeOptionalText(stored.prize, MAX_PRIZE_LENGTH) ?? "Premio del sorteo",
     roundNumber,
@@ -661,6 +673,13 @@ export const migratePersistedDrawState = (
       roundAudits: Array.isArray(persistedState.roundAudits)
         ? persistedState.roundAudits
         : [],
+      marbleFinishRule:
+        persistedState.marbleFinishRule === "first"
+        || persistedState.marbleFinishRule === "last"
+          ? persistedState.marbleFinishRule
+          : persistedState.mode === "elimination"
+            ? "last"
+            : "first",
     };
   }
   return persistedState;
@@ -693,6 +712,7 @@ export const useDrawStore = create<DrawState>()(
       mode: "elimination",
       game: "roulette",
       marbleDifficulty: "medium",
+      marbleFinishRule: "first",
       pinballControlMode: "automatic",
       prize: "Premio del sorteo",
       roundNumber: 1,
@@ -788,6 +808,11 @@ export const useDrawStore = create<DrawState>()(
       setMarbleDifficulty: (marbleDifficulty) => {
         assertNoCommittedSession(get().activeSession);
         set({ marbleDifficulty });
+      },
+
+      setMarbleFinishRule: (marbleFinishRule) => {
+        assertNoCommittedSession(get().activeSession);
+        set({ marbleFinishRule });
       },
 
       setPinballControlMode: (pinballControlMode) => {
@@ -1140,6 +1165,7 @@ export const useDrawStore = create<DrawState>()(
         mode: state.mode,
         game: state.game,
         marbleDifficulty: state.marbleDifficulty,
+        marbleFinishRule: state.marbleFinishRule,
         pinballControlMode: state.pinballControlMode,
         prize: state.prize,
         winnerRecords: state.winnerRecords,

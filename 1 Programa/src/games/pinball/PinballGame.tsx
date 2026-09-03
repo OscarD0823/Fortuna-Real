@@ -46,8 +46,8 @@ export function PinballGame({
   const [cameraStyle, setCameraStyle] = useState<PinballCameraStyle>("chase");
   const [stats, setStats] = useState<PinballSceneStats>({ launched: 0, active: 0, collisions: 0, fps: 60, renderCalls: 0, triangles: 0 });
   const [manualNotice, setManualNotice] = useState(() => controlMode === "automatic"
-    ? "La mesa lanzará todas las pelotas al mismo tiempo y accionará los flippers automáticamente."
-    : "Pulsa LANZAR TODAS o la barra espaciadora para liberar el lote completo.");
+    ? "La mesa lanzará todo el lote y anticipará la trayectoria de cada pelota antes de mover los flippers."
+    : "Pulsa LANZAR TODAS o Espacio; después usa A/D o W para accionar ambos flippers.");
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const controllerRef = useRef<PinballSceneController | null>(null);
   const finishRef = useRef(onFinish);
@@ -144,10 +144,21 @@ export function PinballGame({
         fortunaAudio.playPinballFlipper();
         syncManualFlippers();
       }
+      if (event.code === "ArrowUp" || event.code === "KeyW") {
+        event.preventDefault();
+        keyboardFlippersRef.current.left = true;
+        keyboardFlippersRef.current.right = true;
+        fortunaAudio.playPinballFlipper();
+        syncManualFlippers();
+      }
     };
     const up = (event: KeyboardEvent) => {
       if (event.code === "ArrowLeft" || event.code === "KeyA") keyboardFlippersRef.current.left = false;
       if (event.code === "ArrowRight" || event.code === "KeyD") keyboardFlippersRef.current.right = false;
+      if (event.code === "ArrowUp" || event.code === "KeyW") {
+        keyboardFlippersRef.current.left = false;
+        keyboardFlippersRef.current.right = false;
+      }
       syncManualFlippers();
     };
     const reset = () => {
@@ -191,7 +202,7 @@ export function PinballGame({
         );
       }, 1_350);
     }
-    if (controlMode === "automatic") setManualNotice("La mesa liberará el lote completo a la vez y controlará los flippers.");
+    if (controlMode === "automatic") setManualNotice("Piloto predictivo activo: analiza velocidad, caída y punto estimado de impacto.");
   };
 
   const regenerate = () => {
@@ -241,6 +252,27 @@ export function PinballGame({
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
   };
+
+  const pressBothFlippers = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    if (stats.launched < roundParticipants.length) return;
+    event.preventDefault();
+    pointerFlippersRef.current.left.add(event.pointerId);
+    pointerFlippersRef.current.right.add(event.pointerId);
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    syncManualFlippers();
+    fortunaAudio.playPinballFlipper();
+  };
+
+  const releaseBothFlippers = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    pointerFlippersRef.current.left.delete(event.pointerId);
+    pointerFlippersRef.current.right.delete(event.pointerId);
+    syncManualFlippers();
+    if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+  };
+
+  const allBallsLaunched = stats.launched >= roundParticipants.length;
 
   return (
     <div
@@ -318,7 +350,7 @@ export function PinballGame({
         {phase === "ready" && (
           <div className="pinball-ready-panel">
             <strong>{roundParticipants.length} PELOTAS PREPARADAS</strong>
-            <small>El lote saldrá unido; puedes elegir la cámara de cualquier participante.</small>
+            <small>{controlMode === "automatic" ? "El piloto anticipará cada caída y pulsará ambos flippers cuando una pelota llegue al centro." : "Lanza con Espacio; A/← controla la izquierda, D/→ la derecha y W/↑ activa ambos."} Puedes seguir cualquier pelota.</small>
           </div>
         )}
       </div>
@@ -336,7 +368,18 @@ export function PinballGame({
         ) : controlMode === "manual" && phase === "playing" ? (
           <div className="pinball-manual-controls">
             <button type="button" className="pinball-flipper pinball-flipper--left" onPointerDown={(event) => pressManualFlipper("left", event)} onPointerUp={(event) => releaseManualFlipper("left", event)} onPointerCancel={(event) => releaseManualFlipper("left", event)} onLostPointerCapture={(event) => releaseManualFlipper("left", event)}>A / ← <b>FLIPPER</b></button>
-            <button type="button" className="pinball-launch" onClick={launch}><Rocket size={18} /> LANZAR TODAS <small>ESPACIO</small></button>
+            <button
+              type="button"
+              className={`pinball-launch ${allBallsLaunched ? "is-dual-flipper" : ""}`}
+              onClick={allBallsLaunched ? undefined : launch}
+              onPointerDown={pressBothFlippers}
+              onPointerUp={releaseBothFlippers}
+              onPointerCancel={releaseBothFlippers}
+              onLostPointerCapture={releaseBothFlippers}
+              aria-label={allBallsLaunched ? "Activar ambos flippers" : "Lanzar todas las pelotas simultáneamente"}
+            >
+              {allBallsLaunched ? <Zap size={18} /> : <Rocket size={18} />} {allBallsLaunched ? "AMBOS FLIPPERS" : "LANZAR TODAS"} <small>{allBallsLaunched ? "W / ↑" : "ESPACIO"}</small>
+            </button>
             <button type="button" className="pinball-flipper pinball-flipper--right" onPointerDown={(event) => pressManualFlipper("right", event)} onPointerUp={(event) => releaseManualFlipper("right", event)} onPointerCancel={(event) => releaseManualFlipper("right", event)} onLostPointerCapture={(event) => releaseManualFlipper("right", event)}><b>FLIPPER</b> → / D</button>
           </div>
         ) : (

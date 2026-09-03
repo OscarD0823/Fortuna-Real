@@ -3,6 +3,7 @@ import {
   generateMarbleTrack,
   getMarbleMotion,
   marbleDifficultyConfig,
+  prepareMarbleRace,
   type MarblePower,
   type MarbleRacer,
   validateMarbleTrack,
@@ -51,6 +52,7 @@ const verifyMotionContracts = () => {
   let checkedSamples = 0;
   let checkedScenarios = 0;
   let recoverySamples = 0;
+  let maximumTurboInstability = 0;
 
   difficulties.forEach((difficulty) => {
     const track = generateMarbleTrack(`fortuna-motion-${difficulty}`, difficulty);
@@ -90,6 +92,9 @@ const verifyMotionContracts = () => {
           const motion = getMarbleMotion(racer, track, elapsedMs);
           checkedSamples += 1;
           if (motion.powerActive) activeSamples += 1;
+          if (power === "boost" && motion.powerActive) {
+            maximumTurboInstability = Math.max(maximumTurboInstability, Math.abs(motion.lateralImpulse));
+          }
 
           const numericValues = [
             motion.raw,
@@ -196,12 +201,16 @@ const verifyMotionContracts = () => {
   if (failures.length > 0) {
     throw new Error(`Contrato de movimiento de canicas incumplido:\n- ${failures.slice(0, 24).join("\n- ")}`);
   }
+  if (maximumTurboInstability < 1.8) {
+    throw new Error(`Turbo no produce suficiente descontrol lateral (${maximumTurboInstability}).`);
+  }
 
   return {
     scenarios: checkedScenarios,
     samples: checkedSamples,
     powers: motionPowers,
     recoverySamples,
+    maximumTurboInstability: round(maximumTurboInstability),
     maximumContinuousStep,
     finishAtDurationMs: true,
   };
@@ -215,6 +224,8 @@ const reports = difficulties.map((difficulty) => {
   const generationTimes: number[] = [];
   const signatures = new Set<string>();
   const modules = new Set<string>();
+  const eventTypes = new Set<string>();
+  const elevationPeaks: number[] = [];
   const starts = { left: 0, right: 0, top: 0, bottom: 0, invalid: 0 };
   const sampleSeeds: Array<{ seed: string; signature: string; coverage: number; bridges: number }> = [];
 
@@ -228,6 +239,7 @@ const reports = difficulties.map((difficulty) => {
     const ys = track.points.map((point) => point.y);
     const coverage = (Math.max(...xs) - Math.min(...xs)) * (Math.max(...ys) - Math.min(...ys));
     const bridges = track.sections.filter((section) => section.bridgeLift > 0).length;
+    const elevationPeak = Math.max(...track.points.map((point) => point.elevation ?? 0));
     const edge = edgeForPoint(track.points[0].x, track.points[0].y);
     starts[edge] += 1;
 
@@ -249,6 +261,9 @@ const reports = difficulties.map((difficulty) => {
       || track.obstacles.length < config.obstacleMin
       || track.obstacles.length > config.obstacleMax
       || track.powerZones.length !== config.powerZones
+      || track.events.length !== config.eventCount
+      || track.mapScale !== config.mapScale
+      || track.events.some((event) => event.startProgress >= event.endProgress || event.intensity <= 0)
       || signatures.has(track.signature)
       || allSignatures.has(track.signature)
     ) {
@@ -263,10 +278,12 @@ const reports = difficulties.map((difficulty) => {
     }
 
     track.sections.forEach((section) => modules.add(section.moduleId));
+    track.events.forEach((event) => eventTypes.add(event.type));
     signatures.add(track.signature);
     allSignatures.add(track.signature);
     coverages.push(coverage);
     bridgeCounts.push(bridges);
+    elevationPeaks.push(elevationPeak);
     pointCounts.push(track.points.length);
     if (sampleSeeds.length < 4 && index % 29 === 0) {
       sampleSeeds.push({ seed, signature: track.signature, coverage: round(coverage), bridges });
@@ -276,11 +293,19 @@ const reports = difficulties.map((difficulty) => {
   if (Object.values(starts).slice(0, 4).some((count) => count === 0)) {
     throw new Error(`La dificultad ${difficulty} no utilizó los cuatro bordes de salida.`);
   }
+  const expectedEventTypes = difficulty === "easy" ? 2 : 4;
+  if (eventTypes.size < expectedEventTypes) {
+    throw new Error(`La dificultad ${difficulty} no generó suficiente variedad de eventos (${eventTypes.size}/${expectedEventTypes}).`);
+  }
 
   return {
     difficulty,
     seeds: signatures.size,
     modulesUsed: modules.size,
+    mapScale: config.mapScale,
+    eventCount: config.eventCount,
+    eventTypes: [...eventTypes].sort(),
+    maximumElevation: round(Math.max(...elevationPeaks)),
     startEdges: starts,
     coverage: {
       minimum: round(Math.min(...coverages)),
@@ -305,12 +330,44 @@ const reports = difficulties.map((difficulty) => {
   };
 });
 
+const finishRuleParticipants = [
+  { id: "finish-a", name: "Ana", color: "#09e0df" },
+  { id: "finish-b", name: "Bruno", color: "#f6bd35" },
+  { id: "finish-c", name: "Carla", color: "#ef6b45" },
+];
+const firstRuleRace = prepareMarbleRace(finishRuleParticipants, "direct", "finish-rule-proof", "medium", new Set(), "first");
+const lastRuleRace = prepareMarbleRace(finishRuleParticipants, "direct", "finish-rule-proof", "medium", new Set(), "last");
+if (
+  firstRuleRace.selected.durationMs !== Math.min(...firstRuleRace.racers.map((racer) => racer.durationMs))
+  || lastRuleRace.selected.durationMs !== Math.max(...lastRuleRace.racers.map((racer) => racer.durationMs))
+  || firstRuleRace.selected.id === lastRuleRace.selected.id
+) {
+  throw new Error("La regla Primero/Último no selecciona los extremos reales de la carrera.");
+}
+
 const motionContracts = verifyMotionContracts();
+
+for (let index = 1; index < difficulties.length; index += 1) {
+  const previous = marbleDifficultyConfig[difficulties[index - 1]];
+  const current = marbleDifficultyConfig[difficulties[index]];
+  if (
+    current.sectionCount <= previous.sectionCount
+    || current.obstacleMin <= previous.obstacleMin
+    || current.eventCount <= previous.eventCount
+    || current.mapScale <= previous.mapScale
+    || current.maximumElevation <= previous.maximumElevation
+    || current.maximumBridgeLift <= previous.maximumBridgeLift
+    || current.durationBaseMs <= previous.durationBaseMs
+  ) {
+    throw new Error(`La dificultad ${difficulties[index]} no aumenta todas las dimensiones de la carrera.`);
+  }
+}
 
 console.log(JSON.stringify({
   totalSeeds: allSignatures.size,
   deterministicRepetitions: difficulties.length * 6,
   modularPieceKit: pieceSpecifications.map(([type, spec]) => ({ type, ...spec })),
   motionContracts,
+  finishRules: { first: firstRuleRace.selected.number, last: lastRuleRace.selected.number },
   reports,
 }, null, 2));

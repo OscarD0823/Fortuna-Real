@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from "react";
 import ReactDOM from "react-dom/client";
 import "./App.css";
-import type { MarbleDifficulty, Participant } from "./core/types";
+import type { MarbleDifficulty, MarbleFinishRule, Participant } from "./core/types";
 import { MarbleRace } from "./games/marbles/MarbleRace";
 
 const query = new URLSearchParams(window.location.search);
@@ -15,6 +15,7 @@ const initialDifficulty: MarbleDifficulty = requestedDifficulty === "easy" || re
 
 function MarblePreview() {
   const [difficulty, setDifficulty] = useState<MarbleDifficulty>(initialDifficulty);
+  const [finishRule, setFinishRule] = useState<MarbleFinishRule>("first");
   const participants = useMemo<Participant[]>(() => Array.from({ length: initialCount }, (_, index) => ({
     id: `preview-${index + 1}`,
     name: `Jugador ${index + 1}`,
@@ -27,11 +28,13 @@ function MarblePreview() {
         participants={participants}
         mode="direct"
         difficulty={difficulty}
+        finishRule={finishRule}
         disabled={false}
         previousWinnerIds={new Set()}
         initialSeed={requestedSeed}
         onCommit={() => undefined}
         onDifficultyChange={setDifficulty}
+        onFinishRuleChange={setFinishRule}
         onFinish={() => undefined}
       />
     </main>

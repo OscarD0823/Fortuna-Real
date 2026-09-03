@@ -15,6 +15,7 @@ const updaterUi = readText("src/shared/components/AppUpdater.tsx");
 const updaterWorkflow = readText("src/shared/update/updateWorkflow.ts");
 const installerCreator = readText("crear-instalador.ps1");
 const githubStarter = readText(`${repositoryRoot}/3 Ejecutar/Iniciador GitHub/instalar-desde-github.ps1`);
+const installerUpgradeLauncher = readText(`${repositoryRoot}/3 Ejecutar/INSTALAR O ACTUALIZAR.cmd`);
 const localInstallerDirectory = `${repositoryRoot}/Entrega/2 Instaladores`;
 const ttsDirectory = "src-tauri/resources/tts/vits-piper-es_AR-daniela-high";
 
@@ -163,12 +164,21 @@ for (const marker of [
   '"3 Ejecutar"',
   "ZipFile]::CreateFromDirectory",
   "Fortuna-Real-$version-Iniciador.zip",
+  "Fortuna-Real-$version-Para-Drive.zip",
+  "INSTALAR O ACTUALIZAR.cmd",
   "Fortuna-Real-Portable.exe",
   "Ejecutar Fortuna Real.cmd",
   "Instalar Fortuna Real.cmd",
   "Get-ChildItem -LiteralPath $InstallerOutput",
 ]) {
   assert.ok(installerCreator.includes(marker), `La entrega no prepara correctamente: ${marker}.`);
+}
+for (const marker of [
+  'reg query "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Fortuna Real"',
+  '"%FORTUNA_INSTALLER%" /UPDATE',
+  'start "" "%FORTUNA_INSTALLER%"',
+]) {
+  assert.ok(installerUpgradeLauncher.includes(marker), `El iniciador no aplica: ${marker}.`);
 }
 for (const marker of [
   '"OscarD0823/Fortuna-Real"',
@@ -181,6 +191,9 @@ for (const marker of [
   "ConvertFrom-Json",
   "npm.cmd ci",
   "status --porcelain",
+  "git.exe lfs install --skip-repo",
+  "git.exe -C $DestinationPath lfs pull",
+  "es_AR-daniela-high.onnx",
 ]) {
   assert.ok(githubStarter.includes(marker), `El iniciador de GitHub no aplica: ${marker}.`);
 }
