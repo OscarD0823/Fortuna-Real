@@ -14,6 +14,7 @@ const launcher = readText("iniciar-fortuna.ps1");
 const updaterUi = readText("src/shared/components/AppUpdater.tsx");
 const updaterWorkflow = readText("src/shared/update/updateWorkflow.ts");
 const installerCreator = readText("crear-instalador.ps1");
+const installerSpanish = readText("src-tauri/windows/Spanish.nsh");
 const githubStarter = readText(`${repositoryRoot}/3 Ejecutar/Iniciador GitHub/instalar-desde-github.ps1`);
 const installerUpgradeLauncher = readText(`${repositoryRoot}/3 Ejecutar/INSTALAR O ACTUALIZAR.cmd`);
 const localInstallerDirectory = `${repositoryRoot}/Entrega/2 Instaladores`;
@@ -39,7 +40,19 @@ assert.equal(tauriConfig.bundle?.createUpdaterArtifacts, true);
 assert.deepEqual(tauriConfig.bundle?.windows?.webviewInstallMode, { type: "offlineInstaller", silent: true }, "Otro PC debe poder instalar WebView2 sin descargarlo.");
 assert.equal(tauriConfig.bundle?.windows?.nsis?.installMode, "currentUser", "El programa debe instalarse para el usuario sin requerir herramientas de desarrollo.");
 assert.equal(tauriConfig.bundle?.windows?.nsis?.installerHooks, "windows/installer-hooks.nsh", "El instalador debe crear el acceso exterior del escritorio.");
+assert.equal(
+  tauriConfig.bundle?.windows?.nsis?.customLanguageFiles?.Spanish,
+  "windows/Spanish.nsh",
+  "El instalador debe explicar claramente la actualización en español.",
+);
 assert.ok(readText("src-tauri/windows/installer-hooks.nsh").includes("CreateOrUpdateDesktopShortcut"));
+for (const label of [
+  "Actualizar directamente y conservar mis datos (recomendado)",
+  "Desinstalar la versión anterior e instalar la nueva",
+  "Eliminar también participantes, historial, premios y configuración",
+]) {
+  assert.ok(installerSpanish.includes(label), `Falta una decisión clara del instalador: ${label}.`);
+}
 assert.equal(tauriConfig.build?.frontendDist, "../dist", "El instalador debe incluir el frontend compilado.");
 assert.ok(tauriConfig.bundle?.resources?.includes("resources/tts/"), "El instalador debe incluir la voz neuronal offline.");
 assert.ok(cargoToml.includes('sherpa-onnx = { version = "=1.13.7"'), "El backend debe integrar sherpa-onnx de forma nativa y reproducible.");

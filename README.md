@@ -90,6 +90,19 @@ clave pública incorporada en la aplicación, además de comprobar `latest.json`
 La firma del actualizador no es un certificado Authenticode: Windows puede mostrar
 un aviso de editor desconocido. El instructivo se copia junto al instalador.
 
+Cuando el instalador detecta una versión anterior muestra dos decisiones explícitas:
+
+- `Actualizar directamente y conservar mis datos (recomendado)` reemplaza los
+  archivos del programa en la misma ubicación y mantiene participantes, historial,
+  premios y configuración.
+- `Desinstalar la versión anterior e instalar la nueva` retira primero los archivos
+  de la aplicación. El desinstalador pregunta por separado si también se quieren
+  eliminar los datos personales; esa casilla queda sin marcar de forma predeterminada.
+
+Si se vuelve a abrir exactamente la misma versión, la primera alternativa cambia a
+`Actualizar o reparar esta instalación`; en ese caso no existe una versión superior
+que instalar.
+
 Para que las instalaciones existentes detecten una actualización hay que aumentar
 la versión en los archivos del proyecto y ejecutar `npm run publicar-actualizacion`.
 Un commit común de GitHub no reemplaza una instalación: la actualización aparece

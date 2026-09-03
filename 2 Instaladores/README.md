@@ -9,6 +9,11 @@ Opción recomendada para Windows 10/11 x64:
 2. Haz doble clic y sigue el asistente.
 3. Abre Fortuna Real desde el escritorio o el menú Inicio.
 
+Si ya existe una versión anterior, el asistente permite elegir entre actualizarla
+conservando los datos —la opción recomendada— o desinstalar sus archivos antes de
+instalar la nueva. Si se ejecuta otra vez la misma versión, ofrece repararla o
+desinstalarla.
+
 El ZIP con el instalador es una alternativa si el navegador bloquea la descarga
 directa. Los archivos `.sig` y `latest.json` pertenecen al sistema de
 actualizaciones; no deben editarse.
