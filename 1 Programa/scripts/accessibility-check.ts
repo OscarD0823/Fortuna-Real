@@ -35,13 +35,16 @@ if (remainingColors.length > 0) {
   throw new Error(`Persisten colores secundarios de bajo contraste: ${remainingColors.join(", ")}`);
 }
 
-const expectedInstruction = "Selecciona Ruleta, Cartas, Pinball 3D, Canicas 3D o Patos 3D.";
+const expectedInstruction = "Selecciona Ruleta, Cartas, Canicas 3D o Patos 3D.";
 if (!instructions.includes(expectedInstruction)) {
   throw new Error(`Las instrucciones deben contener exactamente: ${expectedInstruction}`);
 }
 
-for (const betaLabel of ["BETA · mesa física", "BETA · 3D procedural", "BETA · supervivencia"]) {
+for (const betaLabel of ["BETA · 3D procedural", "BETA · supervivencia"]) {
   if (!setup.includes(betaLabel)) throw new Error(`Falta identificar como beta: ${betaLabel}`);
+}
+if (!/<button[^>]*\sdisabled\s[^>]*>[\s\S]*?<span>Pinball 3D<\/span>/u.test(setup) || !setup.includes("No disponible · en mejora")) {
+  throw new Error("Pinball debe aparecer desactivado y explicar que está en mejora.");
 }
 for (const cameraLabel of ["PERSECUCIÓN", "A BORDO", "LATERAL", "AÉREA"]) {
   if (!marbleRace.includes(cameraLabel)) throw new Error(`Falta el modo de cámara de Canicas: ${cameraLabel}`);
@@ -74,9 +77,7 @@ if (!pinballGame.includes("Seguir la pelota anterior") || !pinballGame.includes(
   throw new Error("Pinball debe permitir recorrer las cámaras sin abrir el selector.");
 }
 if (
-  !pinballGame.includes('event.code === "ArrowUp"')
-  || !pinballGame.includes('event.code === "KeyW"')
-  || !pinballGame.includes("AMBOS FLIPPERS")
+  !pinballGame.includes("AMBOS FLIPPERS")
   || !pinballScene.includes("followBeacon")
   || !pinballScene.includes("flipperAssist")
   || !pinballEngine.includes("getPinballAutomaticFlipperThreat")
@@ -110,7 +111,7 @@ for (const modalSource of [guidedTour, demoModal]) {
     throw new Error("Cada guía debe permitir salir con Escape y retener correctamente el foco.");
   }
 }
-if (!app.includes("Tutorial del inicio") || !app.includes("Guía paso a paso")) {
+if (!app.includes("Ayuda del inicio") || !app.includes("Guía paso a paso")) {
   throw new Error("La ayuda debe permanecer visible tanto en el inicio como dentro de los juegos.");
 }
 
@@ -118,7 +119,8 @@ console.log(JSON.stringify({
   minimumTextSizePx: 12,
   lowContrastTokensRemoved: inaccessibleColors,
   fiveGamesDocumented: true,
-  betaGamesIdentified: ["pinball", "marbles", "ducks"],
+  betaGamesIdentified: ["marbles", "ducks"],
+  pinballDisabled: true,
   marbleCameraModes: 4,
   pinballCameraModes: 2,
   automaticMarbleCameraDirector: true,

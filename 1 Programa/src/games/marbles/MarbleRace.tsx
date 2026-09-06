@@ -1037,7 +1037,7 @@ export function MarbleRace({
       frameCount += 1;
       paint(elapsed, "racing");
 
-      if (now - lastUiUpdate >= uiUpdateInterval) {
+      if (now - lastUiUpdate >= uiUpdateInterval || elapsed >= finishAt + cameraIntroMs) {
         const orderedRacers = race.racers
           .map((racer) => {
             const state = getMarbleProgress(racer, Math.max(0, elapsed - cameraIntroMs), race.track);

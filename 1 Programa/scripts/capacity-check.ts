@@ -255,9 +255,8 @@ for (let count = 2; count <= 200; count += 1) {
       || track.points.length <= track.sections.length * 4
       || coverage < 0.18
       || elevationPeak < (marbleDifficulty === "easy" ? 0.2 : marbleDifficulty === "medium" ? 0.45 : 0.72)
-      || ![track.points[0].x, track.points[0].y].some((coordinate) =>
-        Math.abs(coordinate - 0.065) < 0.00001 || Math.abs(coordinate - 0.935) < 0.00001,
-      )
+      || (track.points[0].elevation ?? 0) < expected.maximumElevation
+      || track.points[track.points.length - 1].elevation !== 0
       || track.sections.some((section) =>
         !section.moduleId
         || section.speedMultiplier <= 0

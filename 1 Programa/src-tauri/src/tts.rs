@@ -56,32 +56,35 @@ struct TtsJob {
 
 pub struct TtsState {
     sender: SyncSender<TtsJob>,
-    model_available: bool,
+    model_directory: PathBuf,
     loaded: Arc<AtomicBool>,
 }
 
 impl TtsState {
     pub fn new(model_directory: PathBuf) -> Self {
-        let model_available = validate_model_directory(&model_directory).is_ok();
         let loaded = Arc::new(AtomicBool::new(false));
         let worker_loaded = Arc::clone(&loaded);
+        let worker_directory = model_directory.clone();
         let (sender, receiver) = mpsc::sync_channel(MAX_QUEUE_DEPTH);
 
         thread::Builder::new()
             .name("fortuna-tts".into())
-            .spawn(move || worker_loop(receiver, model_directory, worker_loaded))
+            .spawn(move || worker_loop(receiver, worker_directory, worker_loaded))
             .expect("no se pudo iniciar el trabajador de voz local");
 
         Self {
             sender,
-            model_available,
+            model_directory,
             loaded,
         }
     }
 }
 
 fn worker_loop(receiver: Receiver<TtsJob>, model_directory: PathBuf, loaded: Arc<AtomicBool>) {
-    let mut engine: Option<OfflineTts> = None;
+    // Precarga silenciosa fuera del hilo gráfico. Si falla, una solicitud
+    // posterior vuelve a intentar cargar los recursos, sin cambiar de voz.
+    let mut engine = create_engine(&model_directory).ok();
+    loaded.store(engine.is_some(), Ordering::Release);
 
     while let Ok(job) = receiver.recv() {
         let result = (|| {
@@ -105,13 +108,32 @@ fn validate_model_directory(model_directory: &Path) -> Result<(), String> {
     let required_paths = [
         model_directory.join(MODEL_FILE),
         model_directory.join(TOKENS_FILE),
-        model_directory.join(ESPEAK_DIRECTORY),
+        model_directory.join(ESPEAK_DIRECTORY).join("phontab"),
+        model_directory.join(ESPEAK_DIRECTORY).join("phonindex"),
+        model_directory.join(ESPEAK_DIRECTORY).join("phondata"),
+        model_directory.join(ESPEAK_DIRECTORY).join("es_dict"),
+        model_directory.join(ESPEAK_DIRECTORY).join("lang/roa/es"),
     ];
 
-    if required_paths.iter().all(|path| path.exists()) {
+    if required_paths.iter().all(|path| path.is_file())
+        && std::fs::metadata(model_directory.join(MODEL_FILE))
+            .is_ok_and(|metadata| metadata.len() > 100_000_000)
+    {
         Ok(())
     } else {
-        Err("Los recursos de la voz neuronal no están completos.".into())
+        Err("Los recursos de Daniela High están incompletos. Reinstala o actualiza el programa; en la edición portátil conserva la carpeta resources junto al ejecutable.".into())
+    }
+}
+
+fn native_model_path(path: &Path) -> String {
+    // Tauri resuelve Resource usando rutas canónicas de Windows (\\?\).
+    // sherpa/eSpeak agrega "/phontab" y usa stdio: esa combinación no admite
+    // el prefijo extendido. No volver a canonicalizar después de retirarlo.
+    let path = path.to_string_lossy();
+    if let Some(unc) = path.strip_prefix(r"\\?\UNC\") {
+        format!(r"\\{unc}")
+    } else {
+        path.strip_prefix(r"\\?\").unwrap_or(&path).to_owned()
     }
 }
 
@@ -121,24 +143,9 @@ fn create_engine(model_directory: &Path) -> Result<OfflineTts, String> {
     let config = OfflineTtsConfig {
         model: sherpa_onnx::OfflineTtsModelConfig {
             vits: OfflineTtsVitsModelConfig {
-                model: Some(
-                    model_directory
-                        .join(MODEL_FILE)
-                        .to_string_lossy()
-                        .into_owned(),
-                ),
-                tokens: Some(
-                    model_directory
-                        .join(TOKENS_FILE)
-                        .to_string_lossy()
-                        .into_owned(),
-                ),
-                data_dir: Some(
-                    model_directory
-                        .join(ESPEAK_DIRECTORY)
-                        .to_string_lossy()
-                        .into_owned(),
-                ),
+                model: Some(native_model_path(&model_directory.join(MODEL_FILE))),
+                tokens: Some(native_model_path(&model_directory.join(TOKENS_FILE))),
+                data_dir: Some(native_model_path(&model_directory.join(ESPEAK_DIRECTORY))),
                 noise_scale: 0.58,
                 noise_scale_w: 0.68,
                 length_scale: 1.0,
@@ -280,7 +287,7 @@ fn normalize_request(request: NarrationRequest) -> Result<(String, f32), String>
 #[tauri::command]
 pub fn offline_tts_status(state: State<'_, TtsState>) -> TtsStatus {
     TtsStatus {
-        available: state.model_available,
+        available: validate_model_directory(&state.model_directory).is_ok(),
         loaded: state.loaded.load(Ordering::Acquire),
         engine: "sherpa-onnx",
         voice: "Daniela High · Anunciadora Fortuna",
@@ -293,9 +300,7 @@ pub async fn synthesize_offline_speech(
     request: NarrationRequest,
     state: State<'_, TtsState>,
 ) -> Result<NarrationResponse, String> {
-    if !state.model_available {
-        return Err("La voz neuronal local no está instalada.".into());
-    }
+    validate_model_directory(&state.model_directory)?;
 
     let (text, speed) = normalize_request(request)?;
     let sender = state.sender.clone();
@@ -325,6 +330,22 @@ pub async fn synthesize_offline_speech(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn native_paths_accept_tauri_windows_resources_and_unc() {
+        assert_eq!(
+            native_model_path(Path::new(r"\\?\E:\Fortuna Real\resources")),
+            r"E:\Fortuna Real\resources"
+        );
+        assert_eq!(
+            native_model_path(Path::new(r"\\?\UNC\server\Fortuna Real\resources")),
+            r"\\server\Fortuna Real\resources"
+        );
+        assert_eq!(
+            native_model_path(Path::new("/opt/fortuna/resources")),
+            "/opt/fortuna/resources"
+        );
+    }
 
     #[test]
     fn normalizes_and_limits_requests() {
@@ -365,7 +386,9 @@ mod tests {
         let model_directory = manifest
             .join("resources")
             .join("tts")
-            .join("vits-piper-es_AR-daniela-high");
+            .join("vits-piper-es_AR-daniela-high")
+            .canonicalize()
+            .expect("la misma ruta canónica que resuelve Tauri");
         let engine = create_engine(&model_directory).expect("modelo local cargado");
         let result = synthesize(
             &engine,

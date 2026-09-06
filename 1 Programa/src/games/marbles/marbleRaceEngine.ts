@@ -213,12 +213,12 @@ export const marbleDifficultyConfig: Record<MarbleDifficulty, DifficultyConfig> 
     obstacleMax: 3,
     powerZones: 1,
     powerChance: 0.2,
-    durationBaseMs: 10500,
+    durationBaseMs: 16000,
     risk: 1,
     trackWidth: 68,
     featureScale: 0.82,
-    mapScale: 1.18,
-    maximumElevation: 1.35,
+    mapScale: 1.55,
+    maximumElevation: 4.2,
     maximumBridgeLift: 1.6,
     eventCount: 2,
     lengthRating: "Corta",
@@ -231,12 +231,12 @@ export const marbleDifficultyConfig: Record<MarbleDifficulty, DifficultyConfig> 
     obstacleMax: 10,
     powerZones: 5,
     powerChance: 0.58,
-    durationBaseMs: 15500,
+    durationBaseMs: 29000,
     risk: 3,
     trackWidth: 76,
     featureScale: 1,
-    mapScale: 1.48,
-    maximumElevation: 3.2,
+    mapScale: 2.1,
+    maximumElevation: 8.4,
     maximumBridgeLift: 3.1,
     eventCount: 4,
     lengthRating: "Larga",
@@ -249,12 +249,12 @@ export const marbleDifficultyConfig: Record<MarbleDifficulty, DifficultyConfig> 
     obstacleMax: 22,
     powerZones: 9,
     powerChance: 0.9,
-    durationBaseMs: 22000,
+    durationBaseMs: 46000,
     risk: 5,
     trackWidth: 84,
     featureScale: 1.2,
-    mapScale: 1.82,
-    maximumElevation: 5.3,
+    mapScale: 2.75,
+    maximumElevation: 14.4,
     maximumBridgeLift: 5.3,
     eventCount: 6,
     lengthRating: "Extrema",
@@ -501,213 +501,58 @@ interface ModuleRange {
   clearance: number;
 }
 
-interface ModuleCandidate {
-  points: TrackPoint[];
-  exitHeading: number;
-  score: number;
-  clearance: number;
-}
-
-const createStartConnector = (random: () => number) => {
-  const edge = Math.floor(random() * 4);
-  const offset = 0.16 + random() * 0.68;
-  if (edge === 0) return { point: { x: 0.065, y: offset }, heading: 0 };
-  if (edge === 1) return { point: { x: offset, y: 0.065 }, heading: Math.PI / 2 };
-  if (edge === 2) return { point: { x: 0.935, y: offset }, heading: Math.PI };
-  return { point: { x: offset, y: 0.935 }, heading: -Math.PI / 2 };
-};
-
-const createProceduralGoals = (
-  random: () => number,
-  count: number,
-  start: TrackPoint,
-) => {
-  const columns = 4;
-  const rows = 3;
-  const candidates = Array.from({ length: columns * rows }, (_, index) => {
-    const column = index % columns;
-    const row = Math.floor(index / columns);
-    return {
-      x: 0.12 + (column / (columns - 1)) * 0.76 + (random() - 0.5) * 0.07,
-      y: 0.13 + (row / (rows - 1)) * 0.74 + (random() - 0.5) * 0.07,
-    };
-  });
-  const goals: TrackPoint[] = [];
-  let cursor = start;
-  while (goals.length < count && candidates.length > 0) {
-    let selectedIndex = 0;
-    let selectedScore = Number.NEGATIVE_INFINITY;
-    candidates.forEach((candidate, index) => {
-      const distance = Math.hypot(candidate.x - cursor.x, candidate.y - cursor.y);
-      const separation = goals.length === 0
-        ? distance
-        : Math.min(...goals.map((goal) => Math.hypot(candidate.x - goal.x, candidate.y - goal.y)));
-      const score = distance * 1.35 + separation * 0.65 + random() * 0.22;
-      if (score > selectedScore) {
-        selectedScore = score;
-        selectedIndex = index;
-      }
-    });
-    cursor = candidates.splice(selectedIndex, 1)[0];
-    goals.push(cursor);
-  }
-  return goals;
-};
-
-const traceModule = (
-  start: TrackPoint,
-  entryHeading: number,
-  geometry: ModuleGeometryDefinition,
-  length: number,
-  totalTurn: number,
-  waveDirection: number,
-) => {
-  const points: TrackPoint[] = [];
-  let x = start.x;
-  let y = start.y;
-  const stepLength = length / geometry.sampleCount;
-  for (let sample = 1; sample <= geometry.sampleCount; sample += 1) {
-    const local = (sample - 0.5) / geometry.sampleCount;
-    const wave = geometry.wave === 0
-      ? 0
-      : Math.sin(local * Math.PI * 2) * geometry.turnAmplitude * geometry.wave * waveDirection;
-    const heading = entryHeading + totalTurn * local + wave;
-    x += Math.cos(heading) * stepLength;
-    y += Math.sin(heading) * stepLength;
-    points.push({ x: roundPoint(x), y: roundPoint(y) });
-  }
-  return { points, exitHeading: normalizeAngle(entryHeading + totalTurn) };
-};
-
-const minimumRouteDistance = (
-  candidatePoints: readonly TrackPoint[],
-  routePoints: readonly TrackPoint[],
-) => {
-  const comparisonEnd = Math.max(0, routePoints.length - 10);
-  if (comparisonEnd <= 0) return 0.2;
-  let minimum = 0.2;
-  candidatePoints.forEach((candidate) => {
-    for (let index = 0; index < comparisonEnd; index += 3) {
-      const point = routePoints[index];
-      minimum = Math.min(minimum, Math.hypot(candidate.x - point.x, candidate.y - point.y));
-    }
-  });
-  return minimum;
-};
-
-const candidateWithinBoard = (candidate: readonly TrackPoint[]) => candidate.every((point) =>
-  point.x >= 0.055 && point.x <= 0.945 && point.y >= 0.055 && point.y <= 0.945,
-);
-
-const routeCoverage = (points: readonly TrackPoint[]) => {
-  const xs = points.map((point) => point.x);
-  const ys = points.map((point) => point.y);
-  return (Math.max(...xs) - Math.min(...xs)) * (Math.max(...ys) - Math.min(...ys));
-};
-
+/** Terraced switchbacks keep separate lanes apart instead of forcing random crossings. */
 const assembleModuleRoute = (
-  plans: readonly SectionPlan[],
-  random: () => number,
-  goalCount: number,
+  plans: readonly SectionPlan[], random: () => number, rows: number,
 ) => {
-  const startConnector = createStartConnector(random);
-  const goals = createProceduralGoals(random, goalCount, startConnector.point);
-  const points: TrackPoint[] = [{ x: roundPoint(startConnector.point.x), y: roundPoint(startConnector.point.y) }];
+  const guide: TrackPoint[] = [];
+  const left = 0.17 + random() * 0.015;
+  const right = 0.82 - random() * 0.015;
+  const gap = 0.72 / (rows - 1);
+  const radiusX = Math.min(0.1, gap * 0.6);
+  const phase = random() * Math.PI * 2;
+  const mirror = random() > 0.5;
+  const add = (x: number, y: number) => guide.push({ x: mirror ? 1 - x : x, y });
+  for (let row = 0; row < rows; row += 1) {
+    const y = 0.14 + row * gap;
+    const east = row % 2 === 0;
+    for (let index = row === 0 ? 0 : 1; index <= 40; index += 1) {
+      const t = index / 40;
+      const x = east ? left + (right - left) * t : right - (right - left) * t;
+      const bend = Math.sin(t * Math.PI) ** 2 * Math.sin(t * Math.PI * 4 + phase + row) * 0.009;
+      add(x, y + bend);
+    }
+    if (row < rows - 1) for (let index = 1; index <= 28; index += 1) {
+      const angle = -Math.PI / 2 + (index / 28) * Math.PI;
+      add((east ? right : left) + (east ? 1 : -1) * radiusX * Math.cos(angle), y + gap / 2 + gap / 2 * Math.sin(angle));
+    }
+  }
+  const weights = plans.map(() => 0.86 + random() * 0.28);
+  const totalWeight = weights.reduce((a, b) => a + b, 0);
+  const points: TrackPoint[] = [];
   const ranges: ModuleRange[] = [];
-  const baseLength = clamp(0.158 - plans.length * 0.0019, 0.068, 0.12);
-  let heading = startConnector.heading;
-
-  plans.forEach((plan, sectionIndex) => {
-    const geometry = moduleGeometryLibrary[plan.type];
-    const start = points[points.length - 1];
-    const goalIndex = Math.min(goals.length - 1, Math.floor((sectionIndex / Math.max(1, plans.length - 1)) * goals.length));
-    const goal = goals[Math.max(0, goalIndex)] ?? { x: 0.5, y: 0.5 };
-    const targetHeading = Math.atan2(goal.y - start.y, goal.x - start.x);
-    const targetTurn = normalizeAngle(targetHeading - heading);
-    const routeXs = points.map((point) => point.x);
-    const routeYs = points.map((point) => point.y);
-    const routeMinX = Math.min(...routeXs);
-    const routeMaxX = Math.max(...routeXs);
-    const routeMinY = Math.min(...routeYs);
-    const routeMaxY = Math.max(...routeYs);
-    let best: ModuleCandidate | null = null;
-
-    for (let attempt = 0; attempt < 12; attempt += 1) {
-      const preferredSign = targetTurn === 0 ? (random() > 0.5 ? 1 : -1) : Math.sign(targetTurn);
-      const sign = attempt % 4 === 3 ? -preferredSign : preferredSign;
-      const curved = plan.type === "curve" || plan.type === "funnel";
-      const gentle = plan.type === "straight" || plan.type === "speed-zone" || plan.type === "start" || plan.type === "finish";
-      const turnMagnitude = curved
-        ? geometry.turnAmplitude * (0.58 + random() * 0.38)
-        : gentle
-          ? Math.min(geometry.turnAmplitude, Math.abs(targetTurn))
-          : clamp(Math.abs(targetTurn) * 0.55 + random() * geometry.turnAmplitude * 0.35, 0.06, geometry.turnAmplitude * 0.72);
-      const totalTurn = clamp(
-        (curved ? sign * turnMagnitude : Math.sign(targetTurn || sign) * turnMagnitude) + (random() - 0.5) * 0.055,
-        -geometry.turnAmplitude,
-        geometry.turnAmplitude,
-      );
-      const length = baseLength * geometry.lengthScale * (0.84 + random() * 0.24);
-      const traced = traceModule(start, heading, geometry, length, totalTurn, attempt % 2 === 0 ? 1 : -1);
-      if (!candidateWithinBoard(traced.points)) continue;
-      const endpoint = traced.points[traced.points.length - 1];
-      const clearance = minimumRouteDistance(traced.points, points);
-      if (clearance < 0.034) continue;
-      const margin = Math.min(endpoint.x - 0.055, 0.945 - endpoint.x, endpoint.y - 0.055, 0.945 - endpoint.y);
-      const goalDistance = Math.hypot(endpoint.x - goal.x, endpoint.y - goal.y);
-      const alignment = Math.abs(normalizeAngle(traced.exitHeading - targetHeading));
-      const coverageWidth = Math.max(routeMaxX, endpoint.x) - Math.min(routeMinX, endpoint.x);
-      const coverageHeight = Math.max(routeMaxY, endpoint.y) - Math.min(routeMinY, endpoint.y);
-      const coverageScore = coverageWidth * coverageHeight * 1.8 + Math.min(coverageWidth, coverageHeight) * 1.1;
-      const score = Math.min(0.2, clearance) * 8.5
-        + Math.min(0.18, margin) * 2.8
-        + coverageScore
-        - goalDistance * 3.7
-        - alignment * 0.58
-        + random() * 0.08;
-      if (!best || score > best.score) best = { ...traced, score, clearance };
+  let cursor = 0;
+  plans.forEach((plan, index) => {
+    const startProgress = cursor / totalWeight;
+    cursor += weights[index];
+    const endProgress = cursor / totalWeight;
+    const start = getTrackPosition(guide, startProgress);
+    const end = getTrackPosition(guide, endProgress);
+    const startPointIndex = Math.max(0, points.length - 1);
+    if (index === 0) points.push({ x: roundPoint(start.x), y: roundPoint(start.y) });
+    const samples = Math.max(8, moduleGeometryLibrary[plan.type].sampleCount);
+    for (let sample = 1; sample <= samples; sample += 1) {
+      const p = getTrackPosition(guide, startProgress + (endProgress - startProgress) * sample / samples);
+      points.push({ x: roundPoint(p.x), y: roundPoint(p.y) });
     }
-
-    if (!best) {
-      const centerHeading = Math.atan2(0.5 - start.y, 0.5 - start.x);
-      const safeTurn = clamp(normalizeAngle(centerHeading - heading), -geometry.turnAmplitude, geometry.turnAmplitude);
-      for (let shrink = 0; shrink < 5 && !best; shrink += 1) {
-        const traced = traceModule(
-          start,
-          heading,
-          geometry,
-          baseLength * geometry.lengthScale * (0.72 - shrink * 0.1),
-          safeTurn,
-          shrink % 2 === 0 ? 1 : -1,
-        );
-        if (candidateWithinBoard(traced.points)) {
-          best = { ...traced, score: -100, clearance: minimumRouteDistance(traced.points, points) };
-        }
-      }
-    }
-
-    if (!best) {
-      // Último recurso determinista: un conector corto hacia el centro. Nunca deja
-      // una pieza abierta, incluso si el caminante procedural se encierra.
-      const safeHeading = Math.atan2(0.5 - start.y, 0.5 - start.x);
-      const traced = traceModule(start, safeHeading, moduleGeometryLibrary.straight, 0.028, 0, 1);
-      best = { ...traced, score: -200, clearance: minimumRouteDistance(traced.points, points) };
-    }
-
-    const startPointIndex = points.length - 1;
-    points.push(...best.points);
-    const endPointIndex = points.length - 1;
     ranges.push({
-      startPointIndex,
-      endPointIndex,
-      entryHeading: heading,
-      exitHeading: best.exitHeading,
+      startPointIndex, endPointIndex: points.length - 1,
+      entryHeading: Math.atan2(start.tangentY, start.tangentX),
+      exitHeading: Math.atan2(end.tangentY, end.tangentX),
       connectorGap: 0,
-      clearance: best.clearance,
+      clearance: gap,
     });
-    heading = best.exitHeading;
   });
-
   return { points, ranges };
 };
 
@@ -729,45 +574,17 @@ interface SectionDraft {
   clearance: number;
 }
 
+export const MARBLE_MIN_LEVEL_CLEARANCE_M = 0.3;
+export const MARBLE_DECK_THICKNESS_M = 0.64;
+
 const buildVerticalProfile = (
-  drafts: readonly SectionDraft[],
-  random: () => number,
-  difficulty: MarbleDifficulty,
+  drafts: readonly SectionDraft[], difficulty: MarbleDifficulty,
 ) => {
   const config = marbleDifficultyConfig[difficulty];
-  const variation = difficulty === "easy" ? 0.065 : difficulty === "medium" ? 0.13 : 0.21;
-  const maximumElevation = config.maximumElevation;
-  const rawElevations = [0];
-  let elevation = 0;
-  drafts.forEach((draft, index) => {
-    const remaining = Math.max(1, drafts.length - index);
-    const returnBias = -elevation / remaining;
-    const curveLift = Math.abs(draft.turn) * (difficulty === "hard" ? 0.035 : 0.02);
-    const change = draft.definition.elevationBias
-      + curveLift
-      + (random() - 0.5) * variation
-      + returnBias * 0.34;
-    elevation += clamp(change, -0.18, 0.2);
-    rawElevations.push(elevation);
-  });
-
-  // Los conectores inicial y final quedan a la misma altura, de modo que cualquier
-  // conjunto de piezas se pueda sustituir por otro sin abrir una grieta en la pista.
-  const drift = rawElevations[rawElevations.length - 1];
-  const leveled = rawElevations.map((value, index) => {
-    const progress = index / drafts.length;
-    const returnToDeck = value - drift * progress;
-    const mountainEnvelope = Math.sin(progress * Math.PI);
-    const elevatedBackbone = mountainEnvelope * maximumElevation * (difficulty === "easy" ? 0.52 : difficulty === "medium" ? 0.66 : 0.76);
-    const rollingHills = Math.sin(progress * Math.PI * (difficulty === "hard" ? 5 : 3))
-      * mountainEnvelope
-      * maximumElevation
-      * (difficulty === "hard" ? 0.22 : 0.18);
-    return returnToDeck + elevatedBackbone + rollingHills;
-  });
-  const range = Math.max(...leveled.map((value) => Math.abs(value)), 0.001);
-  const scale = range > maximumElevation ? maximumElevation / range : 1;
-  return leveled.map((value) => roundPoint(value * scale));
+  // Every terrace has substantially more room than the required 30 cm.
+  // Connections descend continuously; no randomly raised piece crosses another lane.
+  const height = Math.max(config.maximumElevation, config.rows * (MARBLE_DECK_THICKNESS_M + MARBLE_MIN_LEVEL_CLEARANCE_M));
+  return [...drafts.map((draft) => roundPoint(height * (1 - draft.startProgress))), 0];
 };
 
 export const generateMarbleTrack = (
@@ -788,12 +605,7 @@ export const generateMarbleTrack = (
         : sectionTypeForZone(config.zoneTypes[zoneIndex], index, random);
     return { type, zoneIndex, definition: pickSectionModule(type, index, random) };
   });
-  let assembly = assembleModuleRoute(plans, random, config.rows + 2);
-  const targetCoverage = difficulty === "easy" ? 0.3 : difficulty === "medium" ? 0.42 : 0.46;
-  for (let attempt = 1; attempt < 8 && routeCoverage(assembly.points) < targetCoverage; attempt += 1) {
-    const candidate = assembleModuleRoute(plans, random, config.rows + 2);
-    if (routeCoverage(candidate.points) > routeCoverage(assembly.points)) assembly = candidate;
-  }
+  const assembly = assembleModuleRoute(plans, random, config.rows);
   const flatPoints = assembly.points;
   const distances = pointDistances(flatPoints);
   const totalDistance = distances[distances.length - 1] || 1;
@@ -840,7 +652,7 @@ export const generateMarbleTrack = (
       clearance: range.clearance,
     };
   });
-  const elevations = buildVerticalProfile(sectionDrafts, random, difficulty);
+  const elevations = buildVerticalProfile(sectionDrafts, difficulty);
   const maximumBank = difficulty === "easy" ? 0.16 : difficulty === "medium" ? 0.24 : 0.31;
   const maximumBridgeLift = config.maximumBridgeLift;
   const bridgeLifts = sectionDrafts.map((draft) => draft.clearance < 0.07
@@ -874,7 +686,12 @@ export const generateMarbleTrack = (
   });
   const sections: TrackSection[] = sectionDrafts.map((draft, index) => {
     const elevationDelta = elevations[index + 1] - elevations[index];
-    const worldLength = Math.max(0.01, draft.length * 22);
+    let worldLength = 0;
+    for (let pointIndex = draft.startPointIndex + 1; pointIndex <= draft.endPointIndex; pointIndex += 1) {
+      const a = flatPoints[pointIndex - 1];
+      const b = flatPoints[pointIndex];
+      worldLength += Math.hypot((b.x - a.x) * 28 * config.mapScale, (b.y - a.y) * 21 * config.mapScale);
+    }
     return {
       id: draft.id,
       type: draft.type,
@@ -894,7 +711,7 @@ export const generateMarbleTrack = (
       clearance: roundPoint(draft.clearance),
       bridgeLift: bridgeLifts[index],
       bank: sectionBanks[index],
-      grade: roundPoint(elevationDelta / worldLength),
+      grade: roundPoint(elevationDelta / Math.max(0.01, worldLength)),
       elevationDelta: roundPoint(elevationDelta),
       speedMultiplier: draft.definition.speedMultiplier,
       surfaceGrip: draft.definition.surfaceGrip,
@@ -1155,7 +972,11 @@ const createTrackMotionProfile = (track: MarbleTrack): TrackMotionProfile => {
     const obstacleDrag = track.obstacles.some((obstacle) => Math.abs(obstacle.progress - currentProgress) < 0.012)
       ? 0.78
       : 1;
-    const localSpeed = Math.max(0.38, section.speedMultiplier * uphillDrag * curveDrag * bridgeFlow * obstacleDrag);
+    const event = track.events.find((item) => currentProgress >= item.startProgress && currentProgress <= item.endProgress);
+    const eventEnvelope = event ? Math.sin(Math.PI * (currentProgress - event.startProgress) / Math.max(0.0001, event.endProgress - event.startProgress)) * event.intensity : 0;
+    const eventDrag = event?.type === "freeze" ? 0.62 : event?.type === "river" ? 0.5 : event?.type === "tornado" ? 0.38 : 0.25;
+    const eventSpeed = Math.max(0.28, 1 - eventEnvelope * eventDrag);
+    const localSpeed = Math.max(0.2, section.speedMultiplier * uphillDrag * curveDrag * bridgeFlow * obstacleDrag * eventSpeed);
     accumulatedTime += (progress[index] - progress[index - 1]) / localSpeed;
     normalizedTime.push(accumulatedTime);
   }

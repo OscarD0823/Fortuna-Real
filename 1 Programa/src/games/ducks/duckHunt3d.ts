@@ -1,13 +1,16 @@
 import * as THREE from "three";
+import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import {
   duckSabotageDefinitions,
-  getDuckCoverAmount,
+  getDuckWaveCoverAmount,
+  getDuckVisibleTargetCount,
   getDuckCoverKind,
   getDuckHitRadius,
   getDuckResetDuration,
   getDuckVisualScale,
 } from "./duckHuntEngine";
 import type { DuckContestant, DuckForestEventType } from "./duckHuntEngine";
+import { pickVisibleDuckInstance } from "./duckShotCollision";
 
 export interface DuckHuntStats {
   fps: number;
@@ -58,6 +61,24 @@ const hiddenScale = new THREE.Vector3(0.001, 0.001, 0.001);
 const smoothstep = (value: number) => {
   const clamped = Math.max(0, Math.min(1, value));
   return clamped * clamped * (3 - 2 * clamped);
+};
+
+const createGrassTuft = () => {
+  const blades: THREE.BufferGeometry[] = [];
+  for (let index = 0; index < 4; index += 1) {
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute("position", new THREE.Float32BufferAttribute([
+      -0.06, 0, 0, 0.06, 0, 0, 0.08, 0.55, 0.09,
+      -0.06, 0, 0, 0.08, 0.55, 0.09, -0.02, 0.52, 0.09,
+      -0.02, 0.52, 0.09, 0.08, 0.55, 0.09, 0.17, 0.92, 0.26,
+    ], 3));
+    geometry.computeVertexNormals();
+    geometry.rotateY(index * Math.PI / 2).scale(1, 0.72 + index * 0.1, 1);
+    blades.push(geometry);
+  }
+  const result = mergeGeometries(blades)!;
+  blades.forEach((blade) => blade.dispose());
+  return result;
 };
 
 const makeLabelTexture = (text: string, accent: string) => {
@@ -316,7 +337,7 @@ export const createDuckHunt3D = (
 
   const horizonMaterial = new THREE.MeshBasicMaterial({ color: "#77c7e9", fog: true });
   const horizon = new THREE.Mesh(
-    new THREE.PlaneGeometry(45, 15),
+    new THREE.PlaneGeometry(100, 40),
     horizonMaterial,
   );
   horizon.position.set(0, 6.5, -10.5);
@@ -367,6 +388,11 @@ export const createDuckHunt3D = (
     new THREE.MeshStandardMaterial({ color: "#2c8d38", roughness: 0.93 }),
     treeCount,
   );
+  const branchCrowns = new THREE.InstancedMesh(
+    new THREE.IcosahedronGeometry(0.78, 1),
+    new THREE.MeshStandardMaterial({ color: "#70955a", roughness: 1 }),
+    treeCount * 2,
+  );
   for (let index = 0; index < treeCount; index += 1) {
     const isBackRow = index < 26;
     const side = index % 2 === 0 ? -1 : 1;
@@ -380,6 +406,12 @@ export const createDuckHunt3D = (
     const height = 0.76 + (index % 6) * 0.07;
     const position = new THREE.Vector3(x, 0, z);
     treePositions.push(position);
+    trunks.setColorAt(index, new THREE.Color().setHSL(0.075, 0.3, 0.42 + (index % 4) * 0.05));
+    lowerCrowns.setColorAt(index, new THREE.Color().setHSL(0.24 + (index % 5) * 0.013, 0.25, 0.6 + (index % 3) * 0.08));
+    upperCrowns.setColorAt(index, new THREE.Color().setHSL(0.22 + (index % 4) * 0.016, 0.3, 0.64 + (index % 3) * 0.06));
+    for (const side of [-1, 1]) setInstanceTransform(branchCrowns, index * 2 + (side > 0 ? 1 : 0),
+      new THREE.Vector3(x + side * 0.73, 2.9 * height, z + Math.sin(index) * 0.35),
+      new THREE.Euler(0, index, side * 0.25), new THREE.Vector3(1.15, 0.7 + height * 0.4, 0.83));
     setInstanceTransform(trunks, index, new THREE.Vector3(x, 1.52 * height, z), new THREE.Euler(0, index * 0.73, 0), new THREE.Vector3(1, height, 1));
     setInstanceTransform(lowerCrowns, index, new THREE.Vector3(x, 3.22 * height, z), new THREE.Euler(0, index * 0.41, 0), new THREE.Vector3(1, height, 1));
     setInstanceTransform(upperCrowns, index, new THREE.Vector3(x, 4.35 * height, z), new THREE.Euler(0, index * 0.57, 0), new THREE.Vector3(0.86, height, 0.86));
@@ -390,16 +422,17 @@ export const createDuckHunt3D = (
   trunks.castShadow = renderer.shadowMap.enabled;
   lowerCrowns.castShadow = renderer.shadowMap.enabled;
   upperCrowns.castShadow = renderer.shadowMap.enabled;
-  scene.add(trunks, lowerCrowns, upperCrowns);
+  branchCrowns.instanceMatrix.needsUpdate = true;
+  scene.add(trunks, lowerCrowns, upperCrowns, branchCrowns);
 
-  const grassCount = 240;
+  const grassCount = 420;
   const grass = new THREE.InstancedMesh(
-    new THREE.ConeGeometry(0.12, 0.9, 4),
-    new THREE.MeshStandardMaterial({ color: "#68a72a", roughness: 0.96 }),
+    createGrassTuft(),
+    new THREE.MeshStandardMaterial({ color: "#8dad50", roughness: 0.96, side: THREE.DoubleSide }),
     grassCount,
   );
   for (let index = 0; index < grassCount; index += 1) {
-    const front = index < 178;
+    const front = index < 310;
     const unitX = ((index * 73) % 239) / 238;
     const unitZ = ((index * 131) % 241) / 240;
     const x = front ? -11.8 + unitX * 23.6 : (index % 2 === 0 ? -1 : 1) * (6.8 + unitX * 4.8);
@@ -408,10 +441,11 @@ export const createDuckHunt3D = (
     setInstanceTransform(
       grass,
       index,
-      new THREE.Vector3(x, height * 0.45, z),
+      new THREE.Vector3(x, 0.01, z),
       new THREE.Euler(0, index * 1.71, Math.sin(index) * 0.08),
       new THREE.Vector3(0.72 + (index % 4) * 0.12, height, 0.72),
     );
+    grass.setColorAt(index, new THREE.Color().setHSL(0.19 + (index % 6) * 0.008, 0.4, 0.48 + (index % 4) * 0.08));
   }
   grass.instanceMatrix.needsUpdate = true;
   grass.receiveShadow = true;
@@ -518,6 +552,26 @@ export const createDuckHunt3D = (
   );
   scene.add(fireflies);
 
+  const rainPositions = new Float32Array(180 * 6);
+  const rainGeometry = new THREE.BufferGeometry();
+  rainGeometry.setAttribute("position", new THREE.BufferAttribute(rainPositions, 3).setUsage(THREE.DynamicDrawUsage));
+  const rain = new THREE.LineSegments(rainGeometry, new THREE.LineBasicMaterial({
+    color: "#bed9ed", transparent: true, opacity: 0.3, depthWrite: false,
+  }));
+  rain.frustumCulled = false;
+  rain.visible = false;
+  scene.add(rain);
+
+  const refugeCues = new THREE.InstancedMesh(
+    new THREE.RingGeometry(0.34, 0.42, 16),
+    new THREE.MeshBasicMaterial({ color: "#d8eaa3", transparent: true, opacity: 0.65, side: THREE.DoubleSide, depthWrite: false }),
+    maxCount,
+  );
+  refugeCues.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  refugeCues.frustumCulled = false;
+  refugeCues.count = 0;
+  scene.add(refugeCues);
+
   const body = new THREE.InstancedMesh(
     new THREE.SphereGeometry(0.55, denseFlock ? 8 : 12, denseFlock ? 5 : 8),
     new THREE.MeshStandardMaterial({ roughness: 0.55, metalness: 0.04 }),
@@ -528,12 +582,17 @@ export const createDuckHunt3D = (
     new THREE.MeshStandardMaterial({ roughness: 0.48 }),
     maxCount,
   );
-  const wingGeometry = new THREE.SphereGeometry(0.46, denseFlock ? 6 : 9, denseFlock ? 4 : 6);
+  const wingPieces = [new THREE.SphereGeometry(0.46, denseFlock ? 6 : 9, denseFlock ? 4 : 6)];
+  for (let feather = 0; feather < 3; feather += 1) {
+    wingPieces.push(new THREE.SphereGeometry(0.18, 6, 4).scale(1.65, 0.65, 0.72).translate(-0.28, 0.03, (feather - 1) * 0.22));
+  }
+  const wingGeometry = mergeGeometries(wingPieces)!;
+  wingPieces.forEach((piece) => piece.dispose());
   const wingMaterial = new THREE.MeshStandardMaterial({ roughness: 0.6 });
   const leftWing = new THREE.InstancedMesh(wingGeometry, wingMaterial, maxCount);
   const rightWing = new THREE.InstancedMesh(wingGeometry, wingMaterial, maxCount);
   const beak = new THREE.InstancedMesh(
-    new THREE.ConeGeometry(0.16, 0.52, denseFlock ? 5 : 7),
+    new THREE.SphereGeometry(0.22, 10, 6),
     new THREE.MeshStandardMaterial({ color: "#ffac2f", roughness: 0.55 }),
     maxCount,
   );
@@ -624,6 +683,11 @@ export const createDuckHunt3D = (
   const currentPositions = new Map<string, THREE.Vector3>();
   const coverAmounts = new Map<string, number>();
   const projected = new THREE.Vector3();
+  const shotRaycaster = new THREE.Raycaster();
+  const shotPointer = new THREE.Vector2();
+  // Only physical duck parts count; halos and power rings are not targets.
+  const shootableParts = new Set<THREE.Object3D>(coreDuckMeshes.filter((mesh) => mesh !== powerSigils));
+  const shotSurfaces = [...shootableParts, ground, mounds, trunks, lowerCrowns, upperCrowns, branchCrowns, shrubs, grass, reeds, rocks, cattails];
   const flightPosition = new THREE.Vector3();
   const groundPosition = new THREE.Vector3();
   const partPosition = new THREE.Vector3();
@@ -659,6 +723,15 @@ export const createDuckHunt3D = (
     const speed = contestant.speed;
     const routePhase = contestant.routeSeed * Math.PI * 2;
     const phase = profile.phase + formationNonce * 0.000013 + routePhase;
+    // Most ducks peek near real cover; the rest cross the clearing in flight.
+    if (contestant.number % 3 !== 0 && !resetState) {
+      getCoverPosition(contestant, target);
+      const atGrass = getDuckCoverKind(contestant) === "grass";
+      target.x += -Math.sign(target.x || 1) * (atGrass ? 0.35 : 1.05) + Math.sin(elapsedSeconds * 0.8 + phase) * 0.48;
+      target.y = (atGrass ? 1.04 : 1.75) + Math.sin(elapsedSeconds * 1.2 + phase) * 0.2;
+      target.z += atGrass ? -0.5 : 1.1;
+      return target;
+    }
     const evasiveFrequency = 0.76 + contestant.routeSeed * 1.42 + contestant.threatLevel * 0.5;
     const x = Math.sin(elapsedSeconds * (0.38 + contestant.routeSeed * 0.12) * speed * profile.drift + phase) * 7.7
       + Math.sin(elapsedSeconds * evasiveFrequency * speed + phase * 1.7) * (1.15 + contestant.threatLevel * 0.8)
@@ -728,13 +801,15 @@ export const createDuckHunt3D = (
   resize();
 
   const updateDucks = (now: number) => {
-    const elapsedSeconds = now / 1000;
+    const elapsedSeconds = hasStarted ? Math.max(0, (now - runStartedAt) / 1000) : 0;
     const flightElapsedSeconds = hasStarted ? Math.max(0, (now - coverCycleStartedAt) / 1000) : 0;
     const resetDuration = resetState?.duration ?? getDuckResetDuration(contestants.length);
     const resetElapsed = resetState ? now - resetState.startedAt : resetDuration + 1;
     const coverReachedAt = resetDuration * 0.34;
     const emergenceStartsAt = resetDuration * 0.54;
     const scaleBase = getDuckVisualScale(contestants.length);
+    const targetCount = getDuckVisibleTargetCount(contestants.length, activeWaveIds.size);
+    let cueCount = 0;
     let visible = 0;
     let visibleCrowns = 0;
     let visibleShields = 0;
@@ -795,12 +870,21 @@ export const createDuckHunt3D = (
           coverAmounts.set(contestant.id, 0);
         }
       } else {
-        const coverAmount = getDuckCoverAmount(contestant, flightElapsedSeconds);
+        const coverAmount = getDuckWaveCoverAmount(contestant, flightElapsedSeconds);
         position.lerpVectors(flightPosition, groundPosition, coverAmount);
         if (coverAmount > 0 && coverAmount < 1) position.y += Math.sin(coverAmount * Math.PI) * 0.3;
         coverAmounts.set(contestant.id, coverAmount);
       }
       const isFullyCovered = (coverAmounts.get(contestant.id) ?? 0) >= 0.88;
+      if (isFullyCovered && running && !resetState && activeWaveIds.has(contestant.id)
+        && getDuckWaveCoverAmount(contestant, flightElapsedSeconds + 0.3) < 0.88) {
+        const rustleScale = reducedMotion ? 1 : 1 + Math.sin(elapsedSeconds * 13) * 0.2;
+        partPosition.copy(groundPosition);
+        partPosition.y += 0.2;
+        baseRotation.set(-Math.PI / 2, 0, 0);
+        unitScale.setScalar(rustleScale);
+        setInstanceTransform(refugeCues, cueCount++, partPosition, baseRotation, unitScale);
+      }
       if (isFullyCovered) {
         if (!hiddenContestantIds.has(contestant.id)) {
           coreDuckMeshes.forEach((mesh) => hideInstance(mesh, index));
@@ -813,7 +897,8 @@ export const createDuckHunt3D = (
       visible += 1;
       matricesChanged = true;
 
-      const scale = scaleBase * contestant.profile.scale * (contestant.lives === 1 ? 0.91 : 1);
+      const scale = (activeWaveIds.has(contestant.id) ? getDuckVisualScale(targetCount) : scaleBase)
+        * contestant.profile.scale * (contestant.lives === 1 ? 0.91 : 1);
       const flapAmount = resetState && resetElapsed > 640 && resetElapsed < 1160
         ? 0.12
         : reducedMotion ? 0.12 : Math.sin(elapsedSeconds * (10.5 + contestant.speed * 2.3) + contestant.profile.phase) * 0.74;
@@ -854,8 +939,8 @@ export const createDuckHunt3D = (
       partPosition.copy(position).addScaledVector(THREE.Object3D.DEFAULT_UP, 0.18 * scale);
       partPosition.z -= 0.42 * scale;
       setInstanceTransform(rightWing, index, partPosition, rightWingRotation, wingScale);
-      beakRotation.set(0, 0, -Math.PI / 2);
-      beakScale.set(0.8, 1, 0.8).multiplyScalar(scale);
+      beakRotation.set(0, yaw, 0);
+      beakScale.set(1.12, 0.3, 0.8).multiplyScalar(scale);
       partPosition.copy(position).setX(position.x + 1.04 * scale).setY(position.y + 0.22 * scale);
       setInstanceTransform(beak, index, partPosition, beakRotation, beakScale);
       unitScale.setScalar(scale);
@@ -902,11 +987,17 @@ export const createDuckHunt3D = (
 
     coreDuckMeshes.forEach((mesh) => {
       mesh.count = contestants.length;
-      if (matricesChanged) mesh.instanceMatrix.needsUpdate = true;
+      if (matricesChanged) {
+        mesh.instanceMatrix.needsUpdate = true;
+        // Instance bounds otherwise remain at their first position and miss moving targets.
+        mesh.boundingSphere = null;
+      }
       if (colorsChanged && mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
     });
     neckRing.count = denseFlock ? 0 : contestants.length;
     winnerCrown.count = visibleCrowns;
+    refugeCues.count = cueCount;
+    if (cueCount > 0) refugeCues.instanceMatrix.needsUpdate = true;
     shields.count = visibleShields;
     if (matricesChanged) {
       winnerCrown.instanceMatrix.needsUpdate = true;
@@ -948,7 +1039,7 @@ export const createDuckHunt3D = (
       return;
     }
     lastRenderedAt = now;
-    const duckUpdateInterval = maxCount > 150 ? 30 : maxCount > 96 ? 22 : 0;
+    const duckUpdateInterval = resetState ? maxCount > 150 ? 30 : maxCount > 96 ? 22 : 0 : 0;
     if (now < lastDuckUpdateAt || duckUpdateInterval === 0 || now - lastDuckUpdateAt >= duckUpdateInterval) {
       visibleCount = updateDucks(now);
       lastDuckUpdateAt = now;
@@ -972,6 +1063,22 @@ export const createDuckHunt3D = (
     }
     camera.lookAt(recoilCameraTarget);
     const forestEventSeconds = Math.max(0, (now - forestEventStartedAt) / 1000);
+    rain.visible = forestEvent === "storm" && !reducedMotion;
+    if (rain.visible) {
+      for (let index = 0; index < 180; index += 1) {
+        const offset = index * 6;
+        const x = -13 + ((index * 47) % 181) / 180 * 26;
+        const y = 11 - ((forestEventSeconds * 9 + index * 0.67) % 11);
+        const z = -8 + ((index * 61) % 179) / 178 * 9;
+        rainPositions[offset] = x;
+        rainPositions[offset + 1] = y;
+        rainPositions[offset + 2] = z;
+        rainPositions[offset + 3] = x - 0.12;
+        rainPositions[offset + 4] = y + 0.48;
+        rainPositions[offset + 5] = z;
+      }
+      rainGeometry.attributes.position.needsUpdate = true;
+    }
     const windWave = reducedMotion ? 0 : Math.sin(forestEventSeconds * 2.4) * 0.13;
     const windTarget = forestEvent === "wind" ? windWave : forestEvent === "storm" ? windWave * 0.72 : 0;
     lowerCrowns.position.x = THREE.MathUtils.lerp(lowerCrowns.position.x, windTarget, 0.08);
@@ -1090,6 +1197,9 @@ export const createDuckHunt3D = (
       escapeStartedAt = 0;
       escapeUntil = 0;
       coverCycleStartedAt = performance.now();
+      lastDuckUpdateAt = Number.NEGATIVE_INFINITY;
+      coverAmounts.clear();
+      duckIds.forEach((id) => coverAmounts.set(id, 1));
       hiddenContestantIds.clear();
       removeLabel();
     },
@@ -1107,24 +1217,35 @@ export const createDuckHunt3D = (
       const pointerY = clientY - rect.top;
       let selectedId: string | null = null;
       let grazedId: string | null = null;
-      let selectedDistance = Number.POSITIVE_INFINITY;
       let grazeDistance = Number.POSITIVE_INFINITY;
-      const radius = getDuckHitRadius(contestants.length);
+      if (rect.width <= 0 || rect.height <= 0 || escapeUntil > performance.now()) return emptyShot;
+      shotPointer.set((pointerX / rect.width) * 2 - 1, 1 - (pointerY / rect.height) * 2);
+      camera.updateMatrixWorld();
+      scene.updateMatrixWorld(true);
+      shotRaycaster.setFromCamera(shotPointer, camera);
+      const intersections = shotRaycaster.intersectObjects(shotSurfaces, false);
+      const hitIndex = pickVisibleDuckInstance(intersections, shootableParts, (index) => {
+        const contestant = contestants[index];
+        return Boolean(contestant && !contestant.knockedOut && !hiddenContestantIds.has(contestant.id)
+          && (activeWaveIds.size === 0 || activeWaveIds.has(contestant.id))
+          && (coverAmounts.get(contestant.id) ?? 1) < 0.88);
+      });
+      selectedId = hitIndex === null ? null : contestants[hitIndex].id;
+      const radius = getDuckHitRadius(getDuckVisibleTargetCount(contestants.length, activeWaveIds.size));
       contestants.forEach((contestant) => {
         if (contestant.knockedOut) return;
+        if (hiddenContestantIds.has(contestant.id)) return;
         if (activeWaveIds.size > 0 && !activeWaveIds.has(contestant.id)) return;
         if (escapeUntil > performance.now()) return;
         if ((coverAmounts.get(contestant.id) ?? 0) >= 0.58) return;
         const position = currentPositions.get(contestant.id);
         if (!position) return;
-      projected.copy(position).project(camera);
+        projected.copy(position).project(camera);
+        if (projected.z < -1 || projected.z > 1 || Math.abs(projected.x) > 1 || Math.abs(projected.y) > 1) return;
         const screenX = (projected.x * 0.5 + 0.5) * rect.width;
         const screenY = (-projected.y * 0.5 + 0.5) * rect.height;
         const distance = Math.hypot(screenX - pointerX, screenY - pointerY);
-        if (distance <= radius && distance < selectedDistance) {
-          selectedDistance = distance;
-          selectedId = contestant.id;
-        } else if (distance <= radius * 1.62 && distance < grazeDistance) {
+        if (distance <= radius * 1.62 && distance < grazeDistance) {
           grazeDistance = distance;
           grazedId = contestant.id;
         }

@@ -2709,7 +2709,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible {
 .pinball-manual-controls { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(150px,1fr) minmax(180px,260px) minmax(150px,1fr); gap: 8px; }
 .pinball-manual-controls button { min-height: 42px; border-radius: 10px; font-size: 12px; font-weight: 900; cursor: pointer; user-select: none; touch-action: manipulation; }
 .pinball-flipper { border: 1px solid rgba(9,224,223,.38); color: #c8ffff; background: linear-gradient(#0b343c,#062027); box-shadow: inset 0 -5px 10px rgba(0,0,0,.28); }
-.pinball-flipper:active { transform: translateY(2px); filter: brightness(1.4); }
+.pinball-flipper:active, .pinball-manual-controls .is-held { transform: translateY(2px); filter: brightness(1.4); box-shadow: inset 0 0 18px rgba(9,224,223,.3); }
 .pinball-flipper--right { color: #ffe4a1; border-color: rgba(246,189,53,.4); background: linear-gradient(#3b2a0d,#201606); }
 .pinball-launch { display: flex; align-items: center; justify-content: center; gap: 6px; border: 1px solid var(--cyan); color: #001216; background: linear-gradient(90deg,#3ee9e7,#0bb7c1); box-shadow: 0 0 20px rgba(9,224,223,.2); }
 .pinball-launch.is-dual-flipper { color: #fff6ce; border-color: rgba(246,189,53,.72); background: linear-gradient(90deg,#6e4810,#302006); box-shadow: 0 0 20px rgba(246,189,53,.2); }
@@ -3427,3 +3427,73 @@ button:focus-visible, input:focus-visible, textarea:focus-visible {
   .duck-forest-event { top: 45px; width: min(205px, 44%); }
   .duck-forest-event span { display: none; }
 }
+
+/* Clear preparation flow, permanent results and optional neutral appearance. */
+.setup-hero.setup-hero--ribbon { display: block; padding: 0; margin-bottom: 12px; background: none; border: 0; min-height: 0; }
+.setup-journey { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.setup-journey button.is-complete { border-color: #40bf8b; background: #0e3028; color: #9ef0c8; }
+.setup-journey button.is-complete i { background: #216144; color: #c7ffe2; }
+.setup-journey button.is-current { border-color: #e6b937; background: #302912; color: #ffdc76; }
+.setup-journey button.is-current i { background: #f0c349; color: #29200a; }
+.setup-launch-bar { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 12px 0 18px; }
+.setup-launch-bar .setup-start-button { min-height: 50px; width: auto; min-width: 240px; font-size: 16px; padding: 12px 24px; }
+.setup-help { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; }
+.setup-help button, .appearance-toggle { display: inline-flex; align-items: center; justify-content: center; gap: 7px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel-strong); color: #d7e5ef; padding: 10px 12px; cursor: pointer; font-size: 12px; }
+.appearance-toggle.is-active { color: #c2d7ff; border-color: #829ef9; background: #263555; }
+.game-option:disabled { opacity: .42; filter: grayscale(1); cursor: not-allowed; }
+.results-open { cursor: pointer; text-align: left; min-width: 215px; color: #ecf9fa; }
+.results-open small { color: var(--muted); font-size: 12px; }
+.topbar { grid-template-columns: minmax(220px,1fr) auto auto; height: auto; min-height: 78px; }
+.topbar-actions { flex-wrap: wrap; }
+.winners-ribbon { display: flex; align-items: center; gap: 14px; width: 100%; min-width: 0; padding: 10px 14px; border: 1px solid var(--line); border-radius: 14px; background: var(--panel); }
+.winners-ribbon__heading { display: inline-flex; align-items: center; gap: 7px; flex-shrink: 0; color: var(--gold-bright); font-size: 13px; font-weight: 700; }
+.winners-ribbon__viewport { flex: 1; min-width: 0; overflow: hidden; }
+.winners-ribbon__track, .winners-ribbon__copy { display: flex; width: max-content; align-items: center; }
+.winners-ribbon__track { animation: winner-scroll 40s linear infinite; }
+.winners-ribbon__item { display: inline-flex; gap: 12px; align-items: center; padding: 5px 24px; border-right: 1px solid var(--line); font-size: 13px; white-space: nowrap; }
+.winners-ribbon__item span, .winners-ribbon__item time, .winners-ribbon__empty { color: #b5c6d0; font-size: 12px; }
+.winners-ribbon__item b { color: var(--gold-bright); }
+.winners-ribbon:hover .winners-ribbon__track, .winners-ribbon:focus-within .winners-ribbon__track, .winners-ribbon.is-paused .winners-ribbon__track { animation-play-state: paused; }
+@keyframes winner-scroll { to { transform: translateX(-50%); } }
+.results-archive { width: min(1000px, calc(100vw - 32px)); max-height: 88vh; color: #e7f2f8; border: 1px solid #526778; border-radius: 20px; padding: 24px; background: #0e1b29; }
+.results-archive::backdrop { background: rgba(2,7,12,.8); backdrop-filter: blur(4px); }
+.results-archive header, .results-archive header > div, .results-archive__tools { display: flex; align-items: center; gap: 12px; }
+.results-archive header, .results-archive__tools { justify-content: space-between; }
+.results-archive h2 { font-size: 21px; margin: 0; }
+.results-archive__tools { margin: 20px 0 14px; }
+.results-archive__tools label { display: grid; gap: 5px; flex: 1; color: #c0d0df; font-size: 12px; }
+.results-archive input { width: 100%; background: #07121f; color: white; border: 1px solid #526778; border-radius: 8px; padding: 11px; }
+.results-archive__tools button { background: #254365; color: #eef5ff; padding: 11px; border: 1px solid #6787a4; border-radius: 8px; display: flex; align-items: center; gap: 7px; cursor: pointer; }
+.results-archive > p { color: #b7c9da; font-size: 13px; line-height: 1.6; }
+.results-archive__empty { padding: 30px 12px; color: #c6d7e4; line-height: 1.8; }
+.results-match { border: 1px solid #374e63; border-radius: 12px; margin: 10px 0; overflow: hidden; }
+.results-match summary { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px; cursor: pointer; background: #15283a; }
+.results-match summary > span { display: block; font-size: 14px; }
+.results-match small { display: block; color: #bdcedb; font-size: 12px; margin-top: 6px; }
+.results-match__rounds { list-style: none; margin: 0; padding: 0 16px; }
+.results-match__rounds li { display: grid; grid-template-columns: 85px 1fr auto; gap: 10px; padding: 15px 0; border-top: 1px solid #334857; font-size: 13px; }
+.results-match__rounds time { color: #a5bfce; font-size: 12px; }
+.game-maintenance { max-width: 640px; margin: 70px auto; padding: 40px; text-align: center; }
+.game-maintenance p { line-height: 1.7; color: var(--muted); }
+[data-appearance="play"] { --bg: #12233d; --panel: #203653; --panel-strong: #182d47; --line: #48617e; --cyan: #8cb7ff; --cyan-soft: #bed5ff; --gold: #b6aaff; --gold-bright: #d0c7ff; --muted: #b9cbe0; }
+[data-appearance="play"] body { background: linear-gradient(140deg, #152941, #253557); }
+[data-appearance="play"] .app-shell { background-image: none; }
+[data-appearance="play"] .brand-name { font-style: normal; letter-spacing: -.6px; text-shadow: none; }
+[data-appearance="play"] .brand-tagline { color: #c5d7f0; font-style: normal; }
+[data-appearance="play"] .panel, [data-appearance="play"] .fairness-pill, [data-appearance="play"] .setup-choice-panel { background: #203653; box-shadow: none; border-color: #48617e; border-radius: 18px; }
+[data-appearance="play"] .start-button { background: #afc8ff; color: #102343; box-shadow: none; border-color: #d5e2ff; }
+[data-appearance="play"] .game-option.is-active { border-color: #bda9ff; background: #374568; box-shadow: none; }
+[data-appearance="play"] .splash { background: #1d3353; }
+[data-appearance="play"] .splash-orbit, [data-appearance="play"] .splash-stars, [data-appearance="play"] .stage-glow { display: none; }
+[data-appearance="play"] .casino-stage { background: #263d59; border-color: #6a83a2; box-shadow: none; }
+[data-appearance="play"] .card-table { background: #243b5a; border-color: #7897bb; box-shadow: none; }
+@media (prefers-reduced-motion: reduce) { .winners-ribbon__track { animation: none; } .winners-ribbon__viewport { overflow-x: auto; } .winners-ribbon__copy[aria-hidden="true"] { display: none; } }
+@media (max-width: 1050px) { .topbar { grid-template-columns: 1fr auto; } .topbar-actions { grid-column: 1 / -1; justify-content: flex-end; } }
+@media (max-width: 620px) {
+  .topbar { grid-template-columns: 1fr; } .topbar-actions { justify-content: flex-start; } .setup-launch-bar { align-items: stretch; flex-direction: column; }
+  .setup-journey { gap: 6px; } .setup-journey button { padding: 10px 7px; } .setup-journey small { display: none; }
+  .setup-journey b { font-size: 12px; } .winners-ribbon__heading { font-size: 0; } .results-archive { padding: 16px; }
+  .results-match summary { flex-direction: column; align-items: flex-start; } .results-match__rounds li { grid-template-columns: 65px 1fr; } .results-match__rounds time { grid-column: 2; }
+}
+.narration-status:not(.sr-only) { grid-column: 1 / -1; color: #82ded5; font-size: .8rem; padding: .35rem .6rem; }
+.narration-status.is-error { color: #ffca7c; }

@@ -68,15 +68,18 @@ estas prácticas no se guardan ni cambian tu sorteo real.
    Después pulsa “Agregar nombres”. Se omiten los nombres repetidos.
    Con diez nombres o más aparece un buscador para localizar y retirar rápidamente
    a una persona sin cambiar su número original.
-2. Selecciona Ruleta, Cartas, Pinball 3D, Canicas 3D o Patos 3D.
-   Pinball 3D, Canicas 3D y Patos 3D aparecen identificados como BETA mientras
-   continúan recibiendo mejoras visuales, de cámara y rendimiento.
+2. Selecciona Ruleta, Cartas, Canicas 3D o Patos 3D.
+   Canicas y Patos están en BETA. Pinball está desactivado mientras se mejora.
 3. Elige Ganador directo o Eliminación.
 4. Escribe el premio.
-5. Pulsa “Iniciar sorteo”.
+5. Cuando los tres indicadores estén verdes, pulsa “Entrar a” tu juego.
+   El amarillo indica el siguiente paso pendiente; la barra tiene solo tres pasos.
 
 
 4. PINBALL 3D
+
+TEMPORALMENTE NO DISPONIBLE PARA JUGAR.
+Las siguientes reglas se conservan como referencia para su desarrollo.
 
 Cada pelota representa al participante con el mismo número de la lista. La
 mesa genera una distribución nueva cada vez que ingresas.
@@ -123,9 +126,12 @@ La mesa admite listas de 2 a 200 participantes.
 7. CANICAS
 
 - Cada canica conserva el número y color de su participante durante la carrera.
-- En Ganador directo, gana la primera canica que cruza la meta.
-- En Eliminación, sale la última canica que cruza la meta.
-- Fácil, Medio y Difícil cambian longitud, obstáculos, poderes y duración.
+- Elige Primero o Último antes de iniciar. Esa posición determina quién gana
+  en Ganador directo o quién sale en Eliminación.
+- Fácil, Medio y Difícil cambian longitud, altura, obstáculos, eventos y duración.
+- Los niveles tienen más de 30 cm libres entre terrazas independientes; las
+  rampas las conectan de forma continua. Hielo, río, tornado y temblor alteran
+  velocidad y desplazamiento de las pelotas.
 - La pista se genera de nuevo para cada ronda.
 - El director AUTO sigue al líder en Ganador directo o a la última canica en
   riesgo durante Eliminación. Puedes desactivarlo para elegir manualmente.
@@ -139,6 +145,9 @@ La mesa admite listas de 2 a 200 participantes.
 8. PATOS 3D
 
 - Cada participante empieza con tres vidas; gana el único superviviente.
+- Bandada muestra hasta cinco patos a la vez; puedes practicar con uno o dos.
+- Apunta a la cabeza o el cuerpo que asoma: hojas, pasto y troncos bloquean el
+  tiro. Los patos completamente ocultos no se pueden disparar.
 - Antes de soltar la bandada, el programa genera con AES-CTR/256 todo el orden
   de impactos y lo sella con SHA-256. Un clic acertado solo avanza ese orden:
   no permite escoger quién pierde la vida.
@@ -174,10 +183,13 @@ La mesa admite listas de 2 a 200 participantes.
 - Un ganador no se repite hasta que pulses “Volver a incluir”.
 - Volver a incluir no borra los premios anteriores.
 - El altavoz controla los sonidos; el micrófono controla la locución.
-- El programa incluye una voz neuronal femenina en español que funciona sin
-  Internet, con una cadencia serena de anunciadora. Si el motor local no puede
-  iniciarse, usa una voz de Windows como respaldo; las instrucciones y
-  resultados siempre permanecen en pantalla.
+- La aplicación instalada usa Daniela High sin Internet. Si no puede hablar,
+  muestra un aviso y permite reintentar con Probar voz; no cambia a otra voz.
+  En un navegador de desarrollo se usa la voz del navegador y se indica.
+- Ver resultados guarda las rondas y premios incluso si cambias de juego o
+  vacías participantes. Puedes buscar y exportar una copia JSON.
+- Modo juego cambia la apariencia y el nombre a Zona de Juegos sin cambiar
+  el logo, borrar resultados ni alterar quién gana.
 - El botón de las cuatro esquinas activa la pantalla completa.
 - En Patos, enfoca el campo y pulsa Enter o Espacio para registrar el siguiente
   impacto comprometido. Escape cierra el diálogo de resultado.

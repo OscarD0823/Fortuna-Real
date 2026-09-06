@@ -7,6 +7,8 @@ import {
   type MarblePower,
   type MarbleRacer,
   validateMarbleTrack,
+  MARBLE_MIN_LEVEL_CLEARANCE_M,
+  MARBLE_DECK_THICKNESS_M,
 } from "../src/games/marbles/marbleRaceEngine.ts";
 import { MARBLE_TRACK_PIECE_SPECS } from "../src/games/marbles/marbleTrackPieceKit.ts";
 
@@ -40,10 +42,8 @@ const round = (value: number, decimals = 3) => {
 const average = (values: readonly number[]) => values.reduce((total, value) => total + value, 0) / Math.max(1, values.length);
 
 const edgeForPoint = (x: number, y: number) => {
-  if (Math.abs(x - 0.065) < 0.00001) return "left";
-  if (Math.abs(x - 0.935) < 0.00001) return "right";
-  if (Math.abs(y - 0.065) < 0.00001) return "top";
-  if (Math.abs(y - 0.935) < 0.00001) return "bottom";
+  if (Math.abs(y - 0.14) < 0.00001 && x < 0.2) return "left";
+  if (Math.abs(y - 0.14) < 0.00001 && x > 0.8) return "right";
   return "invalid";
 };
 
@@ -226,7 +226,8 @@ const reports = difficulties.map((difficulty) => {
   const modules = new Set<string>();
   const eventTypes = new Set<string>();
   const elevationPeaks: number[] = [];
-  const starts = { left: 0, right: 0, top: 0, bottom: 0, invalid: 0 };
+  const starts = { left: 0, right: 0, invalid: 0 };
+  let minimumLevelClearance = Infinity;
   const sampleSeeds: Array<{ seed: string; signature: string; coverage: number; bridges: number }> = [];
 
   for (let index = 0; index < seedsPerDifficulty; index += 1) {
@@ -242,6 +243,22 @@ const reports = difficulties.map((difficulty) => {
     const elevationPeak = Math.max(...track.points.map((point) => point.elevation ?? 0));
     const edge = edgeForPoint(track.points[0].x, track.points[0].y);
     starts[edge] += 1;
+    // Compare actual elevations halfway across each terrace, away from its joining bend.
+    const terraceCenters = Array.from({ length: config.rows }, (_, row) => {
+      const y = 0.14 + row * 0.72 / (config.rows - 1);
+      return track.points.reduce((best, point) =>
+        Math.hypot(point.x - 0.5, (point.y - y) * 3) < Math.hypot(best.x - 0.5, (best.y - y) * 3) ? point : best);
+    });
+    terraceCenters.slice(1).forEach((point, row) => {
+      const clearance = (terraceCenters[row].elevation ?? 0) - (point.elevation ?? 0) - MARBLE_DECK_THICKNESS_M;
+      minimumLevelClearance = Math.min(minimumLevelClearance, clearance);
+      if (clearance < MARBLE_MIN_LEVEL_CLEARANCE_M) throw new Error(`${seed}: solo ${clearance} m entre niveles; se exigen 30 cm libres.`);
+    });
+    if (track.points.some((point, i) => i > 0 && (point.elevation ?? 0) > (track.points[i - 1].elevation ?? 0))) {
+      throw new Error(`${seed}: el descenso tiene un salto hacia arriba.`);
+    }
+    const horizontalRowClearance = 0.72 / (config.rows - 1) * 21 * config.mapScale - track.trackWidth / 33;
+    if (horizontalRowClearance < 3) throw new Error(`${seed}: falta espacio lateral para pasar la cámara.`);
 
     const connectorsValid = track.sections.every((section, sectionIndex) => {
       const previous = sectionIndex > 0 ? track.sections[sectionIndex - 1] : null;
@@ -290,8 +307,8 @@ const reports = difficulties.map((difficulty) => {
     }
   }
 
-  if (Object.values(starts).slice(0, 4).some((count) => count === 0)) {
-    throw new Error(`La dificultad ${difficulty} no utilizó los cuatro bordes de salida.`);
+  if (starts.left === 0 || starts.right === 0) {
+    throw new Error(`La dificultad ${difficulty} no generó ambas orientaciones de descenso.`);
   }
   const expectedEventTypes = difficulty === "easy" ? 2 : 4;
   if (eventTypes.size < expectedEventTypes) {
@@ -306,6 +323,7 @@ const reports = difficulties.map((difficulty) => {
     eventCount: config.eventCount,
     eventTypes: [...eventTypes].sort(),
     maximumElevation: round(Math.max(...elevationPeaks)),
+    minimumLevelClearanceM: round(minimumLevelClearance),
     startEdges: starts,
     coverage: {
       minimum: round(Math.min(...coverages)),

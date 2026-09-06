@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
 import { Crown } from "lucide-react";
+import { useNeutralAppearance } from "../appearance";
 
 export function SplashScreen({ onDone }: { onDone: () => void }) {
+  const neutral = useNeutralAppearance();
   const [leaving, setLeaving] = useState(false);
 
   useEffect(() => {
@@ -19,7 +21,7 @@ export function SplashScreen({ onDone }: { onDone: () => void }) {
   };
 
   return (
-    <div className={`splash ${leaving ? "splash--leaving" : ""}`} role="dialog" aria-label="Iniciando Fortuna Real">
+    <div className={`splash ${leaving ? "splash--leaving" : ""}`} role="dialog" aria-label={neutral ? "Iniciando Zona de Juegos" : "Iniciando Fortuna Real"}>
       <div className="splash-stars" aria-hidden="true">
         {Array.from({ length: 18 }, (_, index) => <i key={index} />)}
       </div>
@@ -34,10 +36,10 @@ export function SplashScreen({ onDone }: { onDone: () => void }) {
             <div><Crown size={42} strokeWidth={1.25} /></div>
           </div>
         </div>
-        <div className="splash-title" aria-label="Fortuna Real">
-          <span>FORTUNA</span> <strong>REAL</strong>
+        <div className="splash-title" aria-label={neutral ? "Zona de Juegos" : "Fortuna Real"}>
+          <span>{neutral ? "ZONA DE" : "FORTUNA"}</span> <strong>{neutral ? "JUEGOS" : "REAL"}</strong>
         </div>
-        <p>Sorteos con emoción real</p>
+        <p>{neutral ? "Juega, comparte y celebra" : "Sorteos con emoción real"}</p>
         <div className="splash-loader"><i /></div>
         <a className="splash-watermark" href="https://github.com/OscarD0823/Fortuna-Real" target="_blank" rel="noreferrer">
           Una creación de <strong>OscarD0823</strong>

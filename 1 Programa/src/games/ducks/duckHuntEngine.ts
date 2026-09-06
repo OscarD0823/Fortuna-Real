@@ -178,9 +178,8 @@ export const getDuckResetDuration = (count: number) => {
 export const getDuckCoverAmount = (contestant: DuckContestant, elapsedSeconds: number) => {
   if (elapsedSeconds < 1.8 || contestant.knockedOut) return 0;
   const cycle = 7.4 + contestant.routeSeed * 4.1 + (contestant.number % 4) * 0.37;
-  const phaseOffset = contestant.routeSeed * cycle + (contestant.profile.phase / (Math.PI * 2)) * 2.3;
-  const local = (elapsedSeconds - 1.8 + phaseOffset) % cycle;
-  const hideStart = cycle * (0.52 + (contestant.number % 3) * 0.045);
+  const local = (elapsedSeconds - 1.8) % cycle;
+  const hideStart = cycle * (0.3 + contestant.routeSeed * 0.22 + (contestant.number % 3) * 0.045);
   const hideEnd = Math.min(cycle - 0.72, hideStart + 1.35 + contestant.routeSeed * 1.15);
   const transitionIn = 0.42;
   const transitionOut = 0.58;
@@ -189,6 +188,16 @@ export const getDuckCoverAmount = (contestant: DuckContestant, elapsedSeconds: n
   if (local > hideEnd - transitionOut) return smoothstep01((hideEnd - local) / transitionOut);
   return 1;
 };
+
+/** A brief rustle precedes takeoff; elapsed zero is fully hidden, never a teleport. */
+export const getDuckWaveCoverAmount = (contestant: DuckContestant, elapsedSeconds: number) => {
+  const delay = 0.18 + contestant.routeSeed * 0.24;
+  const takeoff = 1 - smoothstep01((elapsedSeconds - delay) / 0.85);
+  return Math.max(takeoff, getDuckCoverAmount(contestant, elapsedSeconds));
+};
+
+export const getDuckVisibleTargetCount = (total: number, activeCount: number) =>
+  Math.max(1, Math.min(total, activeCount > 0 ? activeCount : total));
 
 export const getDuckCoverKind = (contestant: DuckContestant) =>
   contestant.number % 3 === 0 ? "grass" as const : "forest" as const;

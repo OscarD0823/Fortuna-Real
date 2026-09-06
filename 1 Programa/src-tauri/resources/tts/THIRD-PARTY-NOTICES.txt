@@ -37,4 +37,5 @@ Textos completos: licenses/CC-BY-SA-4.0.txt, licenses/Apache-2.0.txt y
 licenses/MIT-piper-voices.txt
 
 El modelo y el motor se ejecutan localmente. El texto narrado no se envía a
-servicios externos y la aplicación conserva la voz de Windows como respaldo.
+servicios externos. La aplicación de escritorio utiliza exclusivamente Daniela
+High; no cambia a una voz del sistema si se produce un error.

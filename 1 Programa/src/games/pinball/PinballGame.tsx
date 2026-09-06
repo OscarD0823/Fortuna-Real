@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointer
 import { Bot, Camera, ChevronLeft, ChevronRight, CircleGauge, Crown, Gamepad2, RefreshCw, Rocket, Sparkles, Zap } from "lucide-react";
 import type { DrawMode, Participant, PinballControlMode } from "../../core/types";
 import { fortunaAudio } from "../../shared/audio/audioEngine";
+import { getHeldPinballFlippers, pinballKeyControls, type PinballControl } from "./pinballControls";
 import {
   createPinballSeed,
   preparePinballRound,
@@ -52,17 +53,18 @@ export function PinballGame({
   const controllerRef = useRef<PinballSceneController | null>(null);
   const finishRef = useRef(onFinish);
   const lastImpactRef = useRef(0);
-  const keyboardFlippersRef = useRef({ left: false, right: false });
+  const keyboardFlippersRef = useRef(new Map<string, PinballControl>());
+  const [heldFlippers, setHeldFlippers] = useState({ left: false, right: false });
   const pointerFlippersRef = useRef({ left: new Set<number>(), right: new Set<number>() });
   const fallbackTimerRef = useRef<number | null>(null);
 
   const syncManualFlippers = () => {
-    const keyboard = keyboardFlippersRef.current;
+    const keyboard = getHeldPinballFlippers(keyboardFlippersRef.current.values());
     const pointers = pointerFlippersRef.current;
-    controllerRef.current?.setFlippers(
-      keyboard.left || pointers.left.size > 0,
-      keyboard.right || pointers.right.size > 0,
-    );
+    const left = keyboard.left || pointers.left.size > 0;
+    const right = keyboard.right || pointers.right.size > 0;
+    controllerRef.current?.setFlippers(left, right);
+    setHeldFlippers((current) => current.left === left && current.right === right ? current : { left, right });
   };
 
   useEffect(() => {
@@ -123,47 +125,35 @@ export function PinballGame({
   useEffect(() => {
     if (controlMode !== "manual") return;
     const down = (event: KeyboardEvent) => {
-      if (event.repeat || phase !== "playing") return;
-      if (event.code === "Space") {
+      if (phase !== "playing") return;
+      const element = event.target instanceof Element ? event.target : null;
+      if (element?.closest("input, select, textarea, [contenteditable=true]")) return;
+      const buttonControl = element?.closest<HTMLElement>("[data-pinball-control]")?.dataset.pinballControl;
+      const focusedControl = buttonControl === "left" || buttonControl === "right" || buttonControl === "both" ? buttonControl : undefined;
+      const control = (event.code === "Space" || event.code === "Enter") && focusedControl
+        ? focusedControl : pinballKeyControls[event.code];
+      if (control) {
         event.preventDefault();
+        if (event.repeat) return;
+        keyboardFlippersRef.current.set(event.code, control);
+        fortunaAudio.playPinballFlipper();
+        syncManualFlippers();
+      } else if (event.code === "Space" && !element?.closest("button")) {
+        event.preventDefault();
+        if (event.repeat) return;
         const launched = controllerRef.current?.launchBurst() ?? 0;
         if (launched > 0) {
           fortunaAudio.playPinballLaunch();
           setManualNotice(`${roundParticipants.length} pelotas lanzadas simultáneamente.`);
         }
       }
-      if (event.code === "ArrowLeft" || event.code === "KeyA") {
-        event.preventDefault();
-        keyboardFlippersRef.current.left = true;
-        fortunaAudio.playPinballFlipper();
-        syncManualFlippers();
-      }
-      if (event.code === "ArrowRight" || event.code === "KeyD") {
-        event.preventDefault();
-        keyboardFlippersRef.current.right = true;
-        fortunaAudio.playPinballFlipper();
-        syncManualFlippers();
-      }
-      if (event.code === "ArrowUp" || event.code === "KeyW") {
-        event.preventDefault();
-        keyboardFlippersRef.current.left = true;
-        keyboardFlippersRef.current.right = true;
-        fortunaAudio.playPinballFlipper();
-        syncManualFlippers();
-      }
     };
     const up = (event: KeyboardEvent) => {
-      if (event.code === "ArrowLeft" || event.code === "KeyA") keyboardFlippersRef.current.left = false;
-      if (event.code === "ArrowRight" || event.code === "KeyD") keyboardFlippersRef.current.right = false;
-      if (event.code === "ArrowUp" || event.code === "KeyW") {
-        keyboardFlippersRef.current.left = false;
-        keyboardFlippersRef.current.right = false;
-      }
+      keyboardFlippersRef.current.delete(event.code);
       syncManualFlippers();
     };
     const reset = () => {
-      keyboardFlippersRef.current.left = false;
-      keyboardFlippersRef.current.right = false;
+      keyboardFlippersRef.current.clear();
       pointerFlippersRef.current.left.clear();
       pointerFlippersRef.current.right.clear();
       syncManualFlippers();
@@ -367,10 +357,12 @@ export function PinballGame({
           </>
         ) : controlMode === "manual" && phase === "playing" ? (
           <div className="pinball-manual-controls">
-            <button type="button" className="pinball-flipper pinball-flipper--left" onPointerDown={(event) => pressManualFlipper("left", event)} onPointerUp={(event) => releaseManualFlipper("left", event)} onPointerCancel={(event) => releaseManualFlipper("left", event)} onLostPointerCapture={(event) => releaseManualFlipper("left", event)}>A / ← <b>FLIPPER</b></button>
+            <button type="button" data-pinball-control="left" aria-pressed={heldFlippers.left} className={`pinball-flipper pinball-flipper--left ${heldFlippers.left ? "is-held" : ""}`} onPointerDown={(event) => pressManualFlipper("left", event)} onPointerUp={(event) => releaseManualFlipper("left", event)} onPointerCancel={(event) => releaseManualFlipper("left", event)} onLostPointerCapture={(event) => releaseManualFlipper("left", event)}>A / ← <b>FLIPPER</b></button>
             <button
               type="button"
-              className={`pinball-launch ${allBallsLaunched ? "is-dual-flipper" : ""}`}
+              className={`pinball-launch ${allBallsLaunched ? "is-dual-flipper" : ""} ${heldFlippers.left && heldFlippers.right ? "is-held" : ""}`}
+              data-pinball-control={allBallsLaunched ? "both" : undefined}
+              aria-pressed={allBallsLaunched ? heldFlippers.left && heldFlippers.right : undefined}
               onClick={allBallsLaunched ? undefined : launch}
               onPointerDown={pressBothFlippers}
               onPointerUp={releaseBothFlippers}
@@ -380,7 +372,7 @@ export function PinballGame({
             >
               {allBallsLaunched ? <Zap size={18} /> : <Rocket size={18} />} {allBallsLaunched ? "AMBOS FLIPPERS" : "LANZAR TODAS"} <small>{allBallsLaunched ? "W / ↑" : "ESPACIO"}</small>
             </button>
-            <button type="button" className="pinball-flipper pinball-flipper--right" onPointerDown={(event) => pressManualFlipper("right", event)} onPointerUp={(event) => releaseManualFlipper("right", event)} onPointerCancel={(event) => releaseManualFlipper("right", event)} onLostPointerCapture={(event) => releaseManualFlipper("right", event)}><b>FLIPPER</b> → / D</button>
+            <button type="button" data-pinball-control="right" aria-pressed={heldFlippers.right} className={`pinball-flipper pinball-flipper--right ${heldFlippers.right ? "is-held" : ""}`} onPointerDown={(event) => pressManualFlipper("right", event)} onPointerUp={(event) => releaseManualFlipper("right", event)} onPointerCancel={(event) => releaseManualFlipper("right", event)} onLostPointerCapture={(event) => releaseManualFlipper("right", event)}><b>FLIPPER</b> → / D</button>
           </div>
         ) : (
           <div className="pinball-running"><span /><strong>{phase === "finished" ? "RESULTADO CONFIRMADO" : renderMode === "fallback" ? "RESOLVIENDO RONDA SELLADA" : "PINBALL EN MARCHA"}</strong></div>

@@ -1,8 +1,10 @@
 # Fortuna Real
 
-Aplicación de escritorio para sorteos mediante ruleta, cartas, Pinball 3D,
+Aplicación de escritorio para sorteos mediante ruleta, cartas,
 canicas y Patos 3D, con selección sin repeticiones, ganador directo y
 modo eliminación.
+
+Pinball 3D está temporalmente desactivado para jugar mientras se mejora.
 
 La Ruleta compromete uniformemente a una persona antes de animar (PAR/IMPAR es
 solo presentación). Patos genera un orden recuperable con CSPRNG AES-CTR/256 y
@@ -39,8 +41,16 @@ WebView2 silenciosamente si el equipo no lo tiene, con el paquete sin conexión
 incluido. Está preparado para Windows 10/11 x64. El usuario no necesita Internet
 para instalar/jugar, Node.js, Rust, Visual Studio ni copiar el código del proyecto.
 Internet solo se utiliza para buscar o descargar actualizaciones. El instalador
-incluye una voz neuronal femenina en español que funciona completamente sin conexión;
-si no logra iniciarse, Fortuna Real usa automáticamente una voz española de Windows.
+incluye **Daniela High**, una voz neuronal en español que funciona sin conexión.
+Si falla, muestra un aviso y permite reintentar con **Probar voz**, sin sustituirla
+por una voz de Windows. La versión de desarrollo abierta en un navegador sí usa
+la voz del navegador y lo indica; Daniela requiere la aplicación de escritorio.
+
+La versión 1.0.9 corrige la carga de Daniela en las rutas canónicas de Windows
+y precarga el modelo sin hablar al iniciar. La entrega portátil incluye la
+carpeta `resources`: debe permanecer junto al ejecutable. El instalador comprueba
+una síntesis real antes de generar la entrega y verifica los archivos de la voz
+portátil. Si se produce un error, el aviso muestra su causa y permite reintentar.
 
 En cada apertura, la aplicación compara su versión con `latest.json` en GitHub
 Releases. Si existe una versión superior, muestra **Actualizando Fortuna Real**,
@@ -58,19 +68,49 @@ organizada igualmente en `1 Programa`, `2 Instaladores` y `3 Ejecutar`.
 ## Inicio guiado y demos
 
 La primera entrada muestra una guía breve sobre los controles reales. La barra
-numerada permite saltar directamente a participantes, juego, modo o inicio. El
+numerada tiene tres indicadores: participantes, juego y modo. Los pasos completos
+se marcan en verde y el siguiente pendiente en amarillo. El
 botón **Guía** vuelve a abrir la ayuda en cualquier juego.
 
-Los cinco juegos incluyen demostraciones de cuatro pasos desde **Ver demo paso
+Los juegos disponibles incluyen demostraciones de cuatro pasos desde **Ver demo paso
 a paso**. La de Ruleta permite practicar la carga de nombres; la de Cartas permite
 revelar un reverso de ejemplo. Ninguna práctica modifica participantes, premios,
-historial ni resultados reales. Pinball, Canicas y Patos conservan su etiqueta BETA
+historial ni resultados reales. Canicas y Patos conservan su etiqueta BETA
 y tienen guías específicas de controles, cámaras, poderes y recuperación.
 
 Puedes avanzar con las flechas, salir con Escape y escuchar cada paso si la
 locución está activada y el volumen es mayor que cero. Al cerrar la guía inicial,
 el campo de nombres queda listo para escribir. La ayuda se recuerda por juego y
 se muestra automáticamente solo la primera vez.
+
+## Resultados y apariencia
+
+**Ver resultados** conserva las rondas, eliminaciones, último eliminado, ganador y
+premio de cada partida. Se puede buscar por nombre, juego o premio y exportar una
+copia JSON. Cambiar de juego o vaciar participantes no borra este archivo. Las
+rondas antiguas que ya habían sido borradas no pueden recuperarse. Si el equipo
+no permite guardar, aparece un aviso para exportar antes de cerrar.
+
+La cinta del inicio recorre los ganadores con nombre, juego, modo, premio y fecha.
+Se pausa con su botón, al colocar el cursor encima o al enfocarla con el teclado.
+**Modo juego** cambia la paleta y el nombre a **Zona de Juegos**, conservando el
+logo. Es solo una apariencia alternativa: no oculta ni borra registros.
+
+## Canicas y bosque de Patos (BETA)
+
+Las canicas recorren terrazas descendentes con curvas amplias, sin cruces forzados.
+Los niveles independientes superan 30 cm libres; las rampas conectan niveles de
+forma continua. Fácil tiene tres terrazas y 4,2 m de desnivel, Media cuatro y
+8,4 m, y Difícil cinco y 14,4 m. Aumentan también longitud, obstáculos y eventos.
+Hielo, río, tornado y temblor alteran avance, velocidad y desplazamiento de las
+pelotas. Se conserva el resultado sellado; los eventos no habilitan manipularlo.
+Persecución calcula distancias en metros y evita tableros, barandillas y piezas;
+Desde la canica, Lateral y Aérea ofrecen otros encuadres.
+
+Patos permite bandadas de hasta cinco objetivos, además de prácticas de uno o dos.
+Algunos vuelan; otros asoman entre árboles y pasto y vuelven a ocultarse. Un pato
+completamente oculto no se puede disparar; las hojas y los troncos bloquean los
+tiros. Cada acierto provoca la salida colectiva antes de la siguiente tanda.
 
 ## Crear el instalador
 

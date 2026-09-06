@@ -34,6 +34,7 @@ export interface WinnerRecord {
 
 export interface RoundResult {
   id: string;
+  sessionId?: string;
   participantId: string | null;
   participantName: string;
   selectedParticipantName?: string;

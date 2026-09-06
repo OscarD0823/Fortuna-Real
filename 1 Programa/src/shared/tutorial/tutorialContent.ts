@@ -26,7 +26,7 @@ export interface GameGuide {
 
 export const gameGuides: Record<GameId, GameGuide> = {
   roulette: {
-    title: "Ruleta casino",
+    title: "Ruleta",
     badge: "CLÁSICO",
     beta: false,
     summary: "Cada nombre ocupa una casilla y el resultado se sella antes de que la rueda empiece a girar.",
@@ -77,11 +77,11 @@ export const gameGuides: Record<GameId, GameGuide> = {
     title: "Patos 3D",
     badge: "BETA",
     beta: true,
-    summary: "Puntería con cámara frontal fija: uno o dos patos, tres disparos por tanda, refugios y tres vidas.",
+    summary: "Puntería en un bosque vivo: bandadas de hasta cinco patos, tres disparos por tanda, refugios y tres vidas.",
     steps: [
-      { title: "Elige la tanda", description: "Usa Un pato para aprender o Dos patos para aumentar la dificultad. La cámara frontal permanece estable mientras apuntas.", action: "Elige el modo y pulsa Soltar los patos." },
+      { title: "Elige la tanda", description: "Bandada muestra hasta cinco patos. También puedes practicar con uno o dos. Unos vuelan y otros asoman entre árboles y pasto; la cámara permanece estable mientras apuntas.", action: "Elige el modo y pulsa Soltar los patos." },
       { title: "Tres disparos", description: "Cada tanda permite tres intentos y tiene tiempo limitado. Si fallas los tres o se acaba el reloj, los patos escapan.", action: "Un impacto revela el siguiente nombre sellado y resta una vida." },
-      { title: "Refugio y salida colectiva", description: "Los patos se ocultan por completo detrás de árboles o pasto. Tras cada impacto, toda la bandada sale antes de la siguiente tanda.", action: "Sigue las lámparas de impacto y la meta visual." },
+      { title: "Refugio y salida colectiva", description: "Dispara a la parte del pato que veas: los troncos y las hojas bloquean el disparo. Cuando se oculta por completo no puede recibir impactos. Tras un acierto sale toda la bandada.", action: "Espera a que asomen y apunta al cuerpo o la cabeza." },
       { title: "Bosque vivo y poderes", description: "Cada tanda puede traer viento, niebla, luciérnagas o tormenta. Además, algunos patos cambian la paleta, invierten colores o hacen temblar la vista; todo es visual y no altera quién gana.", action: "El último participante con vidas vence." },
     ],
   },
@@ -89,14 +89,14 @@ export const gameGuides: Record<GameId, GameGuide> = {
 
 export const guidedTours: Record<TutorialId, GuidedTourStep[]> = {
   setup: [
-    { target: ".setup-hero", eyebrow: "BIENVENIDA", title: "Todo empieza aquí", description: "Sigue los pasos del 1 al 4: participantes, juego, modo e inicio. Primero te mostramos dónde está cada control; después podrás llenar tu lista.", tip: "Puedes repetir esta guía con el botón Guía de la barra superior." },
+    { target: ".setup-journey", eyebrow: "BIENVENIDA", title: "Tres indicadores te guían", description: "Participantes, juego y modo: verde significa completado y amarillo indica el siguiente paso. La cinta superior conserva las últimas victorias.", tip: "Abre Ver resultados para consultar las rondas y premios. La guía está en la barra superior." },
     { target: ".setup-name-entry", eyebrow: "PASO 1 · UN NOMBRE", title: "Escribe y agrega", description: "Escribe el nombre de una persona en este campo. Presiona Enter o el botón + para añadirla. Repite la operación con las demás personas.", tip: "Ejemplo: escribe Ana López y pulsa +. No pongas una coma si agregas solo una persona." },
     { target: ".setup-participant-actions", eyebrow: "PASO 1 · LISTA COMPLETA", title: "También puedes pegar varios", description: "Pulsa Pegar varios nombres. En el cuadro que se abre, escribe una persona por línea o sepáralas con comas. Después pulsa Agregar nombres.", tip: "Ejemplo: Ana, Bruno, Camila. Los nombres repetidos se omiten; no necesitas numerarlos." },
     { target: ".participant-list--full", eyebrow: "PASO 1 · REVISIÓN", title: "Comprueba tu lista", description: "Aquí verás a todas las personas cargadas. Si hay un error, usa la X junto al nombre para quitarlo y agrégalo de nuevo correctamente.", tip: "Necesitas al menos dos participantes habilitados para entrar al juego." },
-    { target: ".game-options--large", eyebrow: "PASO 2", title: "Elige una experiencia", description: "Ruleta y Cartas son modos clásicos. Pinball, Canicas y Patos están marcados como BETA y muestran controles y reglas especiales.", tip: "Seleccionar un juego actualiza inmediatamente las instrucciones inferiores." },
+    { target: ".game-options--large", eyebrow: "PASO 2", title: "Elige una experiencia", description: "Ruleta y Cartas son modos clásicos. Canicas y Patos están en BETA. Pinball está temporalmente desactivado mientras se mejora.", tip: "Seleccionar un juego actualiza inmediatamente las instrucciones inferiores." },
     { target: ".selected-game-guide", eyebrow: "DEMOSTRACIONES", title: "Aprende antes de jugar", description: "Cada juego incluye una demostración visual de cuatro pasos. Puedes verla antes de añadir nombres o repetirla cuando quieras.", tip: "Pulsa Ver demo paso a paso para explorar el juego seleccionado." },
     { target: ".mode-choice-panel", eyebrow: "PASO 3", title: "Define cómo termina", description: "Ganador directo permite varios premios sin repetir. Eliminación retira participantes hasta dejar un ganador. Aquí también defines el premio y los controles especiales.", tip: "Patos siempre usa supervivencia de tres vidas." },
-    { target: ".setup-hero-start", eyebrow: "PASO 4", title: "Entra al juego", description: "Con dos nombres o más, pulsa Iniciar sorteo. Dentro del juego aparecerá otra guía corta sobre sus controles reales.", tip: "El tutorial nunca realiza ni altera un sorteo." },
+    { target: ".setup-hero-start", eyebrow: "TODO LISTO", title: "Entra al juego", description: "Cuando los tres indicadores estén verdes, este botón abre el juego seleccionado. Allí verás sus controles reales.", tip: "El tutorial nunca realiza ni altera una partida." },
   ],
   roulette: [
     { target: ".casino-roster-panel", eyebrow: "RULETA · 1", title: "Relaciona nombre y casilla", description: "Esta lista conserva el número y color de cada participante durante la ronda.", tip: "En Eliminación también muestra PAR o IMPAR como referencia visual." },

@@ -69,7 +69,7 @@ export function ParticipantPanel() {
           <h2>Cargar participantes</h2>
           <p>
             {game === "roulette"
-              ? "Sin casillas vacías: la rueda se adapta a cada lista"
+              ? "Agrega una persona por nombre o pega la lista completa"
               : game === "cards"
                 ? "Cada nombre recibe una carta visible antes de barajar"
                 : game === "pinball"

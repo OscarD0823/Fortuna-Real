@@ -134,6 +134,7 @@ assert.equal(persistedSession.eliminationParity, "odd");
 assert.equal(persistedSession.activeSession?.roundCommitment?.commitmentId, "round-hash");
 
 const resetStore = () => useDrawStore.setState({
+  resultArchive: [],
   participants: [],
   eliminatedIds: [],
   history: [],
@@ -225,6 +226,40 @@ assert.equal(auditedResult.revealedSeed, "round-seed-256");
 assert.match(auditedResult.auditHash ?? "", /^[0-9a-f]{64}$/u);
 assert.equal(useDrawStore.getState().roundAudits.length, 1);
 assert.equal(useDrawStore.getState().roundAudits[0].selectedParticipantId, ana.id);
+assert.equal(useDrawStore.getState().resultArchive[0].id, auditedResult.id);
+assert.ok(auditedResult.sessionId);
+useDrawStore.getState().setGame("marbles");
+useDrawStore.getState().clearParticipants();
+useDrawStore.getState().resetDraw();
+assert.equal(useDrawStore.getState().history.length, 0);
+assert.equal(useDrawStore.getState().resultArchive[0].id, auditedResult.id, "Cambiar de juego y limpiar la lista no debe borrar las partidas.");
+const reloaded = mergePersistedDrawState(JSON.parse(persistedItems.get("fortuna-real-draw-v2")!).state, initial);
+assert.equal(reloaded.resultArchive[0].sessionId, auditedResult.sessionId);
+const importedArchive = mergePersistedDrawState({ history: [result(ana)] }, initial);
+assert.equal(importedArchive.resultArchive[0].id, result(ana).id, "Las rondas antiguas disponibles se deben migrar.");
+const { groupResultArchive } = await import("../src/modules/results/resultArchive.ts");
+resetStore();
+const cami = { id: "cami", name: "Camila", color: "#238ad5" };
+useDrawStore.setState({ participants: [ana, bea, cami], mode: "elimination", game: "marbles", prize: "Trofeo de prueba" });
+const archiveSession = useDrawStore.getState().beginSession();
+useDrawStore.getState().commitRound({ commitmentId: "test-1", expectedParticipantId: ana.id });
+useDrawStore.getState().recordSelection(ana.id, 1);
+useDrawStore.getState().commitRound({ commitmentId: "test-2", expectedParticipantId: bea.id });
+useDrawStore.getState().recordSelection(bea.id, 2);
+const match = groupResultArchive(useDrawStore.getState().resultArchive)[0];
+assert.equal(match.id, archiveSession.sessionId);
+assert.deepEqual(match.rounds.map((round) => round.participantName), ["Ana", "Camila"]);
+assert.equal(match.winner?.selectedParticipantName, "Bea");
+assert.equal(match.winner?.prize, "Trofeo de prueba");
+assert.equal(match.rounds.length, 2);
+const { drawStorage, getDrawStorageFailure } = await import("../src/modules/participants/drawStorage.ts");
+const workingSetItem = localStorage.setItem;
+localStorage.setItem = () => { throw new Error("QuotaExceededError"); };
+assert.doesNotThrow(() => drawStorage.setItem("quota-test", "data"));
+assert.equal(getDrawStorageFailure(), true);
+localStorage.setItem = workingSetItem;
+drawStorage.setItem("quota-test", "data");
+assert.equal(getDrawStorageFailure(), false);
 
 console.log(JSON.stringify({
   persistenceVersion: DRAW_STATE_VERSION,
@@ -239,4 +274,5 @@ console.log(JSON.stringify({
   roundCommitmentRecovery: true,
   committedRosterLocked: true,
   completedRoundAudit: true,
+  persistentFullMatchArchive: true,
 }));

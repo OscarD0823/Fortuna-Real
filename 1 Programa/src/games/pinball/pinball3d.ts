@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { getPinballFlipperBlend } from "./pinballControls";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import {
@@ -1042,7 +1043,6 @@ export const createPinballScene = (
     roughness: 0.14,
     clearcoat: 1,
     clearcoatRoughness: 0.08,
-    vertexColors: true,
   });
   const ballsMesh = new THREE.InstancedMesh(ballGeometry, ballMaterial, count);
   ballsMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -1124,6 +1124,7 @@ export const createPinballScene = (
     physics: createPinballPhysicsBall(assignment, round.layout),
     respawns: 0,
   } satisfies RuntimeBall));
+  const automaticPhysicsBalls = runtime.map((item) => item.physics);
   const matrix = new THREE.Matrix4();
   const matrixPosition = new THREE.Vector3();
   const matrixQuaternion = new THREE.Quaternion();
@@ -1244,7 +1245,7 @@ export const createPinballScene = (
     }
 
     if (running && round.controlMode === "automatic") {
-      const threat = getPinballAutomaticFlipperThreat(runtime.map((item) => item.physics));
+      const threat = getPinballAutomaticFlipperThreat(automaticPhysicsBalls);
       const approachingLeft = threat.left;
       const approachingRight = threat.right;
       if (approachingLeft && now >= automaticLeftCooldownUntil) {
@@ -1267,7 +1268,7 @@ export const createPinballScene = (
       : round.controlMode === "automatic" ? automaticFlippers : flippers;
     const leftTarget = effectiveFlippers.left ? PINBALL_FLIPPERS.left.activeAngle : PINBALL_FLIPPERS.left.restAngle;
     const rightTarget = effectiveFlippers.right ? PINBALL_FLIPPERS.right.activeAngle : PINBALL_FLIPPERS.right.restAngle;
-    const flipperBlend = reducedMotion ? 1 : 0.32;
+    const flipperBlend = getPinballFlipperBlend(delta);
     leftFlipper.rotation.y += (leftTarget - leftFlipper.rotation.y) * flipperBlend;
     rightFlipper.rotation.y += (rightTarget - rightFlipper.rotation.y) * flipperBlend;
     physicsFlippers.left = effectiveFlippers.left;

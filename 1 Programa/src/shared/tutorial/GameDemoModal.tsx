@@ -18,7 +18,7 @@ import { fortunaAudio } from "../audio/audioEngine";
 import { gameGuides } from "./tutorialContent";
 import { useTutorialDialog } from "./useTutorialDialog";
 
-const demoGames: GameId[] = ["roulette", "cards", "pinball", "marbles", "ducks"];
+const demoGames: GameId[] = ["roulette", "cards", "marbles", "ducks"];
 const gameIcons = {
   roulette: CircleDot,
   cards: Layers3,

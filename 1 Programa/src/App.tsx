@@ -4,6 +4,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
   type ReactNode,
 } from "react";
 import {
@@ -28,7 +29,6 @@ import {
   MicOff,
   Play,
   RotateCcw,
-  ShieldCheck,
   Shuffle,
   Sparkles,
   Target,
@@ -73,10 +73,16 @@ import { arrangeEliminationEntries } from "./games/roulette/rouletteEntries";
 import { DrawSetup } from "./modules/draw/DrawSetup";
 import { ParticipantPanel } from "./modules/participants/ParticipantPanel";
 import { useDrawStore } from "./modules/participants/drawStore";
+import { getDrawStorageFailure, subscribeDrawStorage } from "./modules/participants/drawStorage";
 import { ResultReveal } from "./modules/results/ResultReveal";
 import { resolveFinalWinner } from "./modules/results/finalWinner";
 import { WinnerHistory } from "./modules/winners/WinnerHistory";
+import { ResultsArchive, WinnersRibbon } from "./modules/results/ResultsArchive";
+import { isGamePlayable } from "./core/gameAvailability";
+import { NeutralAppearanceContext, useNeutralAppearance } from "./shared/appearance";
 import { fortunaAudio } from "./shared/audio/audioEngine";
+import { isTauri } from "@tauri-apps/api/core";
+import { getNarrationDetail, getNarrationStatus, subscribeNarrationStatus } from "./shared/audio/narrationStatus";
 import { parseAudioVolume } from "./shared/audio/audioPreferences";
 import { sha256Hex } from "./shared/crypto/sha256";
 import { SplashScreen } from "./shared/components/SplashScreen";
@@ -110,7 +116,7 @@ const formatEstimatedDuration = (
   marbleDifficulty: MarbleDifficulty,
 ) => {
   if (participantCount < 2) return "Agrega al menos dos participantes";
-  const marbleSeconds = marbleDifficulty === "easy" ? 12 : marbleDifficulty === "hard" ? 22 : 17;
+  const marbleSeconds = marbleDifficulty === "easy" ? 16 : marbleDifficulty === "hard" ? 46 : 29;
   const duckSeconds = participantCount > 100
     ? 0.78
     : participantCount > 50
@@ -135,6 +141,13 @@ const tutorialSeenKey = (tutorialId: TutorialId) => `fortuna-real-tutorial-v2-${
 type ActiveScreen = "setup" | "roulette" | "cards" | "pinball" | "marbles" | "ducks";
 
 function App() {
+  const [neutralMode, setNeutralMode] = useState(() => localStorage.getItem("fortuna-real-appearance") === "play");
+  const [showResults, setShowResults] = useState(false);
+  useEffect(() => {
+    document.documentElement.dataset.appearance = neutralMode ? "play" : "original";
+    document.title = neutralMode ? "Zona de Juegos" : "Fortuna Real";
+    localStorage.setItem("fortuna-real-appearance", neutralMode ? "play" : "original");
+  }, [neutralMode]);
   const [showSplash, setShowSplash] = useState(true);
   const [screen, setScreen] = useState<ActiveScreen>("setup");
   const [cardRoundKey, setCardRoundKey] = useState(0);
@@ -294,7 +307,7 @@ function App() {
   }, [cancelSession]);
 
   const enterSelectedGame = () => {
-    if (activeParticipants.length < 2) return;
+    if (activeParticipants.length < 2 || !isGamePlayable(game)) return;
     setRoundAnimating(false);
     setIsSpinning(false);
     setCurrentResult(null);
@@ -571,11 +584,11 @@ function App() {
   };
 
   useEffect(() => {
-    if (!startupUpdateCheckComplete || showSplash || activeTutorial || demoGame || roundAnimating || currentResult) return;
+    if (!startupUpdateCheckComplete || showSplash || showResults || activeTutorial || demoGame || roundAnimating || currentResult || screen === "pinball") return;
     if (localStorage.getItem(tutorialSeenKey(screen)) === "seen") return;
     const timer = window.setTimeout(() => setActiveTutorial(screen), screen === "setup" ? 420 : 620);
     return () => window.clearTimeout(timer);
-  }, [activeTutorial, currentResult, demoGame, roundAnimating, screen, showSplash, startupUpdateCheckComplete]);
+  }, [activeTutorial, currentResult, demoGame, roundAnimating, screen, showSplash, showResults, startupUpdateCheckComplete]);
 
   const closeTutorial = useCallback(() => {
     if (activeTutorial) localStorage.setItem(tutorialSeenKey(activeTutorial), "seen");
@@ -586,6 +599,7 @@ function App() {
   }, [activeTutorial]);
 
   const openDemo = useCallback((selectedGame: GameId) => {
+    if (!isGamePlayable(selectedGame)) return;
     setActiveTutorial(null);
     setDemoGame(selectedGame);
   }, []);
@@ -598,7 +612,7 @@ function App() {
   }, [screen]);
 
   return (
-    <div className="app-root">
+    <NeutralAppearanceContext.Provider value={neutralMode}><div className="app-root">
       {showSplash && <SplashScreen onDone={() => setShowSplash(false)} />}
 
       <main className={`app-shell ${showSplash ? "app-shell--waiting" : ""}`} inert={Boolean((activeTutorial || demoGame) && !currentResult)}>
@@ -621,6 +635,9 @@ function App() {
           roundCommitted={roundLocked}
           roundNumber={roundNumber}
           activeCount={activeParticipants.length}
+          onOpenResults={() => setShowResults(true)}
+          neutralMode={neutralMode}
+          onToggleAppearance={() => setNeutralMode((value) => !value)}
         />
 
         {screen === "setup" ? (
@@ -675,7 +692,7 @@ function App() {
             onRestart={restartSession}
             restartDisabled={roundLocked}
           />
-        ) : screen === "pinball" ? (
+        ) : screen === "pinball" ? (!isGamePlayable("pinball") ? <section className="panel game-maintenance"><Gamepad2 size={42} /><h1>Pinball está en mejora</h1><p>Temporalmente deshabilitado. Los resultados anteriores se conservan.</p><button className="start-button" type="button" onClick={returnToSetup}>Volver al inicio</button></section> : (
           <PinballScreen
             key={pinballRoundKey}
             participants={participants}
@@ -696,7 +713,7 @@ function App() {
             onRestart={restartSession}
             restartDisabled={roundLocked}
           />
-        ) : screen === "marbles" ? (
+        )) : screen === "marbles" ? (
           <MarblesScreen
             key={marbleRoundKey}
             participants={participants}
@@ -760,17 +777,17 @@ function App() {
       )}
       {activeTutorial && !currentResult && <GuidedTour key={activeTutorial} tutorialId={activeTutorial} onDone={closeTutorial} canNarrate={voiceEnabled && audioVolume > 0} />}
       {demoGame && !currentResult && <GameDemoModal initialGame={demoGame} onDone={closeDemo} canNarrate={voiceEnabled && audioVolume > 0} />}
+      {showResults && <ResultsArchive onClose={() => setShowResults(false)} />}
       <AppUpdater
-        blocked={showSplash || screen !== "setup" || roundAnimating || !!activeTutorial || !!demoGame || !!currentResult}
+        blocked={showSplash || showResults || screen !== "setup" || roundAnimating || !!activeTutorial || !!demoGame || !!currentResult}
         onStartupCheckComplete={completeStartupUpdateCheck}
       />
-    </div>
+    </div></NeutralAppearanceContext.Provider>
   );
 }
 
 function Topbar({
   screen,
-  game,
   soundEnabled,
   onToggleSound,
   voiceEnabled,
@@ -784,6 +801,9 @@ function Topbar({
   roundCommitted,
   roundNumber,
   activeCount,
+  onOpenResults,
+  neutralMode,
+  onToggleAppearance,
 }: {
   screen: ActiveScreen;
   game: GameId;
@@ -800,17 +820,24 @@ function Topbar({
   roundCommitted: boolean;
   roundNumber: number;
   activeCount: number;
+  onOpenResults: () => void;
+  neutralMode: boolean;
+  onToggleAppearance: () => void;
 }) {
+  const narrationStatus = useSyncExternalStore(subscribeNarrationStatus, getNarrationStatus);
+  const narrationDetail = useSyncExternalStore(subscribeNarrationStatus, getNarrationDetail);
+  const storageFailed = useSyncExternalStore(subscribeDrawStorage, getDrawStorageFailure);
+  const voiceLabel = isTauri() ? "Daniela High · voz integrada sin internet" : "Voz del navegador · Daniela High está en la aplicación instalada";
   return (
     <header className="topbar">
-      <div className="brand-lockup" aria-label="Fortuna Real">
+      <div className="brand-lockup" aria-label={neutralMode ? "Zona de Juegos" : "Fortuna Real"}>
         <div className="brand-mark" aria-hidden="true">
           <span className="brand-mark__ring" />
           <Crown size={23} strokeWidth={1.7} />
         </div>
         <div>
-          <div className="brand-name">FORTUNA <span>REAL</span></div>
-          <div className="brand-tagline">Sorteos con emoción real</div>
+          <div className="brand-name">{neutralMode ? <>ZONA DE <span>JUEGOS</span></> : <>FORTUNA <span>REAL</span></>}</div>
+          <div className="brand-tagline">{neutralMode ? "Juega, comparte y celebra" : "Sorteos con emoción real"}</div>
         </div>
       </div>
 
@@ -827,26 +854,11 @@ function Topbar({
           </div>
         </div>
       ) : (
-        <div className="fairness-pill">
-          <ShieldCheck size={20} />
-          <div>
-            <strong>Configuración del sorteo</strong>
-            <span>
-              {game === "roulette"
-                ? "La ruleta se adapta a cada lista"
-                : game === "cards"
-                  ? "Asignación visible y barajado por fases"
-                  : game === "pinball"
-                    ? "Mesa 3D nueva en cada ingreso"
-                    : game === "marbles"
-                      ? "Pista 3D procedural y poderes automáticos"
-                      : "Tres vidas y supervivencia 3D"}
-            </span>
-          </div>
-        </div>
+        <button type="button" className="fairness-pill results-open" onClick={onOpenResults}><History size={20} /><span><strong>Ver resultados</strong><small>Partidas, eliminaciones y premios</small></span></button>
       )}
 
       <div className="topbar-actions">
+        <button type="button" className={`appearance-toggle ${neutralMode ? "is-active" : ""}`} aria-pressed={neutralMode} onClick={onToggleAppearance} title="Cambia la apariencia; no borra ni oculta resultados"><Gamepad2 size={17} /><span>Modo juego</span></button>
         {screen !== "setup" && (
           <button
             className="back-button"
@@ -894,9 +906,9 @@ function Topbar({
           className="icon-button"
           type="button"
           aria-label="Probar voz natural"
-          title="Probar la mejor voz en español disponible"
+          title={voiceLabel}
           onClick={() => fortunaAudio.previewNarration()}
-          disabled={!voiceEnabled}
+          disabled={!voiceEnabled || audioVolume <= 0 || narrationStatus === "loading"}
         >
           <AudioLines size={19} />
         </button>
@@ -908,6 +920,12 @@ function Topbar({
           <Expand size={19} />
         </button>
       </div>
+      <span className={`narration-status ${narrationStatus === "error" ? "is-error" : narrationStatus === "idle" || narrationStatus === "browser" ? "sr-only" : ""}`} role="status">
+        {narrationStatus === "error" ? `Daniela High: ${narrationDetail} Pulsa Probar voz para reintentar.`
+          : narrationStatus === "loading" ? "Preparando Daniela High…"
+            : narrationStatus === "playing" ? "Hablando: Daniela High" : voiceLabel}
+      </span>
+      {storageFailed && <div className="narration-status is-error" role="alert">No se pudo guardar en este equipo. No cierres el programa: <button type="button" onClick={onOpenResults}>abre Resultados y exporta una copia</button>.</div>}
     </header>
   );
 }
@@ -933,24 +951,26 @@ function SetupScreen({
 }) {
   const estimatedDuration = formatEstimatedDuration(game, eligibleCount, marbleDifficulty);
   const selectedGuide = gameGuides[game];
-  const focusSetupControl = (selector: string) => {
-    const target = document.querySelector<HTMLElement>(selector);
+  const gameChosen = useDrawStore((state) => state.setupGameChosen) && isGamePlayable(game);
+  const modeChosen = useDrawStore((state) => state.setupModeChosen);
+  const participantsReady = eligibleCount >= 2;
+  const ready = participantsReady && gameChosen && modeChosen;
+  const focusSetupControl = (selector: string, fallback?: string) => {
+    const target = document.querySelector<HTMLElement>(selector) ?? (fallback ? document.querySelector<HTMLElement>(fallback) : null);
     target?.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth", block: "center" });
     target?.focus({ preventScroll: true });
   };
   return (
     <section className="setup-page">
-      <div className="setup-hero">
-        <div>
-          <span className="eyebrow">CONFIGURACIÓN GUIADA</span>
-          <h1>Tu sorteo listo en 3 pasos</h1>
-          <p>1. Agrega los nombres. 2. Elige el juego. 3. Define cómo se decide. Después pulsa el botón principal.</p>
-          <div className="setup-hero-help">
-            <button type="button" onClick={onOpenTutorial}><HelpCircle size={16} /> Tutorial del inicio</button>
-            <button type="button" onClick={() => onOpenDemo(game)}><Play size={15} /> Demo de {selectedGuide.title}</button>
-          </div>
-        </div>
-        <div className="setup-hero-actions">
+      <div className="setup-hero setup-hero--ribbon"><WinnersRibbon /></div>
+
+      <nav className="setup-journey" aria-label="Pasos para preparar la partida">
+        <button type="button" aria-label="Paso 1: cargar participantes" aria-current={!participantsReady ? "step" : undefined} onClick={() => focusSetupControl('.setup-name-entry input')} className={participantsReady ? "is-complete" : "is-current"}><i>{participantsReady ? <CheckCircle2 size={18} /> : 1}</i><b>Participantes</b><small>{participantsReady ? `${eligibleCount} habilitados` : "Agrega o habilita mínimo 2"}</small></button>
+        <button type="button" aria-label="Paso 2: elegir juego" aria-current={participantsReady && !gameChosen ? "step" : undefined} onClick={() => focusSetupControl('.game-options--large [aria-checked="true"]', '.game-options--large button:not(:disabled)')} className={gameChosen ? "is-complete" : participantsReady ? "is-current" : ""}><i>{gameChosen ? <CheckCircle2 size={18} /> : 2}</i><b>Seleccionar juego</b><small>{gameChosen ? selectedGuide.title : "Elige tu experiencia"}</small></button>
+        <button type="button" aria-label="Paso 3: elegir modo" aria-current={participantsReady && gameChosen && !modeChosen ? "step" : undefined} onClick={() => focusSetupControl('.mode-options--two [aria-checked="true"]', '.mode-options--two button:not(:disabled)')} className={modeChosen && gameChosen ? "is-complete" : participantsReady && gameChosen ? "is-current" : ""}><i>{modeChosen && gameChosen ? <CheckCircle2 size={18} /> : 3}</i><b>Seleccionar modo</b><small>{modeChosen && gameChosen ? modeLabels[mode] : "Define cómo se decide"}</small></button>
+      </nav>
+
+        <div className="setup-launch-bar">
           <div className="setup-summary">
             <Users size={19} />
             <span>
@@ -963,28 +983,21 @@ function SetupScreen({
             className="start-button setup-start-button setup-hero-start"
             data-tour="start-draw"
             onClick={onStart}
-            disabled={eligibleCount < 2}
-            title={eligibleCount < 2
-              ? "Agrega al menos dos participantes"
-              : `Entrar a ${game === "roulette" ? "la ruleta" : game === "cards" ? "la mesa de cartas" : game === "pinball" ? "Pinball 3D" : game === "marbles" ? "Canicas 3D" : "Patos 3D"}`}
+            disabled={!ready}
+            title={!ready
+              ? "Completa el paso marcado en amarillo"
+              : `Entrar a ${game === "roulette" ? "la ruleta" : game === "cards" ? "la mesa de cartas" : game === "marbles" ? "Canicas 3D" : "Patos 3D"}`}
           >
-            <Play size={21} fill="currentColor" /> {eligibleCount < 2 ? "Faltan participantes" : `Entrar a ${selectedGuide.title}`}
+            <Play size={21} fill="currentColor" /> {!participantsReady ? "Faltan participantes" : !gameChosen ? "Selecciona un juego" : !modeChosen ? "Selecciona un modo" : `Entrar a ${selectedGuide.title}`}
           </button>
         </div>
-      </div>
-
-      <nav className="setup-journey" aria-label="Pasos para iniciar el sorteo">
-        <button type="button" aria-label="Paso 1: cargar participantes" onClick={() => focusSetupControl('.setup-name-entry input')} className={participantCount >= 2 ? "is-complete" : "is-current"}><i>1</i><b>Participantes</b><small>{participantCount >= 2 ? `${participantCount} cargados` : "Agrega mínimo 2"}</small></button>
-        <button type="button" aria-label="Paso 2: elegir juego" onClick={() => focusSetupControl('.game-options--large [aria-checked="true"]')} className="is-ready"><i>2</i><b>Juego</b><small>{selectedGuide.title}</small></button>
-        <button type="button" aria-label="Paso 3: elegir modo" onClick={() => focusSetupControl('.mode-options--two [aria-checked="true"]')} className="is-ready"><i>3</i><b>Modo</b><small>{modeLabels[mode]}</small></button>
-        <button type="button" aria-label="Paso 4: entrar al juego" onClick={onStart} disabled={eligibleCount < 2} className={eligibleCount >= 2 ? "is-current" : ""}><i>4</i><b>Iniciar</b><small>{eligibleCount >= 2 ? "Todo listo" : "Pendiente"}</small></button>
-      </nav>
 
       <div className="setup-grid">
         <ParticipantPanel />
         <div className="setup-right-column">
           <DrawSetup onOpenDemo={onOpenDemo} />
           <WinnerHistory />
+          <div className="setup-help"><button type="button" onClick={onOpenTutorial}><HelpCircle size={16} /> Ayuda del inicio</button><button type="button" disabled={!isGamePlayable(game)} onClick={() => onOpenDemo(game)}><Play size={15} /> Ver demostración</button></div>
         </div>
       </div>
     </section>
@@ -1037,6 +1050,7 @@ function RouletteScreen({
     selectableCount === 0 ||
     !!sessionWinner ||
     (mode === "elimination" && activeParticipants.length < 2);
+  const neutral = useNeutralAppearance();
 
   return (
     <section className="casino-workspace">
@@ -1084,7 +1098,7 @@ function RouletteScreen({
         <div className="stage-heading casino-stage-heading">
           <div>
             <span className="eyebrow">{modeLabels[mode]} · RONDA {roundNumber}</span>
-            <h1>Ruleta de casino</h1>
+            <h1>{neutral ? "Rueda de nombres" : "Ruleta"}</h1>
           </div>
           <div className="live-badge"><span /> {isSpinning ? "PELOTA EN JUEGO" : "GIRO DE ESPERA"}</div>
         </div>

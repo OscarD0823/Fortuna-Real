@@ -1,5 +1,6 @@
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
+import { createJSONStorage, persist } from "zustand/middleware";
+import { drawStorage } from "./drawStorage.ts";
 import type {
   DrawMode,
   GameId,
@@ -29,7 +30,6 @@ export const MAX_PARTICIPANT_NAME_LENGTH = 42;
 export const DRAW_STATE_VERSION = 5;
 const MAX_PRIZE_LENGTH = 60;
 const MAX_HISTORY_RECORDS = 1_000;
-const MAX_WINNER_RECORDS = 1_000;
 const MAX_SESSION_AUDIT_RECORDS = 100;
 const MAX_ROUND_AUDIT_RECORDS = 200;
 const MAX_ID_LENGTH = 128;
@@ -130,7 +130,6 @@ const sanitizeWinnerRecords = (value: unknown): WinnerRecord[] => {
   const ids = new Set<string>();
 
   for (const candidate of value) {
-    if (records.length >= MAX_WINNER_RECORDS) break;
     if (!isRecord(candidate)) continue;
     const id = sanitizeId(candidate.id);
     const participantId = sanitizeId(candidate.participantId);
@@ -160,13 +159,13 @@ const ROUND_RESULT_KINDS: RoundResult["kind"][] = [
   "parity-selected",
 ];
 
-const sanitizeHistory = (value: unknown): RoundResult[] => {
+const sanitizeHistory = (value: unknown, limit = MAX_HISTORY_RECORDS): RoundResult[] => {
   if (!Array.isArray(value)) return [];
   const history: RoundResult[] = [];
   const ids = new Set<string>();
 
   for (const candidate of value) {
-    if (history.length >= MAX_HISTORY_RECORDS) break;
+    if (history.length >= limit) break;
     if (!isRecord(candidate)) continue;
     const id = sanitizeId(candidate.id);
     const participantId = candidate.participantId === null
@@ -190,6 +189,7 @@ const sanitizeHistory = (value: unknown): RoundResult[] => {
     ids.add(id);
     history.push({
       id,
+      sessionId: sanitizeOptionalText(candidate.sessionId, MAX_ID_LENGTH),
       participantId,
       participantName,
       selectedParticipantName: sanitizeOptionalText(
@@ -294,12 +294,15 @@ export interface DrawState {
   participants: Participant[];
   eliminatedIds: string[];
   history: RoundResult[];
+  resultArchive: RoundResult[];
   winnerRecords: WinnerRecord[];
   blockedWinnerIds: string[];
   eliminationParity: Parity | null;
   mode: DrawMode;
   game: GameId;
   marbleDifficulty: MarbleDifficulty;
+  setupGameChosen: boolean;
+  setupModeChosen: boolean;
   marbleFinishRule: MarbleFinishRule;
   pinballControlMode: PinballControlMode;
   prize: string;
@@ -624,11 +627,14 @@ export const mergePersistedDrawState = (
     participants,
     eliminatedIds,
     history,
+    resultArchive: sanitizeHistory(stored.resultArchive ?? stored.history, Infinity),
     winnerRecords,
     blockedWinnerIds,
     eliminationParity,
     mode,
     game,
+    setupGameChosen: stored.setupGameChosen === true,
+    setupModeChosen: stored.setupModeChosen === true,
     marbleDifficulty: normalizeMarbleDifficulty(stored.marbleDifficulty),
     marbleFinishRule:
       stored.marbleFinishRule === "first" || stored.marbleFinishRule === "last"
@@ -706,11 +712,14 @@ export const useDrawStore = create<DrawState>()(
       participants: [],
       eliminatedIds: [],
       history: [],
+      resultArchive: [],
       winnerRecords: [],
       blockedWinnerIds: [],
       eliminationParity: null,
       mode: "elimination",
       game: "roulette",
+      setupGameChosen: false,
+      setupModeChosen: false,
       marbleDifficulty: "medium",
       marbleFinishRule: "first",
       pinballControlMode: "automatic",
@@ -787,6 +796,7 @@ export const useDrawStore = create<DrawState>()(
         assertNoCommittedSession(get().activeSession);
         set({
           mode,
+          setupModeChosen: true,
           eliminatedIds: [],
           history: [],
           eliminationParity: null,
@@ -798,6 +808,8 @@ export const useDrawStore = create<DrawState>()(
         assertNoCommittedSession(get().activeSession);
         set({
           game: normalizeGame(game),
+          setupGameChosen: true,
+          setupModeChosen: false,
           eliminatedIds: [],
           history: [],
           eliminationParity: null,
@@ -988,7 +1000,7 @@ export const useDrawStore = create<DrawState>()(
             nextWinnerRecords = [
               createWinnerRecord(resultParticipant, state.prize, state.mode, state.game),
               ...state.winnerRecords,
-            ].slice(0, MAX_WINNER_RECORDS);
+            ];
           } else {
             kind = "eliminated";
             nextRound += 1;
@@ -1002,11 +1014,12 @@ export const useDrawStore = create<DrawState>()(
           nextWinnerRecords = [
             createWinnerRecord(participant, state.prize, state.mode, state.game),
             ...state.winnerRecords,
-          ].slice(0, MAX_WINNER_RECORDS);
+          ];
         }
 
         const result: RoundResult = {
           id: makeId(),
+          sessionId: session.sessionId,
           participantId: resultParticipant.id,
           participantName: resultParticipant.name,
           selectedParticipantName,
@@ -1026,6 +1039,7 @@ export const useDrawStore = create<DrawState>()(
         const audited = attachRoundAudit(state, result, participantId);
         set({
           history: [audited.result, ...state.history].slice(0, MAX_HISTORY_RECORDS),
+          resultArchive: [audited.result, ...state.resultArchive],
           eliminatedIds: nextEliminatedIds,
           blockedWinnerIds: nextBlockedWinnerIds,
           winnerRecords: nextWinnerRecords,
@@ -1073,6 +1087,7 @@ export const useDrawStore = create<DrawState>()(
           if (!participant) return [];
           return [{
             id: makeId(),
+            sessionId: session.sessionId,
             participantId: participant.id,
             participantName: participant.name,
             selectionLabel: `Pato #${knockout.number} · perdió sus 3 vidas`,
@@ -1091,6 +1106,7 @@ export const useDrawStore = create<DrawState>()(
         const survivorNumber = Math.max(1, activeIds.indexOf(survivorId) + 1);
         const winnerResult: RoundResult = {
           id: makeId(),
+          sessionId: session.sessionId,
           participantId: survivor.id,
           participantName: survivor.name,
           selectedParticipantName: lastKnockout?.participantName,
@@ -1109,6 +1125,7 @@ export const useDrawStore = create<DrawState>()(
 
         const audited = attachRoundAudit(state, winnerResult, survivorId);
         set({
+          resultArchive: [audited.result, ...eliminatedResults.slice().reverse(), ...state.resultArchive],
           history: [audited.result, ...eliminatedResults.reverse(), ...state.history]
             .slice(0, MAX_HISTORY_RECORDS),
           eliminatedIds: Array.from(new Set([...state.eliminatedIds, ...knockouts.map((knockout) => knockout.participantId)])),
@@ -1116,7 +1133,7 @@ export const useDrawStore = create<DrawState>()(
           winnerRecords: [
             createWinnerRecord(survivor, state.prize, "elimination", "ducks"),
             ...state.winnerRecords,
-          ].slice(0, MAX_WINNER_RECORDS),
+          ],
           roundNumber: Math.max(1, knockouts.length + 1),
           eliminationParity: null,
           activeSession: markSessionCompleted(state.activeSession, createdAt),
@@ -1160,11 +1177,14 @@ export const useDrawStore = create<DrawState>()(
     }),
     {
       name: "fortuna-real-draw-v2",
+      storage: createJSONStorage(() => drawStorage),
       partialize: (state) => ({
         participants: state.participants,
         mode: state.mode,
         game: state.game,
         marbleDifficulty: state.marbleDifficulty,
+        setupGameChosen: state.setupGameChosen,
+        setupModeChosen: state.setupModeChosen,
         marbleFinishRule: state.marbleFinishRule,
         pinballControlMode: state.pinballControlMode,
         prize: state.prize,
@@ -1172,6 +1192,7 @@ export const useDrawStore = create<DrawState>()(
         blockedWinnerIds: state.blockedWinnerIds,
         eliminatedIds: state.eliminatedIds,
         history: state.history,
+        resultArchive: state.resultArchive,
         eliminationParity: state.eliminationParity,
         roundNumber: state.roundNumber,
         activeSession: state.activeSession,

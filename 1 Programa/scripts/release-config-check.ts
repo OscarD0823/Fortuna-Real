@@ -55,6 +55,8 @@ for (const label of [
 }
 assert.equal(tauriConfig.build?.frontendDist, "../dist", "El instalador debe incluir el frontend compilado.");
 assert.ok(tauriConfig.bundle?.resources?.includes("resources/tts/"), "El instalador debe incluir la voz neuronal offline.");
+assert.ok(installerCreator.includes('Copy-Item -LiteralPath $voiceResourcesSource -Destination $portableResources -Recurse'), "La edición portátil también debe llevar los recursos de Daniela, no solo el ejecutable.");
+assert.ok(installerCreator.includes('Get-FileHash -LiteralPath $deliveredVoicePath'), "La entrega debe verificar la copia de todos los recursos de voz.");
 assert.ok(cargoToml.includes('sherpa-onnx = { version = "=1.13.7"'), "El backend debe integrar sherpa-onnx de forma nativa y reproducible.");
 assert.ok(cargoToml.includes('features = ["static"]'), "La voz debe quedar autocontenida sin DLL externas.");
 assert.ok(cargoConfig.includes("target-feature=+crt-static"), "Rust y sherpa-onnx deben usar el mismo CRT en Windows.");

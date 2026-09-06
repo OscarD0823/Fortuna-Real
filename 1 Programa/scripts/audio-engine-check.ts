@@ -101,6 +101,77 @@ fortunaAudio.announceResult({ ...result, id: "muted-result", participantName: "M
 await new Promise((resolve) => setTimeout(resolve, 620));
 assert.equal(spoken.length, 3, "Desactivar la voz debe impedir nuevas locuciones sin reactivar efectos.");
 
+const { getNarrationStatus, getNarrationDetail } = await import("../src/shared/audio/narrationStatus.ts");
+let synthesisFails = false;
+let suppliedVoice = "Daniela High · Anunciadora Fortuna";
+let playbackFails = false;
+let nativePlays = 0;
+Object.defineProperty(globalThis, "isTauri", { configurable: true, value: true });
+Object.assign(window, { __TAURI_INTERNALS__: { invoke: async (command: string) => {
+  assert.equal(command, "synthesize_offline_speech");
+  if (synthesisFails) throw new Error("Modelo ausente");
+  return { voice: suppliedVoice, audioBase64: "UklGRg==", durationMs: 2500, sampleRate: 22050 };
+} } });
+class NativeAudioMock {
+  preload = "";
+  volume = 1;
+  src: string;
+  constructor(src: string) { this.src = src; }
+  addEventListener() {}
+  pause() {}
+  removeAttribute() {}
+  load() {}
+  async play() { if (playbackFails) throw new Error("Audio bloqueado"); nativePlays += 1; }
+}
+Object.defineProperty(globalThis, "Audio", { configurable: true, value: NativeAudioMock });
+const settleNative = () => new Promise((resolve) => setTimeout(resolve, 0));
+fortunaAudio.setVoiceEnabled(true);
+fortunaAudio.previewNarration();
+assert.equal(getNarrationStatus(), "loading");
+await settleNative();
+assert.equal(getNarrationStatus(), "playing");
+assert.equal(nativePlays, 1);
+synthesisFails = true;
+fortunaAudio.previewNarration();
+await settleNative();
+assert.equal(getNarrationStatus(), "error");
+assert.match(getNarrationDetail(), /Modelo ausente/u, "El mensaje debe mostrar la causa real, no un error genérico.");
+synthesisFails = false;
+suppliedVoice = "Otra voz";
+fortunaAudio.previewNarration();
+await settleNative();
+assert.equal(getNarrationStatus(), "error", "No se debe reproducir una voz distinta de Daniela High.");
+suppliedVoice = "Daniela High";
+playbackFails = true;
+fortunaAudio.previewNarration();
+await settleNative();
+assert.equal(getNarrationStatus(), "error");
+assert.equal(spoken.length, 3, "Ningún fallo nativo puede cambiar a la voz del sistema.");
+playbackFails = false;
+fortunaAudio.previewNarration();
+fortunaAudio.stopNarration();
+await settleNative();
+assert.equal(nativePlays, 1, "Una solicitud cancelada no debe empezar a hablar tarde.");
+
+let finishFirst: (() => void) | undefined;
+const queuedTexts: string[] = [];
+Object.assign(window, { __TAURI_INTERNALS__: { invoke: async (_command: string, args: { request: { text: string } }) => {
+  queuedTexts.push(args.request.text);
+  if (queuedTexts.length === 1) await new Promise<void>((resolve) => { finishFirst = resolve; });
+  return { voice: "Daniela High", audioBase64: "UklGRg==", durationMs: 2500, sampleRate: 22050 };
+} } });
+fortunaAudio.speakGuide("Primer paso");
+await settleNative();
+fortunaAudio.speakGuide("Paso descartado");
+fortunaAudio.speakGuide("Último paso");
+await settleNative();
+assert.deepEqual(queuedTexts, ["Primer paso"], "No se deben acumular generaciones paralelas en Rust.");
+finishFirst?.();
+await settleNative();
+assert.deepEqual(queuedTexts, ["Primer paso", "Último paso"]);
+assert.equal(nativePlays, 2, "Solo debe hablar el último paso vigente.");
+fortunaAudio.stopNarration();
+
 console.log(JSON.stringify({
   independentVoiceToggle: true,
   preferredLocale: spoken[0].lang,
@@ -110,5 +181,8 @@ console.log(JSON.stringify({
   voicePreview: true,
   narratedTutorials: true,
   automaticWelcomeRemoved: true,
+  nativeDanielaOnly: true,
+  nativeFailureVisible: true,
+  nativeCancellation: true,
   status: "passed",
 }));

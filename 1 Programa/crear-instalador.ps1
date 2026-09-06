@@ -428,7 +428,7 @@ try {
         if ($LASTEXITCODE -ne 0) { throw "Las pruebas automatizadas fallaron." }
         & cargo.exe fmt --manifest-path "src-tauri/Cargo.toml" -- --check
         if ($LASTEXITCODE -ne 0) { throw "El formato Rust no es valido." }
-        & cargo.exe test --locked --manifest-path "src-tauri/Cargo.toml"
+        & cargo.exe test --locked --manifest-path "src-tauri/Cargo.toml" -- --include-ignored
         if ($LASTEXITCODE -ne 0) { throw "Las pruebas Rust fallaron." }
         & cargo.exe clippy --locked --manifest-path "src-tauri/Cargo.toml" --all-targets -- -D warnings
         if ($LASTEXITCODE -ne 0) { throw "Clippy encontro advertencias." }
@@ -529,11 +529,28 @@ try {
         throw "La compilación terminó sin producir el ejecutable principal para la carpeta Programa."
     }
     Copy-Item -LiteralPath $portableSource -Destination (Join-Path $ProgramOutput "Fortuna-Real-Portable.exe") -Force
+    # El ejecutable no contiene el modelo ONNX: la edición portátil también
+    # necesita los recursos en la misma ubicación relativa que el instalador.
+    $voiceResourcesSource = Join-Path $ProjectRoot "src-tauri\target\release\resources\tts"
+    $portableResources = Join-Path $ProgramOutput "resources"
+    New-Item -ItemType Directory -Force -Path $portableResources | Out-Null
+    Copy-Item -LiteralPath $voiceResourcesSource -Destination $portableResources -Recurse -Force
+    $voiceResourcesDestination = Join-Path $portableResources "tts"
+    foreach ($voiceResource in (Get-ChildItem -LiteralPath $voiceResourcesSource -File -Recurse)) {
+        $relativeVoicePath = $voiceResource.FullName.Substring($voiceResourcesSource.Length).TrimStart('\')
+        $deliveredVoicePath = Join-Path $voiceResourcesDestination $relativeVoicePath
+        if (-not (Test-Path -LiteralPath $deliveredVoicePath) -or
+            (Get-FileHash -LiteralPath $voiceResource.FullName).Hash -ne (Get-FileHash -LiteralPath $deliveredVoicePath).Hash) {
+            throw "La voz portátil está incompleta: $relativeVoicePath. No distribuyas esta entrega."
+        }
+    }
     @"
 FORTUNA REAL $version - PROGRAMA
 ================================
 
-Abre Fortuna-Real-Portable.exe. Si Windows indica que falta WebView2 o el
+Abre Fortuna-Real-Portable.exe. Conserva a su lado la carpeta resources:
+contiene la voz Daniela High y sus licencias. No copies únicamente el .exe.
+Si Windows indica que falta WebView2 o el
 programa no abre, utiliza el instalador normal de la carpeta Instaladores; ese
 instalador incluye WebView2 sin conexión.
 

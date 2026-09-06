@@ -121,7 +121,7 @@ export function DuckHunt({
   const [lastHit, setLastHit] = useState<DuckContestant | null>(null);
   const [activePower, setActivePower] = useState<ActiveDuckPower | null>(null);
   const [crosshair, setCrosshair] = useState({ x: 50, y: 48, visible: false });
-  const [arcadeMode, setArcadeMode] = useState<DuckArcadeMode>("single");
+  const [arcadeMode, setArcadeMode] = useState<DuckArcadeMode>("flock");
   const [waveNumber, setWaveNumber] = useState(1);
   const [shotsInWave, setShotsInWave] = useState(0);
   const [waveRemainingMs, setWaveRemainingMs] = useState(getDuckWaveDuration(1));
@@ -136,7 +136,7 @@ export function DuckHunt({
   const phaseRef = useRef<DuckPhase>("ready");
   const waveRef = useRef(1);
   const shotsInWaveRef = useRef(0);
-  const waveModeRef = useRef<DuckArcadeMode>("single");
+  const waveModeRef = useRef<DuckArcadeMode>("flock");
   const currentWaveIdsRef = useRef<string[]>([]);
 
   const applyPhase = (nextPhase: DuckPhase) => {
@@ -665,6 +665,7 @@ export function DuckHunt({
           {phase === "ready" ? (
             <>
               <div className="duck-mode-picker" role="group" aria-label="Cantidad de patos por tanda">
+                <button type="button" aria-pressed={arcadeMode === "flock"} className={arcadeMode === "flock" ? "is-active" : ""} onClick={() => setArcadeMode("flock")}><b>5</b><span>Bandada</span></button>
                 <button type="button" className={arcadeMode === "single" ? "is-active" : ""} onClick={() => setArcadeMode("single")}><b>1</b><span>Un pato</span></button>
                 <button type="button" className={arcadeMode === "double" ? "is-active" : ""} onClick={() => setArcadeMode("double")}><b>2</b><span>Dos patos</span></button>
               </div>

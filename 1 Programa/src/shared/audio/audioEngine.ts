@@ -1,5 +1,6 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import type { RoundResult } from "../../core/types";
+import { setNarrationStatus } from "./narrationStatus.ts";
 
 type StopSound = () => void;
 
@@ -50,6 +51,7 @@ class FortunaAudioEngine {
   private voiceChangeHandler: (() => void) | null = null;
   private narrationAudio: HTMLAudioElement | null = null;
   private narrationRequest = 0;
+  private synthesisChain: Promise<unknown> = Promise.resolve();
 
   setEnabled(enabled: boolean) {
     this.effectsEnabled = enabled;
@@ -356,6 +358,7 @@ class FortunaAudioEngine {
 
   private cancelNarrationPlayback() {
     this.narrationRequest += 1;
+    setNarrationStatus("idle");
     if (this.voiceRetryTimer !== null) {
       globalThis.clearTimeout(this.voiceRetryTimer);
       this.voiceRetryTimer = null;
@@ -434,31 +437,51 @@ class FortunaAudioEngine {
 
   private speakNarration(text: string, naturalRate: number, fallbackRate: number) {
     if (!this.voiceEnabled || this.volume <= 0) return;
-    this.cancelNarrationPlayback();
+    this.cancelAnnouncement();
     const requestId = this.narrationRequest;
 
-    if (isTauri() && typeof Audio !== "undefined") {
-      void invoke<OfflineNarrationResponse>("synthesize_offline_speech", {
-        request: { text, speed: naturalRate },
-      }).then((response) => {
+    if (isTauri()) {
+      setNarrationStatus("loading");
+      const reportFailure = (error: unknown) => {
+        if (requestId !== this.narrationRequest) return;
+        this.narrationAudio?.pause();
+        this.narrationAudio = null;
+        const message = error instanceof Error ? error.message : typeof error === "string" ? error : "Windows no pudo reproducir el audio.";
+        setNarrationStatus("error", message);
+      };
+      // Una sola generación activa. Saltar los pasos cancelados antes de
+      // enviarlos a Rust evita llenar su cola al avanzar rápido en una guía.
+      const generation = this.synthesisChain.catch(() => undefined).then(() => {
+        if (requestId !== this.narrationRequest || !this.voiceEnabled || this.volume <= 0) return null;
+        return invoke<OfflineNarrationResponse>("synthesize_offline_speech", {
+          request: { text, speed: naturalRate },
+        });
+      });
+      this.synthesisChain = generation;
+      void generation.then((response) => {
+        if (!response) return;
         if (requestId !== this.narrationRequest || !this.voiceEnabled || this.volume <= 0) return;
+        if (!/Daniela High/iu.test(response.voice) || !response.audioBase64 || response.durationMs <= 0) {
+          throw new Error("La respuesta no contiene audio de Daniela High.");
+        }
         const narration = new Audio(`data:audio/wav;base64,${response.audioBase64}`);
         narration.preload = "auto";
         narration.volume = this.volume;
         narration.addEventListener("ended", () => {
-          if (this.narrationAudio === narration) this.narrationAudio = null;
+          if (requestId !== this.narrationRequest) return;
+          this.narrationAudio = null;
+          setNarrationStatus("idle");
         }, { once: true });
+        narration.addEventListener("error", () => reportFailure(new Error(`No se pudo abrir el audio de Daniela (código ${narration.error?.code ?? "desconocido"}).`)), { once: true });
         this.narrationAudio = narration;
-        void narration.play().catch(() => {
-          if (this.narrationAudio === narration) this.narrationAudio = null;
-          this.speakWithSystemVoice(text, naturalRate, fallbackRate, requestId);
-        });
-      }).catch(() => {
-        this.speakWithSystemVoice(text, naturalRate, fallbackRate, requestId);
-      });
+        void narration.play().then(() => {
+          if (requestId === this.narrationRequest) setNarrationStatus("playing");
+        }).catch(reportFailure);
+      }).catch(reportFailure);
       return;
     }
 
+    setNarrationStatus("browser");
     this.speakWithSystemVoice(text, naturalRate, fallbackRate, requestId);
   }
 

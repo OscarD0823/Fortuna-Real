@@ -13,12 +13,17 @@ import {
   UsersRound,
 } from "lucide-react";
 import type { GameId } from "../../core/types";
+import { useNeutralAppearance } from "../../shared/appearance";
+import { isGamePlayable } from "../../core/gameAvailability";
 import { gameGuides } from "../../shared/tutorial/tutorialContent";
 import { useDrawStore } from "../participants/drawStore";
 
 export function DrawSetup({ onOpenDemo }: { onOpenDemo: (game: GameId) => void }) {
+  const neutral = useNeutralAppearance();
   const game = useDrawStore((state) => state.game);
   const mode = useDrawStore((state) => state.mode);
+  const gameChosen = useDrawStore((state) => state.setupGameChosen);
+  const modeChosen = useDrawStore((state) => state.setupModeChosen);
   const prize = useDrawStore((state) => state.prize);
   const pinballControlMode = useDrawStore((state) => state.pinballControlMode);
   const marbleFinishRule = useDrawStore((state) => state.marbleFinishRule);
@@ -45,26 +50,26 @@ export function DrawSetup({ onOpenDemo }: { onOpenDemo: (game: GameId) => void }
           <span className="step-number">2</span>
           <div>
             <h2>Elegir juego</h2>
-            <p>Cinco juegos conectados al mismo sorteo e historial</p>
+            <p>Elige una experiencia. Pinball está en mantenimiento.</p>
           </div>
         </div>
         <div className="game-options game-options--large" data-tour="game-picker" role="radiogroup" aria-label="Juego del sorteo">
           <button
             type="button"
             role="radio"
-            aria-checked={game === "roulette"}
-            className={`game-option ${game === "roulette" ? "is-active" : ""}`}
+            aria-checked={gameChosen && game === "roulette"}
+            className={`game-option ${gameChosen && game === "roulette" ? "is-active" : ""}`}
             onClick={() => setGame("roulette")}
           >
             <CircleDot size={30} />
-            <span>Ruleta casino</span>
+            <span>{neutral ? "Rueda de nombres" : "Ruleta"}</span>
             <small>Disponible</small>
           </button>
           <button
             type="button"
             role="radio"
-            aria-checked={game === "cards"}
-            className={`game-option ${game === "cards" ? "is-active" : ""}`}
+            aria-checked={gameChosen && game === "cards"}
+            className={`game-option ${gameChosen && game === "cards" ? "is-active" : ""}`}
             onClick={() => setGame("cards")}
           >
             <Layers3 size={29} />
@@ -75,18 +80,19 @@ export function DrawSetup({ onOpenDemo }: { onOpenDemo: (game: GameId) => void }
             type="button"
             role="radio"
             aria-checked={game === "pinball"}
+            disabled
             className={`game-option game-option--beta ${game === "pinball" ? "is-active" : ""}`}
             onClick={() => setGame("pinball")}
           >
             <Gamepad2 size={29} />
             <span>Pinball 3D</span>
-            <small>BETA · mesa física</small>
+            <small>No disponible · en mejora</small>
           </button>
           <button
             type="button"
             role="radio"
-            aria-checked={game === "marbles"}
-            className={`game-option game-option--beta ${game === "marbles" ? "is-active" : ""}`}
+            aria-checked={gameChosen && game === "marbles"}
+            className={`game-option game-option--beta ${gameChosen && game === "marbles" ? "is-active" : ""}`}
             onClick={() => setGame("marbles")}
           >
             <Gem size={29} />
@@ -96,8 +102,8 @@ export function DrawSetup({ onOpenDemo }: { onOpenDemo: (game: GameId) => void }
           <button
             type="button"
             role="radio"
-            aria-checked={game === "ducks"}
-            className={`game-option game-option--beta game-option--ducks ${game === "ducks" ? "is-active" : ""}`}
+            aria-checked={gameChosen && game === "ducks"}
+            className={`game-option game-option--beta game-option--ducks ${gameChosen && game === "ducks" ? "is-active" : ""}`}
             onClick={() => {
               setGame("ducks");
               setMode("elimination");
@@ -117,7 +123,7 @@ export function DrawSetup({ onOpenDemo }: { onOpenDemo: (game: GameId) => void }
               {selectedGuide.steps.slice(0, 3).map((step) => <small key={step.title}><Check size={12} /> {step.title}</small>)}
             </div>
           </div>
-          <button type="button" onClick={() => onOpenDemo(game)} aria-label={`Ver demostración paso a paso de ${selectedGuide.title}`}>
+          <button type="button" disabled={!isGamePlayable(game)} onClick={() => onOpenDemo(game)} aria-label={`Ver demostración paso a paso de ${selectedGuide.title}`}>
             Ver demo paso a paso <ChevronRight size={16} />
           </button>
         </div>
@@ -135,8 +141,8 @@ export function DrawSetup({ onOpenDemo }: { onOpenDemo: (game: GameId) => void }
           <button
             type="button"
             role="radio"
-            aria-checked={mode === "direct"}
-            className={mode === "direct" ? "is-active" : ""}
+            aria-checked={modeChosen && mode === "direct"}
+            className={modeChosen && mode === "direct" ? "is-active" : ""}
             onClick={() => setMode("direct")}
             disabled={game === "ducks"}
             title={game === "ducks" ? "Patos 3D siempre se juega como supervivencia" : undefined}
@@ -150,8 +156,8 @@ export function DrawSetup({ onOpenDemo }: { onOpenDemo: (game: GameId) => void }
           <button
             type="button"
             role="radio"
-            aria-checked={mode === "elimination"}
-            className={mode === "elimination" ? "is-active" : ""}
+            aria-checked={modeChosen && mode === "elimination"}
+            className={modeChosen && mode === "elimination" ? "is-active" : ""}
             onClick={() => setMode("elimination")}
           >
             <UsersRound size={22} />

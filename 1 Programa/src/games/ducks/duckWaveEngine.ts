@@ -1,9 +1,9 @@
 export const DUCK_WAVE_SHOTS = 3;
 export const DUCK_WAVE_BASE_MS = 10_000;
 
-export type DuckArcadeMode = "single" | "double";
+export type DuckArcadeMode = "single" | "double" | "flock";
 
-export const getDuckWaveSize = (mode: DuckArcadeMode) => mode === "single" ? 1 : 2;
+export const getDuckWaveSize = (mode: DuckArcadeMode) => mode === "single" ? 1 : mode === "double" ? 2 : 5;
 
 /**
  * La ronda se vuelve más rápida de forma gradual, como un juego de puntería
