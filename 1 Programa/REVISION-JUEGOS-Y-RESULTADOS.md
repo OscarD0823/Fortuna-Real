@@ -22,6 +22,13 @@ sin modelo ni diccionarios. Ahora conserva `resources/tts` y las licencias,
 con comprobación SHA-256 de cada archivo copiado. La síntesis real deja de ser
 omitida por el creador de instaladores y por GitHub Actions.
 
+Durante el empaquetado del 7 de septiembre apareció otro fallo: Windows
+PowerShell no encontró `Get-FileHash` al comprobar la copia portátil. Se sustituyó
+por cálculo SHA-256 mediante .NET, compartido con la huella de validación.
+La regresión ejecuta la función real sin carga automática de módulos y verifica
+rutas literales con espacios, corchetes y Unicode, archivos vacíos y ausentes,
+y liberación del archivo después de calcular la huella.
+
 ## Cambios aplicados
 
 - Canicas: recorrido reconstruido en terrazas descendentes y curvas amplias, sin cruces aleatorios forzados. Seguimiento por distancias en metros, horizonte estable y detección de tableros, barandillas y piezas que bloquean la cámara. Corrección de rotaciones de piezas, colores de las bolas e iluminación del metal mediante reflejos precalculados.

@@ -91,6 +91,25 @@ function Get-DependencyFingerprint {
     return $dependencyHash.Trim()
 }
 
+function Get-FortunaFileHash {
+    param([Parameter(Mandatory = $true)][string]$LiteralPath)
+    # No depende de la carga de modulos de PowerShell: el empaquetado tambien
+    # se ejecuta desde npm y consolas de herramientas de Visual Studio.
+    $fileStream = [IO.File]::OpenRead($LiteralPath)
+    try {
+        $fileHasher = [Security.Cryptography.SHA256]::Create()
+        try {
+            return ([BitConverter]::ToString($fileHasher.ComputeHash($fileStream))).Replace("-", "")
+        }
+        finally {
+            $fileHasher.Dispose()
+        }
+    }
+    finally {
+        $fileStream.Dispose()
+    }
+}
+
 function Get-ValidationFingerprint {
     $inputFiles = @(
         Get-ChildItem -LiteralPath (Join-Path $ProjectRoot "src") -File -Recurse
@@ -107,15 +126,7 @@ function Get-ValidationFingerprint {
 
     $fingerprintSource = ($inputFiles | ForEach-Object {
         $relativePath = $_.FullName.Substring($ProjectRoot.Length).TrimStart("\")
-        $fileStream = [IO.File]::OpenRead($_.FullName)
-        $fileHasher = [Security.Cryptography.SHA256]::Create()
-        try {
-            $fileHash = ([BitConverter]::ToString($fileHasher.ComputeHash($fileStream))).Replace("-", "")
-        }
-        finally {
-            $fileHasher.Dispose()
-            $fileStream.Dispose()
-        }
+        $fileHash = Get-FortunaFileHash -LiteralPath $_.FullName
         "$relativePath|$fileHash"
     }) -join "`n"
     $fingerprintBytes = [Text.Encoding]::UTF8.GetBytes($fingerprintSource)
@@ -540,7 +551,7 @@ try {
         $relativeVoicePath = $voiceResource.FullName.Substring($voiceResourcesSource.Length).TrimStart('\')
         $deliveredVoicePath = Join-Path $voiceResourcesDestination $relativeVoicePath
         if (-not (Test-Path -LiteralPath $deliveredVoicePath) -or
-            (Get-FileHash -LiteralPath $voiceResource.FullName).Hash -ne (Get-FileHash -LiteralPath $deliveredVoicePath).Hash) {
+            (Get-FortunaFileHash -LiteralPath $voiceResource.FullName) -ne (Get-FortunaFileHash -LiteralPath $deliveredVoicePath)) {
             throw "La voz portátil está incompleta: $relativeVoicePath. No distribuyas esta entrega."
         }
     }

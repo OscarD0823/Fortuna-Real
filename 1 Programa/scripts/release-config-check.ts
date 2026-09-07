@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { existsSync, readFileSync, statSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 
 const readText = (path: string) => readFileSync(path, "utf8").replace(/^\uFEFF/u, "");
 const packageJson = JSON.parse(readText("package.json"));
@@ -56,7 +57,18 @@ for (const label of [
 assert.equal(tauriConfig.build?.frontendDist, "../dist", "El instalador debe incluir el frontend compilado.");
 assert.ok(tauriConfig.bundle?.resources?.includes("resources/tts/"), "El instalador debe incluir la voz neuronal offline.");
 assert.ok(installerCreator.includes('Copy-Item -LiteralPath $voiceResourcesSource -Destination $portableResources -Recurse'), "La edición portátil también debe llevar los recursos de Daniela, no solo el ejecutable.");
-assert.ok(installerCreator.includes('Get-FileHash -LiteralPath $deliveredVoicePath'), "La entrega debe verificar la copia de todos los recursos de voz.");
+assert.ok(installerCreator.includes('Get-FortunaFileHash -LiteralPath $deliveredVoicePath'), "La entrega debe verificar la copia de todos los recursos de voz.");
+assert.ok(!/\bGet-FileHash\b/u.test(installerCreator), "El empaquetado no debe depender de la carga de módulos de PowerShell para calcular SHA-256.");
+if (process.platform === "win32") {
+  const hashCheck = spawnSync("powershell.exe", ["-NoLogo", "-NoProfile", "-File", "scripts/installer-hash-check.ps1"], {
+    encoding: "utf8",
+    timeout: 30_000,
+    windowsHide: true,
+  });
+  assert.ifError(hashCheck.error);
+  assert.equal(hashCheck.status, 0, `Falló la comprobación SHA-256 en Windows PowerShell: ${hashCheck.stdout}\n${hashCheck.stderr}`);
+  console.log(hashCheck.stdout.trim());
+}
 assert.ok(cargoToml.includes('sherpa-onnx = { version = "=1.13.7"'), "El backend debe integrar sherpa-onnx de forma nativa y reproducible.");
 assert.ok(cargoToml.includes('features = ["static"]'), "La voz debe quedar autocontenida sin DLL externas.");
 assert.ok(cargoConfig.includes("target-feature=+crt-static"), "Rust y sherpa-onnx deben usar el mismo CRT en Windows.");

@@ -9,6 +9,7 @@
 - Una sola síntesis activa; los pasos de tutorial descartados no saturan la cola.
 - La edición portátil lleva el modelo, diccionarios y licencias en `resources/tts`, con comprobación SHA-256 de cada archivo.
 - El creador de instaladores y GitHub Actions ejecutan la síntesis real con una ruta canónica, además de las pruebas automáticas.
+- La verificación SHA-256 de la entrega funciona en Windows PowerShell sin depender de la carga automática de módulos.
 
 ## Mejoras acumuladas de juegos e inicio
 
