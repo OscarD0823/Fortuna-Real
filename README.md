@@ -265,7 +265,7 @@ Los cambios se resumen por función; los enlaces llevan al registro original. La
 
 ### 1.0.9 → 1.0.10 — Nuevos circuitos de canicas e historial de versiones
 
-Fecha: 2026-09-07. Versión actual del código.
+Fecha: 2026-09-08. Versión actual del código.
 
 Canicas y Patos continúan en beta. Daniela High conserva el modelo y los ajustes aprobados en 1.0.9.
 
