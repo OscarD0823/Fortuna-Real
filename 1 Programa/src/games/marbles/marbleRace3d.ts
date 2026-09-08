@@ -13,7 +13,7 @@ import {
   type TrackZone,
 } from "./marbleRaceEngine";
 import { createMarbleTrackPiece3D } from "./marbleTrackPieceKit";
-import { cameraPathCeiling, measureCameraPath, offsetCameraProgress } from "./marbleCameraPath";
+import { cameraFarDistance, cameraPathCeiling, marbleCameraResponse, marbleChaseFraming, measureCameraPath, offsetCameraProgress } from "./marbleCameraPath";
 import { constrainCameraSightline, createCameraCollisionCells, createCameraTrackCollider } from "./marbleCameraCollision";
 import { trackFrameQuaternion } from "./marbleTrackFrame";
 
@@ -1422,6 +1422,11 @@ const buildScene = (renderer: THREE.WebGLRenderer, race: PreparedMarbleRace, key
     .addScaledVector(cameraRight, overlayClearance);
   const stagingCameraPosition = overviewCameraPosition.clone().lerp(bayCameraPosition, 0.08);
   const stagingCameraTarget = overviewCameraTarget.clone().lerp(bayCameraTarget, 0.08);
+  const sceneBounds = trackBounds.clone()
+    .expandByPoint(new THREE.Vector3(-22 * race.track.mapScale, -2, -17.5 * race.track.mapScale))
+    .expandByPoint(new THREE.Vector3(22 * race.track.mapScale, -2, 17.5 * race.track.mapScale));
+  camera.far = Math.max(cameraFarDistance(overviewCameraPosition, sceneBounds), cameraFarDistance(stagingCameraPosition, sceneBounds));
+  camera.updateProjectionMatrix();
   const cameraUp = cameraRight.clone().cross(cameraForward).normalize();
   let projectedMinX = Number.POSITIVE_INFINITY;
   let projectedMaxX = Number.NEGATIVE_INFINITY;
@@ -1983,7 +1988,7 @@ export const drawMarbleRace3D = (
         state.fastFrames = 0;
       }
     }
-    const cameraDeltaMs = state.lastRenderAt > 0 ? THREE.MathUtils.clamp(renderAt - state.lastRenderAt, 1, 50) : 16.67;
+    const cameraDeltaMs = state.lastRenderAt > 0 ? Math.max(0, renderAt - state.lastRenderAt) : 16.67;
     state.lastRenderAt = renderAt;
     resizeRenderer(state, canvas);
     const elapsedSeconds = elapsedMs / 1000;
@@ -2013,7 +2018,8 @@ export const drawMarbleRace3D = (
       const lookAheadPoint = sampleWorldPoint(state.trackSamples, lookAheadProgress, state.lookAheadPoint);
       const baseRadius = race.racers.length > 150 ? 0.085 : race.racers.length > 90 ? 0.105 : race.racers.length > 48 ? 0.13 : race.racers.length > 22 ? 0.16 : 0.22;
       const followedRadius = baseRadius * motion.radiusScale;
-      const followDistance = 5.6 + speedBlend * 1.4;
+      const framing = marbleChaseFraming(trackPoint.tangent.dot(lookAheadPoint.tangent), speedBlend);
+      const followDistance = framing.distance;
       const cameraAnchorProgress = offsetCameraProgress(state.cameraPathDistances, motion.progress, -followDistance);
       const cameraAnchorPoint = sampleWorldPoint(state.trackSamples, cameraAnchorProgress, state.cameraAnchorPoint);
       const launchRetreat = followCameraStyle === "chase"
@@ -2040,7 +2046,7 @@ export const drawMarbleRace3D = (
           ? 3.9 + followedRadius + speedBlend * 0.42 + rescueBlend * 1.65
         : followCameraStyle === "aerial"
           ? 7.4 + speedBlend * 1.05 + rescueBlend * 1.35
-          : 2.9 + followedRadius + speedBlend * 0.4 + rescueBlend * 1.5;
+          : framing.height + followedRadius + rescueBlend * 1.5;
       const cameraShoulder = followCameraStyle === "onboard"
         ? 0
         : cameraSide * (
@@ -2062,7 +2068,7 @@ export const drawMarbleRace3D = (
           ? motion.trackEventIntensity * 0.13
           : 0;
       if (!state.reducedMotion && turboTurbulence + eventTurbulence > 0) {
-        const turbulence = turboTurbulence + eventTurbulence;
+        const turbulence = Math.min(followCameraStyle === "onboard" ? 0.055 : 0.1, turboTurbulence + eventTurbulence);
         desiredPosition
           .addScaledVector(trackPoint.normal, Math.sin(elapsedSeconds * 17 + followedRacer.number) * turbulence)
           .addScaledVector(trackPoint.up, Math.cos(elapsedSeconds * 21 + followedRacer.number) * turbulence * 0.55);
@@ -2100,7 +2106,7 @@ export const drawMarbleRace3D = (
       const desiredTarget = state.stagingVector.copy(state.racerPositions[followIndex])
         .lerp(
           lookAheadPoint.position,
-          motion.recovering ? 0.04 : followCameraStyle === "onboard" ? 1 : followCameraStyle === "trackside" ? 0.2 : followCameraStyle === "aerial" ? 0.18 : 0,
+          motion.recovering ? 0.04 : followCameraStyle === "onboard" ? 1 : followCameraStyle === "trackside" ? 0.2 : followCameraStyle === "aerial" ? 0.18 : framing.anticipation,
         )
         .addScaledVector(trackPoint.up, followCameraStyle === "chase" ? 0.08 : followedRadius * 0.45 + (followCameraStyle === "onboard" ? 0.58 : 0.24) + rescueBlend * 0.32);
       state.cameraSightOrigin.copy(state.racerPositions[followIndex]).addScaledVector(trackPoint.up, followedRadius + 0.28);
@@ -2135,9 +2141,7 @@ export const drawMarbleRace3D = (
         state.followCamera.up.copy(state.followCameraUp);
         state.racerLabels.forEach((label) => { label.visible = false; });
       } else {
-        const cameraResponse = state.reducedMotion
-          ? 1
-          : 1 - Math.exp(-cameraDeltaMs / (followCameraStyle === "onboard" ? 55 : motion.recovering ? 95 : 145));
+        const cameraResponse = marbleCameraResponse(cameraDeltaMs, followCameraStyle === "onboard" ? 55 : motion.recovering ? 95 : 145, state.reducedMotion);
         state.followCamera.position.lerp(desiredPosition, cameraResponse);
         state.followCameraTarget.lerp(desiredTarget, Math.min(1, cameraResponse * 1.28));
         state.followCamera.up.lerp(state.followCameraUp, cameraResponse * 0.7).normalize();
@@ -2170,9 +2174,9 @@ export const drawMarbleRace3D = (
           ? 57 + speedBlend * 3 + rescueBlend * 2
         : followCameraStyle === "aerial"
           ? 52 + speedBlend * 2 + rescueBlend * 2
-          : 64 + speedBlend * 4.5 + rescueBlend * 2;
+          : framing.fov + rescueBlend * 2;
       if (Math.abs(state.followCamera.fov - desiredFov) > 0.05) {
-        state.followCamera.fov = desiredFov;
+        state.followCamera.fov = THREE.MathUtils.lerp(state.followCamera.fov, desiredFov, marbleCameraResponse(cameraDeltaMs, 180, state.reducedMotion));
         state.followCamera.updateProjectionMatrix();
       }
       state.followCamera.lookAt(state.followCameraTarget);

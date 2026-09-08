@@ -2,6 +2,33 @@ interface CameraPathPoint {
   position: { x: number; y: number; z: number };
 }
 
+/** Include every corner, even while the overview moves out from the start bay. */
+export const cameraFarDistance = (
+  eye: CameraPathPoint["position"],
+  bounds: { min: CameraPathPoint["position"]; max: CameraPathPoint["position"] },
+) => {
+  const dx = Math.max(Math.abs(bounds.min.x - eye.x), Math.abs(bounds.max.x - eye.x));
+  const dy = Math.max(Math.abs(bounds.min.y - eye.y), Math.abs(bounds.max.y - eye.y));
+  const dz = Math.max(Math.abs(bounds.min.z - eye.z), Math.abs(bounds.max.z - eye.z));
+  return Math.max(90, Math.ceil(Math.hypot(dx, dy, dz) + 10));
+};
+
+/** A background/resumed window must not chase a position from seconds ago. */
+export const marbleCameraResponse = (elapsedMs: number, responseMs: number, reducedMotion = false) =>
+  reducedMotion || elapsedMs >= 250 ? 1 : 1 - Math.exp(-Math.max(0, elapsedMs) / responseMs);
+
+/** Shorten the trailing boom in bends, and leave more of the next turn in view. */
+export const marbleChaseFraming = (tangentAlignment: number, speed: number) => {
+  const bend = Math.max(0, Math.min(1, (1 - tangentAlignment) / 0.85));
+  const pace = Math.max(0, Math.min(1, speed));
+  return {
+    distance: 5.4 + pace * 0.9 - bend * 1.5,
+    height: 2.65 + pace * 0.25 + bend * 0.7,
+    anticipation: 0.2 + bend * 0.12,
+    fov: 61 + pace * 3 + bend * 3,
+  };
+};
+
 /** World-space distances keep the framing identical on short and long circuits. */
 export const measureCameraPath = (samples: readonly CameraPathPoint[]) => {
   const distances = new Float64Array(samples.length);

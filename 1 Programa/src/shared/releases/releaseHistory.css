@@ -1,0 +1,37 @@
+.release-history {
+  width: min(920px, calc(100vw - 32px)); max-height: min(860px, calc(100dvh - 40px));
+  box-sizing: border-box; padding: 24px; overflow: auto; color: var(--text, #edf8f8);
+  background: #071820; border: 1px solid #37606d; border-radius: 20px; box-shadow: 0 24px 90px #000a;
+}
+.release-history::backdrop { background: #000b; backdrop-filter: blur(5px); }
+.release-history__header, .release-history__header > div { display: flex; align-items: center; gap: 14px; }
+.release-history__header { justify-content: space-between; }
+.release-history__header svg, .release-history__version strong { color: var(--cyan, #09e0df); }
+.release-history__header h2 { margin: 0 0 5px; font-size: 23px; }
+.release-history__header span, .release-history > p { color: #b9cdd5; font-size: 14px; line-height: 1.6; }
+.release-history__search { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border: 1px solid #527884; border-radius: 10px; }
+.release-history__search input { width: 100%; min-width: 0; color: inherit; background: transparent; border: 0; font: inherit; font-size: 15px; }
+.release-history__search:focus-within { outline: 2px solid var(--cyan, #09e0df); outline-offset: 2px; }
+.release-history__search input:focus { outline: none; }
+.release-history__list { display: grid; gap: 12px; }
+.release-history__entry { border: 1px solid #365462; border-radius: 12px; background: #0c212b; }
+.release-history__entry summary { cursor: pointer; padding: 16px; }
+.release-history__entry summary::marker { color: var(--cyan, #09e0df); }
+.release-history__version { font-size: 14px; color: #b9cdd5; }
+.release-history__title, .release-history__date { display: block; margin: 6px 0 0 16px; }
+.release-history__title { font-weight: 700; font-size: 16px; }
+.release-history__date { color: #b9cdd5; font-size: 12px; }
+.release-history__changes { border-top: 1px solid #365462; padding: 8px 22px 22px; font-size: 14px; line-height: 1.7; overflow-wrap: anywhere; }
+.release-history__changes h3 { font-size: 15px; margin: 18px 0 8px; color: #edf8f8; }
+.release-history__changes ul { padding-left: 21px; margin: 0; }
+.release-history__changes li + li { margin-top: 8px; }
+.release-history__notice { padding: 12px; border-left: 3px solid #e5ba60; background: #dfb3480d; color: #dfcfaa; }
+.release-history__changes a { display: inline-block; margin-top: 18px; color: #74deec; text-decoration: underline; }
+.release-history__empty { padding: 28px 16px; text-align: center; color: #b9cdd5; }
+.release-history-trigger { display: flex; align-items: center; gap: 7px; padding: 10px 12px; border: 1px solid #37606d; border-radius: 12px; color: #dceef2; background: #0c212b; cursor: pointer; font-size: 12px; }
+.release-history-trigger small { color: #9cc1ce; font-size: 12px; }
+.release-history-trigger:disabled { opacity: .45; cursor: not-allowed; }
+.release-history :focus-visible, .release-history-trigger:focus-visible { outline: 2px solid var(--cyan, #09e0df); outline-offset: 3px; }
+[data-appearance="play"] .release-history { background: #203653; border-color: #657cb3; }
+[data-appearance="play"] .release-history__entry, [data-appearance="play"] .release-history-trigger { background: #284361; border-color: #657cb3; }
+@media (max-width: 650px) { .release-history { padding: 16px; } .release-history__header h2 { font-size: 19px; } .release-history__changes { padding: 8px 15px 18px; } }

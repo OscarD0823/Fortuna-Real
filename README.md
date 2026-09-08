@@ -6,6 +6,10 @@ modo eliminación.
 
 Pinball 3D está temporalmente desactivado para jugar mientras se mejora.
 
+El botón **Novedades** muestra la versión del programa y el historial de cada
+actualización, con búsqueda y consulta sin conexión. El mismo registro está en
+el [historial de cambios de este README](#historial-de-cambios).
+
 La Ruleta compromete uniformemente a una persona antes de animar (PAR/IMPAR es
 solo presentación). Patos genera un orden recuperable con CSPRNG AES-CTR/256 y
 publica su sello SHA-256 antes de iniciar. Las sesiones y compromisos pendientes
@@ -98,13 +102,19 @@ logo. Es solo una apariencia alternativa: no oculta ni borra registros.
 
 ## Canicas y bosque de Patos (BETA)
 
-Las canicas recorren terrazas descendentes con curvas amplias, sin cruces forzados.
+Las canicas generan tres familias: **Cañón sinuoso**, **Espiral descendente** y
+**Trébol de circuitos**. La semilla determina la forma y la orientación; los
+recorridos siguen siendo continuos, con curvas amplias y sin cruces planos forzados.
 Los niveles independientes superan 30 cm libres; las rampas conectan niveles de
-forma continua. Fácil tiene tres terrazas y 4,2 m de desnivel, Media cuatro y
-8,4 m, y Difícil cinco y 14,4 m. Aumentan también longitud, obstáculos y eventos.
+forma continua. El cañón conserva tres, cuatro o cinco terrazas; las otras formas
+descienden mediante órbitas. Fácil tiene 5,6 m de desnivel, Media 11,2 m y Difícil
+18,5 m. Sus áreas de referencia son 56 × 42 m, 75,6 × 56,7 m y 98 × 73,5 m;
+la longitud real aparece en el panel del mapa. Aumentan también obstáculos y eventos.
 Hielo, río, tornado y temblor alteran avance, velocidad y desplazamiento de las
 pelotas. Se conserva el resultado sellado; los eventos no habilitan manipularlo.
-Persecución calcula distancias en metros y evita tableros, barandillas y piezas;
+Persecución calcula distancias en metros, anticipa los giros, adapta distancia y
+altura en curvas y evita tableros, barandillas y piezas. La sacudida de cámara
+está limitada para mantener la lectura sin quitar los efectos sobre las pelotas;
 Desde la canica, Lateral y Aérea ofrecen otros encuadres.
 
 Patos permite bandadas de hasta cinco objetivos, además de prácticas de uno o dos.
@@ -213,7 +223,10 @@ La publicación recomendada mantiene la clave exclusivamente en este computador:
 
 1. Aumenta la versión en `1 Programa/package.json`, `1 Programa/package-lock.json`,
    `1 Programa/src-tauri/Cargo.toml`, `1 Programa/src-tauri/Cargo.lock` y
-   `1 Programa/src-tauri/tauri.conf.json`.
+   `1 Programa/src-tauri/tauri.conf.json`. Añade primero los cambios reales de esa
+   versión a `1 Programa/src/shared/releases/versionHistory.json` y ejecuta
+   `npm run historial:actualizar` desde `1 Programa`: sincroniza este README y
+   `NOTAS-VERSION-<versión>.md`. La aplicación y el actualizador usan esas mismas notas.
 2. Confirma que GitHub CLI tiene sesión mediante `gh auth status`.
 3. Entra a `1 Programa` y ejecuta `npm run publicar-actualizacion`.
 4. Escribe la contraseña únicamente si es el primer uso o cambió la clave.
@@ -242,3 +255,234 @@ dominio, persistencia, distribución, Rust, formato y Clippy. Este flujo no firm
 ni publica instaladores y no necesita secretos. La firma y la publicación se
 hacen solamente desde el computador autorizado para que la clave privada nunca
 salga de él.
+
+<!-- VERSION-HISTORY:START -->
+## Historial de cambios
+
+Versión actual del código: **1.0.10**. También disponible desde **Novedades** dentro del programa, sin conexión.
+
+Los cambios se resumen por función; los enlaces llevan al registro original. Las fechas de Releases usan el día de publicación en Colombia. Las versiones sin un Release conservado lo indican expresamente.
+
+### 1.0.9 → 1.0.10 — Nuevos circuitos de canicas e historial de versiones
+
+Fecha: 2026-09-07. Versión actual del código.
+
+Canicas y Patos continúan en beta. Daniela High conserva el modelo y los ajustes aprobados en 1.0.9.
+
+#### Canicas: pistas y espacio
+
+- Tres familias de geometría: Cañón sinuoso, Espiral descendente y Trébol de circuitos; la semilla determina la forma y la orientación.
+- Curvas en S visibles, horquillas amplias y órbitas con lóbulos; se conserva una ruta continua hasta la meta, sin cruces planos forzados.
+- Área de referencia ampliada a 56 × 42 m en Fácil, 75,6 × 56,7 m en Media y 98 × 73,5 m en Difícil. Desniveles de 5,6 m, 11,2 m y 18,5 m respectivamente.
+- El panel del mapa muestra la familia y la longitud del recorrido en metros.
+- Pruebas de separación sobre los bordes reales de los tramos; se exigen al menos 3 m entre corredores independientes y se mantiene el control de altura entre niveles.
+- La geometría usa una secuencia aleatoria independiente para no alterar resultados comprometidos. Se contrastan 240 carreras de 1.0.9: mismos ganadores, tiempos de llegada y poderes.
+
+#### Cámaras de canicas
+
+- El alcance de la cámara general se calcula con los límites del escenario; corrige el recorte de tramos lejanos en los mapas grandes.
+- Al volver de una pausa de renderizado o de segundo plano, la cámara se resincroniza con la canica en lugar de quedarse mirando una posición antigua.
+- Persecución adapta la distancia y la altura a la curva, y apunta parcialmente hacia el siguiente tramo para anticipar el giro.
+- Transiciones suaves del campo de visión y menor sacudida de cámara con turbo, tornado o temblor. Los efectos sobre las canicas permanecen activos.
+- Se conservan los controles de visibilidad, colisiones y paso por debajo de tableros, además de las vistas Desde la canica, Lateral y Aérea.
+
+#### Clasificación y llegada
+
+- Las canicas que ya llegaron se ordenan por su tiempo de llegada, no por su posición en la lista de participantes.
+- Un cuadro tardío o una ventana en segundo plano no adelanta la clasificación más allá del instante del resultado. Se comprueba que la tabla coincida con el ganador tanto en Primero como en Último.
+
+#### Novedades y documentación
+
+- Nuevo acceso Novedades con la versión actual, búsqueda y cambios agrupados para cada salto de versión, disponible sin internet.
+- README, notas de la versión y avisos del actualizador comparten el mismo registro de cambios.
+- La validación impide preparar una nueva versión sin su entrada de historial y detecta un README desactualizado. Las versiones antiguas sin notas independientes se identifican expresamente.
+
+### 1.0.8 → 1.0.9 — Daniela High fiable, resultados e inicio renovado
+
+Fecha: 2026-09-07.
+
+Pinball queda temporalmente desactivado para jugar; sus resultados anteriores se conservan.
+
+#### Voz
+
+- Corrección de las rutas canónicas de Windows que impedían a sherpa/eSpeak abrir los diccionarios de Daniela High.
+- Precarga silenciosa en segundo plano, sin bienvenida hablada; validación de los archivos del modelo al solicitar la locución.
+- La aplicación de escritorio deja de sustituir silenciosamente a Daniela por una voz de Windows; muestra preparación, reproducción y la causa concreta de los errores.
+- Una sola síntesis activa y descarte de narraciones de tutorial que ya no corresponden al paso actual.
+- Prueba de síntesis real usando la ruta canónica de Tauri, ejecutada localmente y en GitHub Actions.
+
+#### Inicio y resultados
+
+- Tres indicadores de preparación: participantes, juego y modo; verde al completar y amarillo para el siguiente paso.
+- Archivo de partidas con rondas, eliminaciones, ganador y premio; búsqueda y exportación JSON independientes de la lista de participantes.
+- Cinta de ganadores con pausa y apariencia alternativa Modo juego / Zona de Juegos, sin ocultar ni borrar resultados.
+- Aviso visible cuando el almacenamiento local no permite conservar los resultados.
+
+#### Juegos y entrega
+
+- Canicas reconstruidas en terrazas descendentes, seguimiento por distancias en metros, colisión de cámara y correcciones de rotación, color e iluminación del metal.
+- Hielo, río, tornado y temblor afectan avance, velocidad y desplazamiento; turbo mantiene su descontrol y el rescate regresa a la salida.
+- Patos con bandadas de hasta cinco objetivos, refugios, plumas y bosque renovados; troncos, hojas y pasto bloquean los disparos y un pato completamente oculto no se puede acertar.
+- Edición portátil con resources/tts, modelo, diccionarios y licencias; comprobación SHA-256 de todos los archivos copiados.
+- Verificación de archivos mediante .NET para evitar fallos de carga de módulos de PowerShell, y tolerancia a la propagación del manifiesto de GitHub.
+
+[Registro original de esta versión](https://github.com/OscarD0823/Fortuna-Real/compare/v1.0.8...v1.0.9).
+
+### 1.0.7 → 1.0.8 — Instalar, actualizar o reinstalar con opciones claras
+
+Fecha: 2026-09-03.
+
+#### Instalación y actualización
+
+- Opciones explícitas en español: actualizar directamente conservando datos, o desinstalar la versión anterior e instalar la nueva.
+- La misma versión se puede actualizar o reparar. La eliminación de participantes, historial, premios y configuración es una decisión separada del desinstalador.
+- Reintentos para comprobar el manifiesto remoto después de publicar, evitando declarar un error inmediatamente mientras GitHub propaga la versión.
+- Pruebas y documentación actualizadas para las opciones del instalador.
+
+[Registro original de esta versión](https://github.com/OscarD0823/Fortuna-Real/compare/v1.0.7...v1.0.8).
+
+### 1.0.6 → 1.0.7 — Dificultad de canicas, eventos y actualización en el mismo lugar
+
+Fecha: 2026-09-03.
+
+Pinball era jugable en esta versión; se desactiva después en 1.0.9.
+
+#### Canicas
+
+- Mapas más grandes y elevados según la dificultad, separación entre niveles y mejoras en los encuadres de persecución y paso bajo pistas.
+- Regla de victoria configurable: primera o última canica en llegar, con persistencia de la selección.
+- Eventos de hielo, río, tornado y temblor, además de mayor dificultad y descontrol con turbo.
+
+#### Patos, Pinball e inicio
+
+- Eventos de bosque, cambios visuales de ambiente y ajustes en la presentación de Patos.
+- Mejoras de control manual, seguimiento y funcionamiento automático de Pinball.
+- Ajustes de la configuración inicial, ayudas de controles y pruebas de persistencia y accesibilidad.
+
+#### Entrega
+
+- Iniciador INSTALAR O ACTUALIZAR para detectar una instalación existente y usar el modo de actualización.
+- Actualización de la descarga alternativa desde GitHub para obtener los recursos de voz mediante Git LFS.
+- GitHub Actions descarga el modelo de voz y se refuerzan las comprobaciones de manifiestos de publicación.
+
+[Registro original de esta versión](https://github.com/OscarD0823/Fortuna-Real/compare/v1.0.6...v1.0.7).
+
+### 1.0.5 → 1.0.6 — Primera integración de Daniela High sin conexión
+
+Fecha: 2026-09-02.
+
+Esta integración todavía podía recurrir a una voz de Windows si fallaba. La corrección que fija Daniela y normaliza las rutas llega en 1.0.9.
+
+#### Audio
+
+- Modelo es_AR-daniela-high integrado mediante sherpa-onnx en Rust, con diccionarios, licencias y recursos distribuidos con el programa.
+- Generación de WAV local, procesamiento del timbre de anuncio y eliminación del mensaje hablado al iniciar.
+- Compilación nativa estática del motor para no exigir Python ni DLL de voz instaladas por el usuario.
+
+#### Actualizaciones
+
+- Comprobación al abrir, descarga automática del instalador firmado, progreso visible, instalación y reinicio.
+- El programa puede iniciar sin conexión; las actualizaciones esperan a que no haya una partida, guía o demo activa.
+- Pruebas del flujo de descarga e instalación y almacenamiento del modelo grande con Git LFS.
+
+[Registro original de esta versión](https://github.com/OscarD0823/Fortuna-Real/compare/v1.0.5...v1.0.6).
+
+### 1.0.4 → 1.0.5 — Interfaz, cámaras y distribución desde GitHub
+
+Fecha: 2026-08-31.
+
+#### Programa
+
+- Mejoras de interfaz y cámaras de los juegos beta, junto con sus comprobaciones de accesibilidad y audio.
+- Consolidación del repositorio en 1 Programa, 2 Instaladores y 3 Ejecutar, y actualización de la guía de uso.
+
+#### Herramientas y entrega
+
+- Correcciones de descarga pública y decodificación de manifiestos en Windows PowerShell.
+- Corrección de la publicación de un Release nuevo cuando todavía no existe en GitHub.
+- Actualización del flujo de GitHub Actions y sus referencias, manteniendo la firma del instalador en el computador local.
+
+[Registro original de esta versión](https://github.com/OscarD0823/Fortuna-Real/compare/v1.0.4...v1.0.5).
+
+### 1.0.3 → 1.0.4 — Entrega ordenada y nuevos encuadres 3D
+
+Fecha: 2026-08-29.
+
+#### Juegos
+
+- Cámara lateral de Canicas, junto a las vistas Persecución, A bordo y Aérea.
+- Cámaras Persecución y Cenital de Pinball, conservando la salida simultánea de las pelotas.
+- Pupilas, patas animadas y retroceso visual al disparar en Patos.
+
+#### Instalación
+
+- Entrega organizada en carpetas de programa, instaladores y ejecución; acceso directo fuera de la carpeta interna de la instalación.
+- Iniciador público de respaldo, instalador firmado con WebView2 sin conexión y ZIP del instalador.
+
+[Registro original de esta versión](https://github.com/OscarD0823/Fortuna-Real/compare/v1.0.3...v1.0.4).
+
+### 1.0.2 → 1.0.3 — Patos por tandas e iniciador público
+
+Fecha: 2026-08-28.
+
+#### Patos
+
+- Cámara frontal fija, tandas de uno o dos patos, tres disparos por tanda, reloj de escape e indicadores de impacto.
+- Ocultamiento completo y presentación inspirada en juegos de tiro a patos, con modelos propios.
+
+#### Distribución
+
+- Marca de autor OscarD0823 y referencia al proyecto.
+- Instalador firmado con WebView2 sin conexión, entrega separada por funciones y ZIP de respaldo.
+- Iniciador para descargar desde el repositorio público, elegir destino y preparar dependencias sin iniciar sesión en GitHub; se debe conservar el CMD junto al PS1.
+
+[Registro original de esta versión](https://github.com/OscarD0823/Fortuna-Real/releases/tag/v1.0.3).
+
+### 1.0.1 → 1.0.2 — Tutoriales interactivos y creador de instaladores
+
+Fecha: 2026-08-27.
+
+Fecha y cambios recuperados del commit 316aeca; no se conserva un Release separado de esta versión.
+
+#### Uso y juegos
+
+- Guía interactiva del inicio y demos por juego, con controles reales, navegación por teclado y narración de los pasos.
+- Prácticas aisladas de los participantes, premios e historial reales.
+- Mejoras de cámaras, pista y recuperación de Canicas, escenario de Patos y presentación de Pinball; etiquetas BETA y ayudas de controles.
+
+#### Instaladores y pruebas
+
+- Creación local con contraseña de firma protegida mediante DPAPI y comprobación previa de la clave.
+- Caché de dependencias y validaciones para evitar repetir trabajo sin cambios.
+- Verificador criptográfico del instalador y manifiesto; WebView2 sin conexión e instrucciones de entrega.
+- Pruebas ampliadas de tutoriales, audio, accesibilidad, capacidad y semillas de Canicas.
+
+[Registro original de esta versión](https://github.com/OscarD0823/Fortuna-Real/commit/316aeca).
+
+### 1.0.0 → 1.0.1 — Versión intermedia sin notas independientes conservadas
+
+Fecha no confirmada.
+
+La documentación menciona compatibilidad del actualizador desde 1.0.1, pero el historial disponible salta de 1.0.0 a 1.0.2. No se inventa una lista de cambios para ese intervalo.
+
+#### Estado del registro
+
+- Sin etiqueta, fecha de publicación ni notas independientes conservadas en este repositorio. Los cambios confirmados están documentados en las versiones adyacentes.
+
+### 1.0.0 — Base inicial de Fortuna Real
+
+Fecha: 2026-08-25.
+
+Resumen acumulado hasta el commit 27aea67, que todavía declara 1.0.0. La fecha corresponde al código, no a una publicación independiente del instalador.
+
+#### Funciones iniciales
+
+- Gestión de participantes, ganador directo, eliminación, premios, historial y rehabilitación de ganadores.
+- Ruleta animada y Cartas, con anuncios de resultados y presentación de premios.
+- Capacidad de hasta 200 participantes e integración de Canicas, Pinball y Patos 3D.
+- Pistas procedurales, zonas temáticas y poderes en Canicas; cámaras, bosque y comportamiento adaptativo de Patos.
+- Mejoras de rendimiento, controles de audio, funcionamiento de escritorio con Tauri y base del actualizador.
+
+[Registro original de esta versión](https://github.com/OscarD0823/Fortuna-Real/commit/27aea67).
+
+<!-- VERSION-HISTORY:END -->

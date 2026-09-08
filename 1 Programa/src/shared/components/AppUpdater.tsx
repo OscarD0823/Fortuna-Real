@@ -204,7 +204,10 @@ export function AppUpdater({ blocked = false, onStartupCheckComplete }: AppUpdat
             )}
 
             <div className="update-trust"><ShieldCheck size={16} /> Firma verificada antes de instalar</div>
-            {notes && status === "ready" && <p className="update-notes">{notes}</p>}
+            {notes && <details className="update-changes">
+              <summary>Ver cambios de la versión {version}</summary>
+              <pre className="update-notes">{notes}</pre>
+            </details>}
           </>
         ) : (
           <>

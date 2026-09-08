@@ -8,6 +8,7 @@ import { MarbleRace } from "./games/marbles/MarbleRace";
 import { PinballGame } from "./games/pinball/PinballGame";
 import { DuckHunt } from "./games/ducks/DuckHunt";
 import { prepareMarbleRace } from "./games/marbles/marbleRaceEngine";
+import { marbleLayoutLabels } from "./games/marbles/marbleTrackLayouts";
 import { disposeMarbleRace3D, drawMarbleRace3D, type MarbleFollowCameraStyle } from "./games/marbles/marbleRace3d";
 
 const query = new URLSearchParams(window.location.search);
@@ -32,21 +33,24 @@ function CameraInspection({ participants }: { participants: Participant[] }) {
   const race = useMemo(() => prepareMarbleRace(participants, "direct", requestedSeed ?? "camera-inspection", initialDifficulty, new Set(), "first"), [participants]);
   const initialTime = Number(query.get("at"));
   const [fraction, setFraction] = useState(Number.isFinite(initialTime) ? Math.max(0, Math.min(1, initialTime)) : 0.5);
-  const [style, setStyle] = useState<MarbleFollowCameraStyle>("chase");
+  const initialView = query.get("view");
+  const [style, setStyle] = useState<MarbleFollowCameraStyle | "overview">(
+    initialView === "overview" || initialView === "onboard" || initialView === "trackside" || initialView === "aerial" ? initialView : "chase",
+  );
   useEffect(() => {
     const element = canvas.current;
     if (!element) return;
-    const render = () => drawMarbleRace3D(element, race, 1400 + fraction * race.racers[0].durationMs, "racing", race.racers[0].id, style);
+    const render = () => drawMarbleRace3D(element, race, 1400 + fraction * race.racers[0].durationMs, "racing", style === "overview" ? null : race.racers[0].id, style === "overview" ? "chase" : style);
     render();
     const resize = new ResizeObserver(render);
     resize.observe(element);
     return () => { resize.disconnect(); disposeMarbleRace3D(element); };
   }, [race, fraction, style]);
   return <section style={{ width: "100%", display: "flex", flexDirection: "column", gap: 12 }}>
-    <div>Inspección de cámara · {Math.round(fraction * 100)}% del tiempo
+    <div>{marbleLayoutLabels[race.track.layout].name} · {race.track.lengthMeters} m · Inspección de cámara · {Math.round(fraction * 100)}% del tiempo
       <input aria-label="Tiempo de inspección" type="range" min="0" max="1" step="0.01" value={fraction} onChange={(event) => setFraction(Number(event.target.value))} />
-      <select aria-label="Cámara de inspección" value={style} onChange={(event) => setStyle(event.target.value as MarbleFollowCameraStyle)}>
-        <option value="chase">Persecución</option><option value="onboard">Desde la canica</option><option value="trackside">Lateral</option><option value="aerial">Aérea</option>
+      <select aria-label="Cámara de inspección" value={style} onChange={(event) => setStyle(event.target.value as MarbleFollowCameraStyle | "overview")}>
+        <option value="overview">Mapa completo</option><option value="chase">Persecución</option><option value="onboard">Desde la canica</option><option value="trackside">Lateral</option><option value="aerial">Aérea</option>
       </select>
     </div>
     <canvas ref={canvas} style={{ width: "100%", flex: 1, minHeight: 0 }} />

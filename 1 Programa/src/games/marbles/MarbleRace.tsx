@@ -19,6 +19,8 @@ import {
   type TrackZoneType,
 } from "./marbleRaceEngine";
 import { disposeMarbleRace3D, drawMarbleRace3D, type MarbleFollowCameraStyle } from "./marbleRace3d";
+import { marbleLayoutLabels } from "./marbleTrackLayouts";
+import { createMarbleStandings, type MarbleStanding } from "./marbleStandings";
 
 type RacePhase = "ready" | "racing" | "finished";
 const getMarbleCameraIntroMs = () =>
@@ -33,17 +35,7 @@ const cameraStyleLabels: Record<MarbleFollowCameraStyle, string> = {
   aerial: "AÉREA",
 };
 
-interface RankingItem {
-  racer: MarbleRacer;
-  progress: number;
-  finished: boolean;
-  powerActive: boolean;
-  incomingPowerActive: boolean;
-  activePower: MarblePower | null;
-  activeTrackEvent: MarbleTrackEventType | null;
-  recovering: boolean;
-  position: number;
-}
+type RankingItem = MarbleStanding;
 
 interface RaceEvent {
   id: string;
@@ -1033,27 +1025,12 @@ export function MarbleRace({
 
     const tick = (now: number) => {
       if (!mountedRef.current) return;
-      const elapsed = now - startedAt;
+      const elapsed = Math.min(now - startedAt, finishAt + cameraIntroMs);
       frameCount += 1;
       paint(elapsed, "racing");
 
       if (now - lastUiUpdate >= uiUpdateInterval || elapsed >= finishAt + cameraIntroMs) {
-        const orderedRacers = race.racers
-          .map((racer) => {
-            const state = getMarbleProgress(racer, Math.max(0, elapsed - cameraIntroMs), race.track);
-            return {
-              racer,
-              progress: state.progress,
-              finished: state.finished,
-              powerActive: state.powerActive,
-              incomingPowerActive: state.incomingPowerActive,
-              activePower: state.activePower,
-              activeTrackEvent: state.activeTrackEvent,
-              recovering: state.recovering,
-            };
-          })
-          .sort((first, second) => second.progress - first.progress)
-          .map((item, index) => ({ ...item, position: index + 1 }));
+        const orderedRacers = createMarbleStandings(race, elapsed - cameraIntroMs);
         setRanking(compactRanking(orderedRacers));
         const trackedRacer = finishRule === "first"
           ? orderedRacers[0]
@@ -1360,7 +1337,8 @@ export function MarbleRace({
         <div className="marble-map-hud">
           <span>MAPA ACTUAL</span>
           <strong>{race.track.name}</strong>
-          <div><small>{difficultyLabels[difficulty]}</small><small>{race.track.lengthRating}</small><small>Altura {maximumTrackHeight.toFixed(1)} m</small><small>{race.track.events.length} eventos</small><small>Riesgo {race.track.risk}/5</small></div>
+          <span>{marbleLayoutLabels[race.track.layout].name}</span>
+          <div><small>{difficultyLabels[difficulty]}</small><small>{race.track.lengthMeters} m de recorrido</small><small>Altura {maximumTrackHeight.toFixed(1)} m</small><small>{race.track.events.length} eventos</small><small>Riesgo {race.track.risk}/5</small></div>
         </div>
       </div>
 

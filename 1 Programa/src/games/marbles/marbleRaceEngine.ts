@@ -1,4 +1,5 @@
 import type { DrawMode, MarbleDifficulty, MarbleFinishRule, Participant } from "../../core/types";
+import { buildMarbleGuide, marbleLayoutIds, type MarbleLayout } from "./marbleTrackLayouts.ts";
 
 export type MarblePower = "boost" | "shield" | "freeze" | "reverse" | "giant" | "tiny" | "restart";
 export type TrackObstacleType = "spinner" | "bumpers" | "gate" | "boost" | "ice" | "portal" | "hammer" | "funnel";
@@ -108,6 +109,8 @@ export interface MarbleTrack {
   seed: string;
   signature: string;
   name: string;
+  layout: MarbleLayout;
+  lengthMeters: number;
   difficulty: MarbleDifficulty;
   points: TrackPoint[];
   sections: TrackSection[];
@@ -217,8 +220,8 @@ export const marbleDifficultyConfig: Record<MarbleDifficulty, DifficultyConfig> 
     risk: 1,
     trackWidth: 68,
     featureScale: 0.82,
-    mapScale: 1.55,
-    maximumElevation: 4.2,
+    mapScale: 2,
+    maximumElevation: 5.6,
     maximumBridgeLift: 1.6,
     eventCount: 2,
     lengthRating: "Corta",
@@ -235,8 +238,8 @@ export const marbleDifficultyConfig: Record<MarbleDifficulty, DifficultyConfig> 
     risk: 3,
     trackWidth: 76,
     featureScale: 1,
-    mapScale: 2.1,
-    maximumElevation: 8.4,
+    mapScale: 2.7,
+    maximumElevation: 11.2,
     maximumBridgeLift: 3.1,
     eventCount: 4,
     lengthRating: "Larga",
@@ -253,8 +256,8 @@ export const marbleDifficultyConfig: Record<MarbleDifficulty, DifficultyConfig> 
     risk: 5,
     trackWidth: 84,
     featureScale: 1.2,
-    mapScale: 2.75,
-    maximumElevation: 14.4,
+    mapScale: 3.5,
+    maximumElevation: 18.5,
     maximumBridgeLift: 5.3,
     eventCount: 6,
     lengthRating: "Extrema",
@@ -501,32 +504,18 @@ interface ModuleRange {
   clearance: number;
 }
 
-/** Terraced switchbacks keep separate lanes apart instead of forcing random crossings. */
+/** Resample a complete guide into connected industrial modules. */
 const assembleModuleRoute = (
-  plans: readonly SectionPlan[], random: () => number, rows: number,
+  plans: readonly SectionPlan[], random: () => number, rows: number, difficulty: MarbleDifficulty, seed: string,
 ) => {
-  const guide: TrackPoint[] = [];
-  const left = 0.17 + random() * 0.015;
-  const right = 0.82 - random() * 0.015;
+  // Geometry must not consume the stream used to assign powers and results.
+  // 1.0.9 consumed four guide draws before the module weights; preserve that
+  // contract so an already committed race keeps its winner after updating.
+  for (let draw = 0; draw < 4; draw += 1) random();
+  const geometryRandom = seededRandom(`geometry-v2-${difficulty}-${seed}`);
+  const layout = marbleLayoutIds[Math.floor(geometryRandom() * marbleLayoutIds.length)];
+  const guide = buildMarbleGuide(layout, difficulty, geometryRandom, rows);
   const gap = 0.72 / (rows - 1);
-  const radiusX = Math.min(0.1, gap * 0.6);
-  const phase = random() * Math.PI * 2;
-  const mirror = random() > 0.5;
-  const add = (x: number, y: number) => guide.push({ x: mirror ? 1 - x : x, y });
-  for (let row = 0; row < rows; row += 1) {
-    const y = 0.14 + row * gap;
-    const east = row % 2 === 0;
-    for (let index = row === 0 ? 0 : 1; index <= 40; index += 1) {
-      const t = index / 40;
-      const x = east ? left + (right - left) * t : right - (right - left) * t;
-      const bend = Math.sin(t * Math.PI) ** 2 * Math.sin(t * Math.PI * 4 + phase + row) * 0.009;
-      add(x, y + bend);
-    }
-    if (row < rows - 1) for (let index = 1; index <= 28; index += 1) {
-      const angle = -Math.PI / 2 + (index / 28) * Math.PI;
-      add((east ? right : left) + (east ? 1 : -1) * radiusX * Math.cos(angle), y + gap / 2 + gap / 2 * Math.sin(angle));
-    }
-  }
   const weights = plans.map(() => 0.86 + random() * 0.28);
   const totalWeight = weights.reduce((a, b) => a + b, 0);
   const points: TrackPoint[] = [];
@@ -553,7 +542,7 @@ const assembleModuleRoute = (
       clearance: gap,
     });
   });
-  return { points, ranges };
+  return { points, ranges, layout };
 };
 
 interface SectionDraft {
@@ -605,7 +594,7 @@ export const generateMarbleTrack = (
         : sectionTypeForZone(config.zoneTypes[zoneIndex], index, random);
     return { type, zoneIndex, definition: pickSectionModule(type, index, random) };
   });
-  const assembly = assembleModuleRoute(plans, random, config.rows);
+  const assembly = assembleModuleRoute(plans, random, config.rows, difficulty, seed);
   const flatPoints = assembly.points;
   const distances = pointDistances(flatPoints);
   const totalDistance = distances[distances.length - 1] || 1;
@@ -779,6 +768,12 @@ export const generateMarbleTrack = (
     seed,
     signature,
     name: TRACK_NAMES[Math.floor(random() * TRACK_NAMES.length)],
+    layout: assembly.layout,
+    lengthMeters: Math.round(points.slice(1).reduce((total, point, index) => total + Math.hypot(
+      (point.x - points[index].x) * 28 * config.mapScale,
+      (point.y - points[index].y) * 21 * config.mapScale,
+      (point.elevation ?? 0) - (points[index].elevation ?? 0),
+    ), 0)),
     difficulty,
     points,
     sections,

@@ -1620,6 +1620,8 @@ button:focus-visible, input:focus-visible, textarea:focus-visible {
 .update-card {
   position: relative;
   width: min(470px, 100%);
+  max-height: calc(100dvh - 48px);
+  overflow-y: auto;
   padding: 34px;
   border: 1px solid rgba(9, 224, 223, .38);
   border-radius: 22px;
@@ -1656,7 +1658,10 @@ button:focus-visible, input:focus-visible, textarea:focus-visible {
 .update-progress--indeterminate span { width: 38%; animation: update-progress-indeterminate 1.05s ease-in-out infinite; }
 .update-percentage { display: block; margin-top: 9px; color: var(--cyan); font-size: 13px; }
 .update-bytes { display: block; margin-top: 5px; color: #668188; font-size: 12px; }
-.update-card .update-notes { max-height: 58px; margin-top: 13px; overflow: hidden; color: #718b91; }
+.update-changes { margin-top: 16px; text-align: left; }
+.update-changes summary { color: #b9d4db; cursor: pointer; font-size: 13px; }
+.update-changes summary:focus-visible { outline: 2px solid var(--cyan); outline-offset: 3px; }
+.update-card .update-notes { max-height: min(220px, 28dvh); margin-top: 12px; padding: 12px; overflow: auto; color: #c3d5dc; background: #041219; border-radius: 8px; font: inherit; font-size: 13px; line-height: 1.65; white-space: pre-wrap; overflow-wrap: anywhere; }
 .update-card .update-error-help { margin-top: 8px; color: #70878d; }
 
 @keyframes update-icon-spin { to { transform: rotate(360deg); } }

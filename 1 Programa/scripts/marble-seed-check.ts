@@ -11,6 +11,8 @@ import {
   MARBLE_DECK_THICKNESS_M,
 } from "../src/games/marbles/marbleRaceEngine.ts";
 import { MARBLE_TRACK_PIECE_SPECS } from "../src/games/marbles/marbleTrackPieceKit.ts";
+import { measureMarbleTrackSpace } from "./marble-layout-metrics.ts";
+import { marbleLayoutIds } from "../src/games/marbles/marbleTrackLayouts.ts";
 
 const difficulties: MarbleDifficulty[] = ["easy", "medium", "hard"];
 const seedsPerDifficulty = 120;
@@ -42,8 +44,8 @@ const round = (value: number, decimals = 3) => {
 const average = (values: readonly number[]) => values.reduce((total, value) => total + value, 0) / Math.max(1, values.length);
 
 const edgeForPoint = (x: number, y: number) => {
-  if (Math.abs(y - 0.14) < 0.00001 && x < 0.2) return "left";
-  if (Math.abs(y - 0.14) < 0.00001 && x > 0.8) return "right";
+  if (Math.abs(y - 0.14) < 0.00001 && x < 0.21) return "left";
+  if (Math.abs(y - 0.14) < 0.00001 && x > 0.79) return "right";
   return "invalid";
 };
 
@@ -227,6 +229,8 @@ const reports = difficulties.map((difficulty) => {
   const eventTypes = new Set<string>();
   const elevationPeaks: number[] = [];
   const starts = { left: 0, right: 0, invalid: 0 };
+  const layouts = { canyon: 0, spiral: 0, clover: 0 };
+  let minimumCorridorGap = Infinity;
   let minimumLevelClearance = Infinity;
   const sampleSeeds: Array<{ seed: string; signature: string; coverage: number; bridges: number }> = [];
 
@@ -242,9 +246,16 @@ const reports = difficulties.map((difficulty) => {
     const bridges = track.sections.filter((section) => section.bridgeLift > 0).length;
     const elevationPeak = Math.max(...track.points.map((point) => point.elevation ?? 0));
     const edge = edgeForPoint(track.points[0].x, track.points[0].y);
-    starts[edge] += 1;
+    layouts[track.layout] += 1;
+    if (track.layout === "canyon") starts[edge] += 1;
+    const space = measureMarbleTrackSpace(track);
+    minimumCorridorGap = Math.min(minimumCorridorGap, space.minimumGap);
+    if (space.comparisons === 0 || space.minimumGap < 3 || space.minimumCrossingClearance < MARBLE_MIN_LEVEL_CLEARANCE_M) {
+      throw new Error(`${seed}/${track.layout}: separación insuficiente; ${JSON.stringify(space)}.`);
+    }
+    if (track.lengthMeters < 80) throw new Error(`${seed}: recorrido demasiado corto.`);
     // Compare actual elevations halfway across each terrace, away from its joining bend.
-    const terraceCenters = Array.from({ length: config.rows }, (_, row) => {
+    const terraceCenters = Array.from({ length: track.layout === "canyon" ? config.rows : 0 }, (_, row) => {
       const y = 0.14 + row * 0.72 / (config.rows - 1);
       return track.points.reduce((best, point) =>
         Math.hypot(point.x - 0.5, (point.y - y) * 3) < Math.hypot(best.x - 0.5, (best.y - y) * 3) ? point : best);
@@ -272,7 +283,7 @@ const reports = difficulties.map((difficulty) => {
       !validation.valid
       || !connectorsValid
       || coverage < 0.18
-      || edge === "invalid"
+      || (track.layout === "canyon" && edge === "invalid")
       || track.sections.length !== config.sectionCount
       || track.points.length <= track.sections.length * 4
       || track.obstacles.length < config.obstacleMin
@@ -310,6 +321,9 @@ const reports = difficulties.map((difficulty) => {
   if (starts.left === 0 || starts.right === 0) {
     throw new Error(`La dificultad ${difficulty} no generó ambas orientaciones de descenso.`);
   }
+  for (const layout of marbleLayoutIds) {
+    if (layouts[layout] < 12) throw new Error(`${difficulty}: falta variedad real de geometría (${layout}).`);
+  }
   const expectedEventTypes = difficulty === "easy" ? 2 : 4;
   if (eventTypes.size < expectedEventTypes) {
     throw new Error(`La dificultad ${difficulty} no generó suficiente variedad de eventos (${eventTypes.size}/${expectedEventTypes}).`);
@@ -325,6 +339,8 @@ const reports = difficulties.map((difficulty) => {
     maximumElevation: round(Math.max(...elevationPeaks)),
     minimumLevelClearanceM: round(minimumLevelClearance),
     startEdges: starts,
+    layouts,
+    minimumCorridorGapM: round(minimumCorridorGap),
     coverage: {
       minimum: round(Math.min(...coverages)),
       average: round(average(coverages)),

@@ -484,10 +484,15 @@ try {
     Copy-Item -LiteralPath $signatureSource -Destination $signatureDestination -Force
 
     $releaseTag = "v$version"
+    $versionNotesPath = Join-Path $ProjectRoot "NOTAS-VERSION-$version.md"
+    if (-not (Test-Path -LiteralPath $versionNotesPath)) {
+        throw "Faltan las notas de $version. Actualiza el historial y ejecuta npm run historial:actualizar."
+    }
+    $versionNotes = Get-Content -LiteralPath $versionNotesPath -Raw -Encoding UTF8
     $assetName = Split-Path -Leaf $destination
     $latestUpdate = [ordered]@{
         version = $version
-        notes = "Nueva version de Fortuna Real."
+        notes = $versionNotes
         pub_date = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
         platforms = [ordered]@{
             "windows-x86_64" = [ordered]@{
@@ -731,7 +736,7 @@ Proyecto: https://github.com/OscarD0823/Fortuna-Real
             --repo $ReleaseRepository `
             --target main `
             --title "Fortuna Real $releaseTag" `
-            --notes "Actualización $releaseTag de Fortuna Real. Incluye mejoras visuales, de rendimiento y jugabilidad."
+            --notes-file $versionNotesPath
         if ($LASTEXITCODE -ne 0) {
             throw "GitHub no pudo crear el Release $releaseTag. Los artefactos locales se conservaron."
         }

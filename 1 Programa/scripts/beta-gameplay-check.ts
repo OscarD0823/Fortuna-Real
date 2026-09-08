@@ -2,14 +2,57 @@ import assert from "node:assert/strict";
 import * as THREE from "three";
 import { trackFrameQuaternion } from "../src/games/marbles/marbleTrackFrame.ts";
 import { constrainCameraSightline, createCameraTrackCollider } from "../src/games/marbles/marbleCameraCollision.ts";
-import { cameraPathCeiling, measureCameraPath, offsetCameraProgress } from "../src/games/marbles/marbleCameraPath.ts";
+import { cameraFarDistance, cameraPathCeiling, marbleCameraResponse, marbleChaseFraming, measureCameraPath, offsetCameraProgress } from "../src/games/marbles/marbleCameraPath.ts";
 import { getHeldPinballFlippers, getPinballFlipperBlend, pinballKeyControls } from "../src/games/pinball/pinballControls.ts";
 import { getDuckWaveCoverAmount, getDuckVisibleTargetCount, getDuckVisualScale, prepareDuckContestants } from "../src/games/ducks/duckHuntEngine.ts";
 import { getMarbleMotion, prepareMarbleRace } from "../src/games/marbles/marbleRaceEngine.ts";
+import { createMarbleStandings } from "../src/games/marbles/marbleStandings.ts";
 import { isGamePlayable } from "../src/core/gameAvailability.ts";
 import { pickVisibleDuckInstance } from "../src/games/ducks/duckShotCollision.ts";
 
 const point = (x: number, y = 0, z = 0) => ({ position: { x, y, z } });
+for (const count of [2, 8, 90, 200]) for (const finishRule of ["first", "last"] as const) {
+  const participants = Array.from({ length: count }, (_, i) => ({ id: `preview-${i + 1}`, name: `Prueba ${i + 1}`, color: "#fff" }));
+  const race = prepareMarbleRace(participants, "direct", "visual-1", "easy", new Set(), finishRule);
+  const final = createMarbleStandings(race, race.selected.durationMs);
+  assert.deepEqual(createMarbleStandings(race, race.selected.durationMs + 60_000), final, "Una pestaña suspendida no debe adelantar la tabla respecto al cuadro de llegada.");
+  const result = finishRule === "first" ? final[0] : final[final.length - 1];
+  assert.equal(result.racer.id, race.selected.id, "La clasificación final debe coincidir con el ganador confirmado.");
+  const arrivals = final.filter(item => item.finished).map(item => item.racer.durationMs);
+  assert.deepEqual(arrivals, [...arrivals].sort((a, b) => a - b), "Los participantes en meta se ordenan por tiempo de llegada, no por número.");
+  assert.ok(createMarbleStandings(race, -100).every(item => item.progress === 0 && !item.finished));
+}
+for (const responseMs of [55, 95, 145, 180]) {
+  const positions = [30, 60, 144].map(fps => {
+    let position = 0;
+    for (let i = 0; i < fps; i += 1) position += (1 - position) * marbleCameraResponse(1000 / fps, responseMs);
+    return position;
+  });
+  assert.ok(Math.max(...positions) - Math.min(...positions) < 1e-10);
+  assert.equal(marbleCameraResponse(1000, responseMs), 1, "Al volver del segundo plano la cámara debe alcanzar la posición actual.");
+  assert.equal(marbleCameraResponse(16, responseMs, true), 1);
+  assert.equal(marbleCameraResponse(0, responseMs), 0);
+}
+for (const scale of [2, 2.7, 3.5]) {
+  const bounds = { min: { x: -22 * scale, y: -2, z: -17.5 * scale }, max: { x: 22 * scale, y: 25, z: 17.5 * scale } };
+  for (const side of [-1, 1]) {
+    const eye = new THREE.Vector3(11.5 * scale * side, 55, 16.5 * scale);
+    const far = cameraFarDistance(eye, bounds);
+    for (const x of [bounds.min.x, bounds.max.x]) for (const y of [bounds.min.y, bounds.max.y]) for (const z of [bounds.min.z, bounds.max.z]) {
+      assert.ok(new THREE.Vector3(x, y, z).distanceTo(eye) + 9 < far, "El plano lejano no puede cortar el circuito ni la plataforma al ampliar el mapa.");
+    }
+    assert.ok(far > 90, "Los escenarios grandes requieren más alcance que la cámara antigua.");
+  }
+}
+for (const speed of [0, 0.3, 0.7, 1]) {
+  const straight = marbleChaseFraming(1, speed);
+  const bend = marbleChaseFraming(0, speed);
+  assert.ok(bend.distance < straight.distance && bend.height > straight.height && bend.anticipation > straight.anticipation, "La cámara debe acercarse y anticipar más en curvas.");
+  for (let dot = -1; dot <= 1; dot += 0.01) {
+    const frame = marbleChaseFraming(dot, speed);
+    assert.ok(frame.distance >= 3.9 && frame.distance <= 6.3 && frame.fov >= 61 && frame.fov <= 67);
+  }
+}
 for (const length of [20, 100, 600]) {
   const distances = measureCameraPath([point(0), point(length * 0.1), point(length)]);
   const progress = 0.8;

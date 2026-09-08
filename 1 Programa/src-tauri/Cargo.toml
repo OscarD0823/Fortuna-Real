@@ -1,6 +1,6 @@
 [package]
 name = "fortuna-real"
-version = "1.0.9"
+version = "1.0.10"
 description = "Fortuna Real — sorteos con emoción real"
 authors = ["Fortuna Real"]
 edition = "2021"

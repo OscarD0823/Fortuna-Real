@@ -87,6 +87,7 @@ import { parseAudioVolume } from "./shared/audio/audioPreferences";
 import { sha256Hex } from "./shared/crypto/sha256";
 import { SplashScreen } from "./shared/components/SplashScreen";
 import { AppUpdater } from "./shared/components/AppUpdater";
+import { currentVersion, ReleaseHistory } from "./shared/releases/ReleaseHistory";
 import { GameDemoModal } from "./shared/tutorial/GameDemoModal";
 import { GuidedTour } from "./shared/tutorial/GuidedTour";
 import { gameGuides, type TutorialId } from "./shared/tutorial/tutorialContent";
@@ -143,6 +144,7 @@ type ActiveScreen = "setup" | "roulette" | "cards" | "pinball" | "marbles" | "du
 function App() {
   const [neutralMode, setNeutralMode] = useState(() => localStorage.getItem("fortuna-real-appearance") === "play");
   const [showResults, setShowResults] = useState(false);
+  const [showVersions, setShowVersions] = useState(false);
   useEffect(() => {
     document.documentElement.dataset.appearance = neutralMode ? "play" : "original";
     document.title = neutralMode ? "Zona de Juegos" : "Fortuna Real";
@@ -584,11 +586,11 @@ function App() {
   };
 
   useEffect(() => {
-    if (!startupUpdateCheckComplete || showSplash || showResults || activeTutorial || demoGame || roundAnimating || currentResult || screen === "pinball") return;
+    if (!startupUpdateCheckComplete || showSplash || showResults || showVersions || activeTutorial || demoGame || roundAnimating || currentResult || screen === "pinball") return;
     if (localStorage.getItem(tutorialSeenKey(screen)) === "seen") return;
     const timer = window.setTimeout(() => setActiveTutorial(screen), screen === "setup" ? 420 : 620);
     return () => window.clearTimeout(timer);
-  }, [activeTutorial, currentResult, demoGame, roundAnimating, screen, showSplash, showResults, startupUpdateCheckComplete]);
+  }, [activeTutorial, currentResult, demoGame, roundAnimating, screen, showSplash, showResults, showVersions, startupUpdateCheckComplete]);
 
   const closeTutorial = useCallback(() => {
     if (activeTutorial) localStorage.setItem(tutorialSeenKey(activeTutorial), "seen");
@@ -636,6 +638,8 @@ function App() {
           roundNumber={roundNumber}
           activeCount={activeParticipants.length}
           onOpenResults={() => setShowResults(true)}
+          onOpenVersions={() => setShowVersions(true)}
+          versionsDisabled={roundAnimating || !!activeTutorial || !!demoGame || !!currentResult || showResults}
           neutralMode={neutralMode}
           onToggleAppearance={() => setNeutralMode((value) => !value)}
         />
@@ -778,8 +782,9 @@ function App() {
       {activeTutorial && !currentResult && <GuidedTour key={activeTutorial} tutorialId={activeTutorial} onDone={closeTutorial} canNarrate={voiceEnabled && audioVolume > 0} />}
       {demoGame && !currentResult && <GameDemoModal initialGame={demoGame} onDone={closeDemo} canNarrate={voiceEnabled && audioVolume > 0} />}
       {showResults && <ResultsArchive onClose={() => setShowResults(false)} />}
+      {showVersions && <ReleaseHistory onClose={() => setShowVersions(false)} />}
       <AppUpdater
-        blocked={showSplash || showResults || screen !== "setup" || roundAnimating || !!activeTutorial || !!demoGame || !!currentResult}
+        blocked={showSplash || showResults || showVersions || screen !== "setup" || roundAnimating || !!activeTutorial || !!demoGame || !!currentResult}
         onStartupCheckComplete={completeStartupUpdateCheck}
       />
     </div></NeutralAppearanceContext.Provider>
@@ -802,6 +807,8 @@ function Topbar({
   roundNumber,
   activeCount,
   onOpenResults,
+  onOpenVersions,
+  versionsDisabled,
   neutralMode,
   onToggleAppearance,
 }: {
@@ -821,6 +828,8 @@ function Topbar({
   roundNumber: number;
   activeCount: number;
   onOpenResults: () => void;
+  onOpenVersions: () => void;
+  versionsDisabled: boolean;
   neutralMode: boolean;
   onToggleAppearance: () => void;
 }) {
@@ -858,6 +867,7 @@ function Topbar({
       )}
 
       <div className="topbar-actions">
+        <button type="button" className="release-history-trigger" onClick={onOpenVersions} disabled={versionsDisabled} aria-label={`Novedades e historial de versiones. Versión ${currentVersion}`}><History size={17} /><span>Novedades <small>v{currentVersion}</small></span></button>
         <button type="button" className={`appearance-toggle ${neutralMode ? "is-active" : ""}`} aria-pressed={neutralMode} onClick={onToggleAppearance} title="Cambia la apariencia; no borra ni oculta resultados"><Gamepad2 size={17} /><span>Modo juego</span></button>
         {screen !== "setup" && (
           <button
