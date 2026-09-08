@@ -96,6 +96,8 @@ if (process.env.CI !== "true" && existsSync(`${localInstallerDirectory}/latest.j
   const latestManifestBytes = readFileSync(latestManifestPath);
   const latestManifest = JSON.parse(readText(latestManifestPath));
   if (latestManifest.version === packageJson.version) {
+    assert.equal(typeof latestManifest.notes, "string", "Las notas del manifiesto deben ser texto, no un objeto de PowerShell.");
+    assert.equal(latestManifest.notes.replace(/\r\n/gu, "\n"), readText(`NOTAS-VERSION-${packageJson.version}.md`).replace(/\r\n/gu, "\n"), "El manifiesto debe contener las notas reales de esta versión.");
     assert.ok(
       !(latestManifestBytes[0] === 0xEF && latestManifestBytes[1] === 0xBB && latestManifestBytes[2] === 0xBF),
       "latest.json debe estar codificado como UTF-8 sin BOM.",

@@ -41,3 +41,11 @@ Las notas de versiones anteriores se reconstruyeron a partir de commits y Releas
 Canicas y Patos siguen en beta; Pinball sigue desactivado. La selección del sorteo sigue comprometida antes de la animación, no es una competición de física libre. Daniela High no cambia de modelo ni de ajustes. La prueba del navegador utiliza su voz de desarrollo y no valida el motor nativo.
 
 Se inspeccionaron las vistas generales de Trébol, Cañón difícil y Espiral fácil, además de persecución y vista desde la canica. Las capturas de un navegador oculto no son una medición fiable de FPS; no se promete una frecuencia universal ni se ha probado este instalador en otro computador.
+
+## Empaquetado del 8 de septiembre
+
+El creador completó las pruebas de Rust, incluida síntesis española real, y generó el instalador y su firma. Antes de publicar se detectó que Windows PowerShell convertía el texto obtenido con `Get-Content -Raw` en un objeto con propiedades del proveedor al serializar las notas dentro del manifiesto. Se cambió a `File.ReadAllText`, se añadió comprobación de tipo y una regresión que ejecuta la asignación real con el serializador de Windows PowerShell. También se exige que las notas locales coincidan con el documento de la versión.
+
+Se corrigió el manifiesto y se recreó el ZIP del instalador, conservando exactamente el instalador y su firma ya validados; esta corrección afecta al empaquetador y a sus pruebas, no al código incluido en el ejecutable. El manifiesto defectuoso nunca se publicó. El ZIP anterior se conserva como respaldo local de diagnóstico.
+
+La copia portátil identifica su versión como 1.0.10 y contiene los recursos. La comprobación visual nativa no pudo completarse: el control de Windows respondió `failed to activate captured window` en la activación inicial y en el único reintento tras recuperar la ventana. No se enviaron clics a otra aplicación ni se instalaron cambios sobre la copia del usuario. Esto no sustituye la prueba de instalación en un segundo computador.

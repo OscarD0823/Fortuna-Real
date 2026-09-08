@@ -20,6 +20,23 @@ if (-not $testDirectory.StartsWith("$testRoot\", [StringComparison]::OrdinalIgno
 New-Item -ItemType Directory -Path $testDirectory | Out-Null
 $previousAutoload = $PSModuleAutoLoadingPreference
 try {
+    # Exercise the actual notes assignment using the Windows PowerShell JSON
+    # serializer. Get-Content -Raw used to leak provider metadata into notes.
+    $notesAssignment = $creatorAst.Find({
+        param($node)
+        $node -is [Management.Automation.Language.AssignmentStatementAst] -and $node.Left.Extent.Text -eq '$versionNotes'
+    }, $true)
+    if (-not $notesAssignment) { throw "Missing release notes reader." }
+    $versionNotesPath = Join-Path $testDirectory "release-notes.md"
+    $expectedNotes = "# Version`n`nCanicas y voz " + [char]0xE9 + ".`n"
+    [IO.File]::WriteAllText($versionNotesPath, $expectedNotes, (New-Object Text.UTF8Encoding($false)))
+    . ([scriptblock]::Create($notesAssignment.Extent.Text))
+    $notesJson = [ordered]@{ notes = $versionNotes } | ConvertTo-Json -Depth 5
+    $parsedNotes = ($notesJson | ConvertFrom-Json).notes
+    if ($parsedNotes -isnot [string] -or $parsedNotes -cne $expectedNotes -or $notesJson.Contains('PSPath')) {
+        throw "Release notes must serialize as plain Unicode text without provider metadata."
+    }
+    "Release notes: Windows PowerShell JSON round-trip, plain Unicode string, no provider metadata OK."
     # Reproduce an environment where the Get-FileHash module is unavailable.
     $PSModuleAutoLoadingPreference = "None"
     function Get-FileHash { throw "Get-FileHash must not be required by the installer." }

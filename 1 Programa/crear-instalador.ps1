@@ -488,7 +488,9 @@ try {
     if (-not (Test-Path -LiteralPath $versionNotesPath)) {
         throw "Faltan las notas de $version. Actualiza el historial y ejecuta npm run historial:actualizar."
     }
-    $versionNotes = Get-Content -LiteralPath $versionNotesPath -Raw -Encoding UTF8
+    # Read a plain CLR string: Windows PowerShell serializes Get-Content's
+    # extended properties (PSPath, PSDrive, etc.) as an object inside a manifest.
+    $versionNotes = [IO.File]::ReadAllText($versionNotesPath, [Text.Encoding]::UTF8)
     $assetName = Split-Path -Leaf $destination
     $latestUpdate = [ordered]@{
         version = $version
@@ -503,6 +505,9 @@ try {
     }
     $latestPath = Join-Path $InstallerOutput "latest.json"
     $latestJson = $latestUpdate | ConvertTo-Json -Depth 5
+    if (($latestJson | ConvertFrom-Json).notes -isnot [string]) {
+        throw "Las notas del manifiesto deben ser texto, sin metadatos de PowerShell."
+    }
     Write-Utf8WithoutBom -LiteralPath $latestPath -Value $latestJson
 
     Write-Step "Verificando la firma del instalador con la clave publica de la aplicacion..."
