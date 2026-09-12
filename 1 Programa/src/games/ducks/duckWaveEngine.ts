@@ -3,7 +3,8 @@ export const DUCK_WAVE_BASE_MS = 10_000;
 
 export type DuckArcadeMode = "single" | "double" | "flock";
 
-export const getDuckWaveSize = (mode: DuckArcadeMode) => mode === "single" ? 1 : mode === "double" ? 2 : 5;
+export const getDuckWaveSize = (mode: DuckArcadeMode, livingCount: number) =>
+  mode === "single" ? 1 : mode === "double" ? 2 : livingCount;
 
 /**
  * La ronda se vuelve más rápida de forma gradual, como un juego de puntería
@@ -18,8 +19,10 @@ export const selectDuckWaveIds = (
   mode: DuckArcadeMode,
 ) => {
   if (livingIds.length === 0) return [];
-  const size = Math.min(getDuckWaveSize(mode), livingIds.length);
-  const start = ((Math.max(1, waveNumber) - 1) * getDuckWaveSize(mode)) % livingIds.length;
+  // Every surviving participant takes off in flock mode; there is no visual queue.
+  if (mode === "flock") return [...livingIds];
+  const size = Math.min(getDuckWaveSize(mode, livingIds.length), livingIds.length);
+  const start = ((Math.max(1, waveNumber) - 1) * size) % livingIds.length;
   return Array.from({ length: size }, (_, offset) => livingIds[(start + offset) % livingIds.length]);
 };
 

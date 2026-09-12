@@ -7,6 +7,8 @@ import type { MarbleDifficulty, MarbleFinishRule, Participant } from "./core/typ
 import { MarbleRace } from "./games/marbles/MarbleRace";
 import { PinballGame } from "./games/pinball/PinballGame";
 import { DuckHunt } from "./games/ducks/DuckHunt";
+import { UpdateDialog } from "./shared/components/AppUpdater";
+import { updateHeadings, type UpdateStatus } from "./shared/update/updatePresentation";
 import { prepareMarbleRace } from "./games/marbles/marbleRaceEngine";
 import { marbleLayoutLabels } from "./games/marbles/marbleTrackLayouts";
 import { disposeMarbleRace3D, drawMarbleRace3D, type MarbleFollowCameraStyle } from "./games/marbles/marbleRace3d";
@@ -27,6 +29,22 @@ const requestedSeed = query.get("seed")?.trim() || undefined;
 const initialDifficulty: MarbleDifficulty = requestedDifficulty === "easy" || requestedDifficulty === "hard"
   ? requestedDifficulty
   : "medium";
+
+function UpdaterInspection() {
+  const requested = query.get("phase") ?? "downloading";
+  const [phase, setPhase] = useState<UpdateStatus>(Object.prototype.hasOwnProperty.call(updateHeadings, requested) ? requested as UpdateStatus : "downloading");
+  const [open, setOpen] = useState(true);
+  return <section style={{ padding: 24 }}>
+    <h1>Laboratorio de actualización</h1><p>Solo muestra estados de la interfaz. No descarga, instala, guarda recibos ni reinicia el programa.</p>
+    <button className="start-button" type="button" onClick={() => { setPhase("downloading"); setOpen(true); }}>Abrir demostración</button>
+    {open && <UpdateDialog preview status={phase} failurePhase="verifying" currentVersion="1.0.10" version="1.0.11"
+      progress={46} downloadedBytes={175 * 1024 * 1024} totalBytes={382 * 1024 * 1024} elapsedMs={25000}
+      signatureVerified={["preparing", "installing", "restarting", "complete"].includes(phase)}
+      notes={"Ejemplo de presentación: mejoras de Patos Retro y actualización integrada.\nEsta es una demostración, no una versión publicada."}
+      errorMessage="Ejemplo: no se pudo verificar la firma. No se aplicó ningún archivo."
+      onContinue={() => setOpen(false)} onRetry={() => setPhase("checking")} onPreviewStatus={setPhase} />}
+  </section>;
+}
 
 function CameraInspection({ participants }: { participants: Participant[] }) {
   const canvas = useRef<HTMLCanvasElement>(null);
@@ -69,7 +87,8 @@ function MarblePreview() {
 
   return (
     <main style={{ minHeight: "100vh", height: "100vh", padding: 12, background: "#02070c", color: "#edf8f8", display: "flex", boxSizing: "border-box" }}>
-      {import.meta.env.DEV && game === "camera" ? <CameraInspection participants={participants} />
+      {import.meta.env.DEV && game === "updater" ? <UpdaterInspection />
+        : import.meta.env.DEV && game === "camera" ? <CameraInspection participants={participants} />
         : game === "pinball" ? <PinballGame participants={participants} mode="direct" controlMode={query.get("control") === "manual" ? "manual" : "automatic"} disabled={false} previousWinnerIds={new Set()} initialSeed={requestedSeed} onCommit={() => undefined} onFinish={() => undefined} />
         : game === "ducks" ? <DuckHunt participants={participants} previousWinnerIds={new Set()} disabled={false} onCommit={() => undefined} onFinish={() => undefined} />
         : <MarbleRace

@@ -8,7 +8,6 @@ import {
   EyeOff,
   Feather,
   FastForward,
-  Flame,
   Heart,
   Palette,
   Play,
@@ -24,7 +23,8 @@ import {
 import type { Participant } from "../../core/types";
 import { fortunaAudio } from "../../shared/audio/audioEngine";
 import {
-  createDuckCommitmentSeed,
+  createQuickDuckCommitmentSeed,
+  duckStartingLivesFromSeed,
   createSealedDuckCommitmentFromSeed,
   type DuckCommitment,
 } from "./duckCommitment";
@@ -42,17 +42,16 @@ import {
   type DuckForestEvent,
   type DuckSabotagePower,
 } from "./duckHuntEngine";
-import {
-  createDuckHunt3D,
-  type DuckHuntController,
-  type DuckHuntStats,
+import type {
+  DuckHuntController,
+  DuckHuntStats,
 } from "./duckHunt3d";
+import { createDuckHuntClassic } from "./duckHuntClassic";
+import "./duckClassic.css";
 import {
   DUCK_WAVE_SHOTS,
-  getDuckPassLine,
   getDuckWaveDuration,
   selectDuckWaveIds,
-  type DuckArcadeMode,
 } from "./duckWaveEngine";
 
 type DuckPhase = "ready" | "flying" | "resetting" | "finished";
@@ -98,15 +97,16 @@ export function DuckHunt({
   const [visualSeed, setVisualSeed] = useState(() => createDuckSeed());
   const [forestEvent, setForestEvent] = useState<DuckForestEvent>(() => getDuckForestEvent(visualSeed, 1));
   const [commitmentSeed, setCommitmentSeed] = useState(
-    () => resumedCommitment?.seed ?? createDuckCommitmentSeed(),
+    () => resumedCommitment?.seed ?? createQuickDuckCommitmentSeed(),
   );
   const resumedCommitmentId = resumedCommitment?.commitmentId;
   const resumedCommitmentSeed = resumedCommitment?.seed;
   const [roundParticipants] = useState(() => participants);
   const [roundPreviousWinnerIds] = useState(() => new Set(previousWinnerIds));
+  const startingLives = duckStartingLivesFromSeed(commitmentSeed);
   const initialContestants = useMemo(
-    () => prepareDuckContestants(roundParticipants, visualSeed, roundPreviousWinnerIds),
-    [roundParticipants, roundPreviousWinnerIds, visualSeed],
+    () => prepareDuckContestants(roundParticipants, visualSeed, roundPreviousWinnerIds, startingLives),
+    [roundParticipants, roundPreviousWinnerIds, visualSeed, startingLives],
   );
   const [contestants, setContestants] = useState(initialContestants);
   const [commitment, setCommitment] = useState<DuckCommitment | null>(null);
@@ -120,14 +120,14 @@ export function DuckHunt({
   const [bestStreak, setBestStreak] = useState(0);
   const [lastHit, setLastHit] = useState<DuckContestant | null>(null);
   const [activePower, setActivePower] = useState<ActiveDuckPower | null>(null);
-  const [crosshair, setCrosshair] = useState({ x: 50, y: 48, visible: false });
-  const [arcadeMode, setArcadeMode] = useState<DuckArcadeMode>("flock");
   const [waveNumber, setWaveNumber] = useState(1);
   const [shotsInWave, setShotsInWave] = useState(0);
   const [waveRemainingMs, setWaveRemainingMs] = useState(getDuckWaveDuration(1));
   const [recentWaveHits, setRecentWaveHits] = useState<boolean[]>([]);
   const [waveEscaped, setWaveEscaped] = useState(false);
+  const [automaticResolution, setAutomaticResolution] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const crosshairRef = useRef<HTMLDivElement | null>(null);
   const controllerRef = useRef<DuckHuntController | null>(null);
   const resetTimerRef = useRef<number | null>(null);
   const knockoutOrderRef = useRef<DuckContestant[]>([]);
@@ -136,7 +136,6 @@ export function DuckHunt({
   const phaseRef = useRef<DuckPhase>("ready");
   const waveRef = useRef(1);
   const shotsInWaveRef = useRef(0);
-  const waveModeRef = useRef<DuckArcadeMode>("flock");
   const currentWaveIdsRef = useRef<string[]>([]);
 
   const applyPhase = (nextPhase: DuckPhase) => {
@@ -180,6 +179,7 @@ export function DuckHunt({
     setWaveRemainingMs(getDuckWaveDuration(1));
     setRecentWaveHits([]);
     setWaveEscaped(false);
+    setAutomaticResolution(false);
     setForestEvent(getDuckForestEvent(visualSeed, 1));
     commitmentCursorRef.current = 0;
     knockoutOrderRef.current = [];
@@ -190,7 +190,7 @@ export function DuckHunt({
     if (!canvas) return;
     setRendererFailed(false);
     try {
-      const controller = createDuckHunt3D(
+      const controller = createDuckHuntClassic(
         canvas,
         initialContestants.map(concealContestant),
         setStats,
@@ -284,10 +284,9 @@ export function DuckHunt({
     setActivePower(null);
     controllerRef.current?.setRunning(true);
     const livingIds = contestantsRef.current.filter((contestant) => !contestant.knockedOut).map((contestant) => contestant.id);
-    const firstWaveIds = selectDuckWaveIds(livingIds, 1, arcadeMode);
+    const firstWaveIds = selectDuckWaveIds(livingIds, 1, "flock");
     const firstForestEvent = getDuckForestEvent(visualSeed, 1);
     currentWaveIdsRef.current = firstWaveIds;
-    waveModeRef.current = arcadeMode;
     controllerRef.current?.beginWave(firstWaveIds);
     controllerRef.current?.setForestEvent(firstForestEvent.type);
     setForestEvent(firstForestEvent);
@@ -304,16 +303,17 @@ export function DuckHunt({
     if (phase !== "ready") return;
     fortunaAudio.playClick();
     setVisualSeed(createDuckSeed());
-    setCommitmentSeed(createDuckCommitmentSeed());
+    setCommitmentSeed(createQuickDuckCommitmentSeed());
   };
 
   const updateCrosshair = (event: React.PointerEvent<HTMLCanvasElement>) => {
     const rect = event.currentTarget.getBoundingClientRect();
-    setCrosshair({
-      x: ((event.clientX - rect.left) / rect.width) * 100,
-      y: ((event.clientY - rect.top) / rect.height) * 100,
-      visible: true,
-    });
+    const crosshair = crosshairRef.current;
+    if (!crosshair || !rect.width || !rect.height) return;
+    // Pointer movement must not re-render 200 life rows on every mouse event.
+    crosshair.style.left = `${((event.clientX - rect.left) / rect.width) * 100}%`;
+    crosshair.style.top = `${((event.clientY - rect.top) / rect.height) * 100}%`;
+    crosshair.classList.toggle("is-visible", phaseRef.current === "flying" && !rendererFailed);
   };
 
   const advanceCommittedHit = (visualHitId?: string) => {
@@ -361,13 +361,15 @@ export function DuckHunt({
           return;
         }
         applyPhase("finished");
+        setLastHit(result.survivor);
+        setContestants((current) => current.map((duck) => duck.id === result.survivor?.id ? { ...duck, revealed: true } : duck));
         controllerRef.current?.setRunning(false);
         fortunaAudio.playDuckWinner();
         onFinish(result.survivor, knockoutOrderRef.current);
       } else {
         const nextWave = waveRef.current + 1;
         const livingIds = nextFlightContestants.filter((contestant) => !contestant.knockedOut).map((contestant) => contestant.id);
-        const nextWaveIds = selectDuckWaveIds(livingIds, nextWave, waveModeRef.current);
+        const nextWaveIds = selectDuckWaveIds(livingIds, nextWave, "flock");
         currentWaveIdsRef.current = nextWaveIds;
         waveRef.current = nextWave;
         setWaveNumber(nextWave);
@@ -385,7 +387,7 @@ export function DuckHunt({
   };
 
   const shoot = (event: React.PointerEvent<HTMLCanvasElement>) => {
-    if (phaseRef.current !== "flying") return;
+    if (phaseRef.current !== "flying" || !event.isPrimary || event.button !== 0 || !controllerRef.current) return;
     const nextWaveShots = Math.min(DUCK_WAVE_SHOTS, shotsInWaveRef.current + 1);
     shotsInWaveRef.current = nextWaveShots;
     setShotsInWave(nextWaveShots);
@@ -429,7 +431,7 @@ export function DuckHunt({
     resetTimerRef.current = window.setTimeout(() => {
       const nextWave = waveRef.current + 1;
       const livingIds = contestantsRef.current.filter((contestant) => !contestant.knockedOut).map((contestant) => contestant.id);
-      const nextWaveIds = selectDuckWaveIds(livingIds, nextWave, waveModeRef.current);
+      const nextWaveIds = selectDuckWaveIds(livingIds, nextWave, "flock");
       currentWaveIdsRef.current = nextWaveIds;
       waveRef.current = nextWave;
       setWaveNumber(nextWave);
@@ -497,6 +499,7 @@ export function DuckHunt({
 
     commitmentCursorRef.current = cursor;
     knockoutOrderRef.current = knockoutOrder;
+    setAutomaticResolution(true);
     setShots((value) => value + resolvedHits);
     setHits((value) => value + resolvedHits);
     setContestants(workingContestants);
@@ -509,6 +512,7 @@ export function DuckHunt({
 
     resetTimerRef.current = window.setTimeout(() => {
       applyPhase("finished");
+      setContestants((current) => current.map((duck) => duck.id === survivor.id ? { ...duck, revealed: true } : duck));
       controllerRef.current?.setRunning(false);
       fortunaAudio.playDuckWinner();
       onFinish(survivor, knockoutOrder);
@@ -541,18 +545,19 @@ export function DuckHunt({
 
   return (
     <div
-      className={`duck-hunt duck-hunt--${phase}`}
+      className={`duck-hunt duck-classic duck-hunt--${phase}`}
       data-duck-count={contestants.length}
       data-visible-ducks={stats.visible}
       data-fps={stats.fps}
       data-render-calls={stats.renderCalls}
       data-render-triangles={stats.triangles}
-      data-render-mode={rendererFailed ? "fallback" : "webgl"}
+      data-render-mode={rendererFailed ? "fallback" : "canvas2d"}
       data-duck-power={activePower?.power ?? "none"}
       data-hit-streak={hitStreak}
       data-best-streak={bestStreak}
       data-wave={waveNumber}
-      data-wave-mode={arcadeMode}
+      data-wave-mode="flock"
+      data-starting-lives={startingLives}
       data-wave-shots-left={Math.max(0, DUCK_WAVE_SHOTS - shotsInWave)}
       data-hidden-living-ducks={hiddenLivingCount}
       data-cover-percent={coverPercent}
@@ -570,25 +575,25 @@ export function DuckHunt({
           </small>
         </div>
         <div className="duck-hunt__metrics">
+          <span><FastForward size={12} /> {startingLives === 1 ? "PATOS RÁPIDOS · 1 VIDA" : "Partida anterior · 3 vidas"}</span>
           <span><Heart size={12} /> {livingCount} en pie</span>
           <span><ShieldCheck size={12} /> orden verificado</span>
-          <span><Target size={12} /> {hits}/{shots}</span>
-          <span><Crosshair size={12} /> tanda {waveNumber}</span>
-          <span><Flame size={12} /> racha {hitStreak} · récord {bestStreak}</span>
-          <span>{Math.ceil(waveRemainingMs / 100) / 10}s</span>
-          <span>{rendererFailed ? "MODO 2D" : `${stats.fps} FPS`}</span>
+          <span><Feather size={12} /> {contestants.length} participantes</span>
         </div>
+        {phase === "ready" && <button type="button" className="start-button duck-start duck-start--top" onClick={start} disabled={disabled || !commitment || !!commitmentError}><Play size={18} fill="currentColor" /> Soltar los patos</button>}
       </div>
 
       <div className={`duck-hunt__arena ${activePower ? `duck-power--${activePower.power}` : ""}`}>
+        <div className="duck-classic-viewport">
         <canvas
           ref={canvasRef}
           onPointerMove={updateCrosshair}
-          onPointerLeave={() => setCrosshair((value) => ({ ...value, visible: false }))}
+          onPointerLeave={() => crosshairRef.current?.classList.remove("is-visible")}
           onPointerDown={shoot}
           onKeyDown={(event) => {
             if (event.key !== "Enter" && event.key !== " ") return;
             event.preventDefault();
+            if (event.repeat) return;
             accessibleHit();
           }}
           tabIndex={0}
@@ -597,26 +602,31 @@ export function DuckHunt({
           aria-label={`Campo de Patos con ${livingCount} en pie. Pulsa Enter o espacio para registrar el siguiente impacto comprometido.`}
         />
         <div
-          className={`duck-crosshair ${crosshair.visible && phase === "flying" && !rendererFailed ? "is-visible" : ""}`}
-          style={{ left: `${crosshair.x}%`, top: `${crosshair.y}%` }}
+          ref={crosshairRef}
+          className="duck-crosshair"
           aria-hidden="true"
         ><span /><i /></div>
-        <div className="duck-hunt__render-badge"><span /> {rendererFailed ? "RESPALDO ACCESIBLE" : "CÁMARA CLÁSICA 3D"}</div>
+        {phase === "ready" && <div className="duck-classic-title" aria-hidden="true"><span>CAMPO ABIERTO</span><strong>PATOS</strong><small>{livingCount} participantes · una sola bandada</small></div>}
+        {phase === "resetting" && <div className="duck-classic-callout" aria-hidden="true">{waveEscaped ? "¡SE ESCAPARON!" : automaticResolution ? "SUPERVIVIENTE" : "¡IMPACTO!"}</div>}
+        </div>
+        <div className="duck-classic-info">
         <div className={`duck-forest-event duck-forest-event--${forestEvent.type}`} role="status" aria-live="polite">
           <ForestEventIcon size={16} />
           <strong>{forestEvent.label}</strong>
           <span>{forestEvent.description}</span>
         </div>
-        <div className="duck-cover-radar" role="status" aria-label={`${hiddenLivingCount} patos a cubierto de ${livingCount} en pie`}>
+        <div className="duck-cover-radar" aria-label={`${hiddenLivingCount} patos a cubierto de ${livingCount} en pie`}>
           <span><EyeOff size={13} /> A CUBIERTO <strong>{hiddenLivingCount}/{livingCount}</strong></span>
           <div aria-hidden="true"><i style={{ width: `${coverPercent}%` }} /></div>
-          <small>{phase === "resetting" ? "Reapareciendo desde bosque y pasto" : phase === "flying" ? "Busca movimiento entre la vegetación" : "Identidades protegidas hasta el impacto"}</small>
+          <small>{phase === "resetting" ? "Preparando salida de todos los supervivientes" : phase === "flying" ? "Los patos ocultos no se pueden alcanzar" : "Todos saldrán juntos al comenzar"}</small>
+        </div>
         </div>
         <div className="duck-arcade-hud" aria-label={`Tanda ${waveNumber}, ${Math.max(0, DUCK_WAVE_SHOTS - shotsInWave)} disparos disponibles`}>
           <div><small>TANDA</small><strong>{String(waveNumber).padStart(2, "0")}</strong></div>
           <div className="duck-shot-counter"><small>DISPAROS</small><span>{Array.from({ length: DUCK_WAVE_SHOTS }, (_, index) => <i key={index} className={index < DUCK_WAVE_SHOTS - shotsInWave ? "is-loaded" : ""} />)}</span></div>
-          <div className="duck-hit-lamps"><small>IMPACTOS · META {getDuckPassLine(waveNumber)}</small><span>{Array.from({ length: 10 }, (_, index) => <i key={index} className={recentWaveHits[index] ? "is-hit" : ""} />)}</span></div>
-          <div><small>PRECISIÓN</small><strong>{accuracy}%</strong></div>
+          <div className="duck-hit-lamps"><small>ÚLTIMAS 10 TANDAS</small><span>{Array.from({ length: 10 }, (_, index) => <i key={index} className={recentWaveHits[index] ? "is-hit" : index < recentWaveHits.length ? "is-miss" : ""} />)}</span></div>
+          <div><small>TIEMPO</small><strong>{(waveRemainingMs / 1000).toFixed(1)} s</strong></div>
+          <div><small>ACIERTOS</small><strong>{hits}/{shots} · {accuracy}%</strong></div>
         </div>
         {activePower && activePowerDefinition && (
           <div className={`duck-power-alert duck-power-alert--${activePower.power}`} role="status" aria-live="assertive">
@@ -627,14 +637,14 @@ export function DuckHunt({
         )}
         <div className="duck-hunt__instruction" aria-live="polite">
           {commitmentError ? <><TriangleAlert size={18} /><strong>No se puede iniciar</strong><span>{commitmentError}</span></>
-            : rendererFailed ? <><TriangleAlert size={18} /><strong>Vista 3D no disponible</strong><span>Usa el botón accesible: mantiene exactamente el mismo orden sellado.</span></>
-              : phase === "ready" ? <><Crosshair size={18} /><strong>Apunta con el cursor</strong><span>Nombre, color y corona permanecen ocultos hasta el impacto.</span></>
+            : rendererFailed ? <><TriangleAlert size={18} /><strong>Campo no disponible</strong><span>Usa el botón accesible: mantiene exactamente el mismo orden sellado.</span></>
+              : phase === "ready" ? <><Crosshair size={18} /><strong>Un pato por participante</strong><span>Saldrán los {livingCount} juntos. Apunta y haz clic; cada acierto revela el siguiente nombre sellado.</span></>
                 : phase === "resetting" && waveEscaped ? <><Feather size={18} /><strong>¡Se escaparon!</strong><span>Se agotaron los tres disparos o el tiempo. Preparando otra tanda.</span></>
-                  : phase === "resetting" && lastHit ? <><Target size={18} /><strong>{lastHit.participant.name}</strong><span>{lastHit.lives === 0 ? "Sin vidas · fuera de la partida" : `${duckLivesLabel(lastHit.lives)} · impacto oficial registrado`}</span></>
-                  : phase === "finished" ? <><Trophy size={18} /><strong>Superviviente confirmado</strong><span>El resultado coincide con el compromiso previo.</span></>
+                  : phase === "resetting" && lastHit ? <><Target size={18} /><strong>{lastHit.participant.name}</strong><span>{automaticResolution ? "Último participante con vidas · verificando resultado" : lastHit.lives === 0 ? "Sin vidas · fuera de la partida" : `${duckLivesLabel(lastHit.lives)} · impacto oficial registrado`}</span></>
+                  : phase === "finished" ? <><Trophy size={18} /><strong>{lastHit?.participant.name ?? "Superviviente confirmado"}</strong><span>Último participante con vidas. El resultado coincide con el compromiso previo.</span></>
                     : activePower && activePowerDefinition
                       ? <><ActivePowerIcon size={18} /><strong>{activePowerDefinition.label}</strong><span>{activePowerDefinition.description} El punto real del disparo no cambia.</span></>
-                      : <><Crosshair size={18} /><strong>DISPARO HABILITADO</strong><span>Los patos se ocultan al azar; un impacto hace salir a toda la bandada.</span></>}
+                      : <><Crosshair size={18} /><strong>APUNTA Y DISPARA</strong><span>Tres intentos por tanda. El último participante con vidas gana.</span></>}
         </div>
       </div>
 
@@ -653,7 +663,7 @@ export function DuckHunt({
                     {revealed && contestant.previousWinner && <Crown className="duck-champion-crown" size={12} fill="currentColor" aria-label="Ganador anterior" />}
                   </strong>
                   <span className="duck-hearts" aria-label={duckLivesLabel(contestant.lives)}>
-                    {[0, 1, 2].map((heart) => <Heart key={heart} size={12} fill={heart < contestant.lives ? "currentColor" : "none"} />)}
+                    {Array.from({ length: startingLives }, (_, heart) => <Heart key={heart} size={12} fill={heart < contestant.lives ? "currentColor" : "none"} />)}
                   </span>
                   <em>{contestant.knockedOut ? "FUERA" : revealed ? `×${contestant.speed.toFixed(2)}` : "OCULTO"}</em>
                 </div>
@@ -664,13 +674,9 @@ export function DuckHunt({
         <div className="duck-hunt__controls">
           {phase === "ready" ? (
             <>
-              <div className="duck-mode-picker" role="group" aria-label="Cantidad de patos por tanda">
-                <button type="button" aria-pressed={arcadeMode === "flock"} className={arcadeMode === "flock" ? "is-active" : ""} onClick={() => setArcadeMode("flock")}><b>5</b><span>Bandada</span></button>
-                <button type="button" className={arcadeMode === "single" ? "is-active" : ""} onClick={() => setArcadeMode("single")}><b>1</b><span>Un pato</span></button>
-                <button type="button" className={arcadeMode === "double" ? "is-active" : ""} onClick={() => setArcadeMode("double")}><b>2</b><span>Dos patos</span></button>
-              </div>
+              <div className="duck-flock-summary"><Feather size={21} /><strong>{livingCount} patos</strong><span>Todos en la misma tanda · {duckLivesLabel(startingLives)} cada uno</span></div>
               <button type="button" className="text-button duck-regenerate" onClick={regenerate} disabled={!commitment || !!resumedCommitmentSeed}><RefreshCw size={15} /> Nueva bandada</button>
-              <button type="button" className="start-button duck-start" onClick={start} disabled={disabled || !commitment || !!commitmentError}><Play size={19} fill="currentColor" /> Soltar los patos</button>
+              <small>El botón Soltar los patos está arriba del campo.</small>
             </>
           ) : rendererFailed && phase === "flying" ? (
             <div className="duck-automatic-actions">
@@ -688,7 +694,7 @@ export function DuckHunt({
               <span /><strong>{phase === "resetting" ? "A CUBIERTO · SALIDA COLECTIVA" : "PARTIDA FINALIZADA"}</strong>
             </div>
           )}
-          <small><Sparkles size={11} /> Cámara fija, tres disparos por tanda y salida colectiva tras cada impacto.</small>
+          <small><Sparkles size={11} /> Estilo retro · cámara fija · salida colectiva. Racha {hitStreak} / récord {bestStreak}.</small>
         </div>
       </div>
     </div>

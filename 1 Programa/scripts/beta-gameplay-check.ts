@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import * as THREE from "three";
 import { trackFrameQuaternion } from "../src/games/marbles/marbleTrackFrame.ts";
 import { constrainCameraSightline, createCameraTrackCollider } from "../src/games/marbles/marbleCameraCollision.ts";
-import { cameraFarDistance, cameraPathCeiling, marbleCameraResponse, marbleChaseFraming, measureCameraPath, offsetCameraProgress } from "../src/games/marbles/marbleCameraPath.ts";
+import { cameraFarDistance, cameraPathCeiling, marbleCameraResponse, marbleChaseFraming, measureCameraPath, offsetCameraProgress, translateMarbleCamera } from "../src/games/marbles/marbleCameraPath.ts";
 import { getHeldPinballFlippers, getPinballFlipperBlend, pinballKeyControls } from "../src/games/pinball/pinballControls.ts";
 import { getDuckWaveCoverAmount, getDuckVisibleTargetCount, getDuckVisualScale, prepareDuckContestants } from "../src/games/ducks/duckHuntEngine.ts";
 import { getMarbleMotion, prepareMarbleRace } from "../src/games/marbles/marbleRaceEngine.ts";
@@ -50,9 +50,20 @@ for (const speed of [0, 0.3, 0.7, 1]) {
   assert.ok(bend.distance < straight.distance && bend.height > straight.height && bend.anticipation > straight.anticipation, "La cámara debe acercarse y anticipar más en curvas.");
   for (let dot = -1; dot <= 1; dot += 0.01) {
     const frame = marbleChaseFraming(dot, speed);
-    assert.ok(frame.distance >= 3.9 && frame.distance <= 6.3 && frame.fov >= 61 && frame.fov <= 67);
+    assert.ok(frame.distance >= 3.54 && frame.distance <= 5.26 && frame.fov >= 57 && frame.fov <= 63);
   }
 }
+for (const fps of [30, 60, 144]) {
+  const camera = { x: -4, y: 3, z: 0 }, target = { x: 0.4, y: 0, z: 0 }, previous = { x: 0, y: 0, z: 0 };
+  for (let i = 1; i <= fps * 3; i++) {
+    const anchor = { x: i * 30 / fps, y: -i / fps, z: Math.sin(i / fps) * 10 };
+    translateMarbleCamera(camera, target, previous, anchor);
+    assert.ok(Math.abs(camera.x - anchor.x + 4) < 1e-9, "El desplazamiento de la canica no puede acumular retraso en la cámara.");
+    assert.ok(Math.abs(target.z - anchor.z) < 1e-9);
+    Object.assign(previous, anchor);
+  }
+}
+assert.ok(marbleChaseFraming(1, 1, 0.085).distance < marbleChaseFraming(1, 1, 0.22).distance, "Las listas grandes necesitan encuadrar más cerca sus canicas pequeñas.");
 for (const length of [20, 100, 600]) {
   const distances = measureCameraPath([point(0), point(length * 0.1), point(length)]);
   const progress = 0.8;

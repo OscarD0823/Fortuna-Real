@@ -10,7 +10,9 @@ const marbleScene = readFileSync(resolve(root, "src/games/marbles/marbleRace3d.t
 const pinballGame = readFileSync(resolve(root, "src/games/pinball/PinballGame.tsx"), "utf8");
 const participantPanel = readFileSync(resolve(root, "src/modules/participants/ParticipantPanel.tsx"), "utf8");
 const duckGame = readFileSync(resolve(root, "src/games/ducks/DuckHunt.tsx"), "utf8");
-const duckScene = readFileSync(resolve(root, "src/games/ducks/duckHunt3d.ts"), "utf8");
+const duckScene = readFileSync(resolve(root, "src/games/ducks/duckHuntClassic.ts"), "utf8");
+const duckPixels = readFileSync(resolve(root, "src/games/ducks/duckClassicMotion.ts"), "utf8");
+const duckCss = readFileSync(resolve(root, "src/games/ducks/duckClassic.css"), "utf8");
 const duckEngine = readFileSync(resolve(root, "src/games/ducks/duckHuntEngine.ts"), "utf8");
 const pinballScene = readFileSync(resolve(root, "src/games/pinball/pinball3d.ts"), "utf8");
 const pinballEngine = readFileSync(resolve(root, "src/games/pinball/pinballEngine.ts"), "utf8");
@@ -35,7 +37,7 @@ if (remainingColors.length > 0) {
   throw new Error(`Persisten colores secundarios de bajo contraste: ${remainingColors.join(", ")}`);
 }
 
-const expectedInstruction = "Selecciona Ruleta, Cartas, Canicas 3D o Patos 3D.";
+const expectedInstruction = "Selecciona Ruleta, Cartas, Canicas 3D o Patos Retro.";
 if (!instructions.includes(expectedInstruction)) {
   throw new Error(`Las instrucciones deben contener exactamente: ${expectedInstruction}`);
 }
@@ -91,13 +93,17 @@ for (const eventType of ["wind", "mist", "fireflies", "storm"]) {
   if (!duckEngine.includes(`${eventType}: {`)) throw new Error(`Falta el evento de bosque: ${eventType}.`);
 }
 if (!duckGame.includes("data-forest-event") || !duckScene.includes("setForestEvent")) {
-  throw new Error("Patos debe anunciar y representar en 3D el evento vivo del bosque.");
+  throw new Error("Patos debe anunciar y representar el evento vivo del bosque.");
 }
 if (!participantPanel.includes("Buscar participante por nombre")) {
   throw new Error("Las listas grandes deben disponer de búsqueda accesible.");
 }
-for (const modelDetail of ["pupil", "leftFoot", "cameraRecoilUntil"]) {
-  if (!duckScene.includes(modelDetail)) throw new Error(`Falta el detalle visual de Patos: ${modelDetail}`);
+for (const detail of ["pupil", "left foot", "createClassicDuckPixels"]) {
+  if (!duckPixels.includes(detail)) throw new Error(`Falta el detalle visual de Patos: ${detail}`);
+}
+if (!duckGame.includes("createDuckHuntClassic(") || !duckScene.includes("pickClassicDuck(") || !duckScene.includes('document.removeEventListener("visibilitychange"')
+  || !duckCss.includes("prefers-reduced-motion") || !duckGame.includes("event.repeat") || !duckGame.includes("crosshairRef")) {
+  throw new Error("El campo retro debe usar colisión de píxeles, liberar recursos y conservar controles accesibles.");
 }
 for (const game of ["roulette", "cards", "pinball", "marbles", "ducks"]) {
   if (!tutorialContent.includes(`${game}: {`)) throw new Error(`Falta la demostración de ${game}.`);
@@ -135,7 +141,7 @@ console.log(JSON.stringify({
   duckCoverRadar: true,
   duckForestEvents: ["wind", "mist", "fireflies", "storm"],
   participantSearch: true,
-  duckModelDetails: ["pupils", "feet", "shotRecoil"],
+  duckModelDetails: ["pixelPupils", "webbedFeet", "fourWingFrames", "pixelShotMask"],
   guidedDemos: ["roulette", "cards", "pinball", "marbles", "ducks"],
   keyboardAccessibleTutorials: true,
 }, null, 2));

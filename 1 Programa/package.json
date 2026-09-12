@@ -1,7 +1,7 @@
 {
   "name": "fortuna-real",
   "private": true,
-  "version": "1.0.10",
+  "version": "1.0.11",
   "type": "module",
   "scripts": {
     "historial:actualizar": "node ./scripts/version-history.mjs --write",
@@ -18,8 +18,8 @@
     "test:updater": "node --experimental-strip-types ./scripts/updater-check.ts",
     "test:release-config": "node --experimental-strip-types ./scripts/release-config-check.ts && node ./scripts/dependency-fingerprint.mjs --self-test && npm run test:history",
     "test:capacity": "node --experimental-strip-types ./scripts/capacity-check.ts",
-    "test:marble-seeds": "node --experimental-strip-types ./scripts/marble-seed-check.ts && node --experimental-strip-types ./scripts/marble-legacy-check.ts",
-    "test:ducks": "node --experimental-strip-types ./scripts/duck-wave-check.ts && node --experimental-strip-types ./scripts/duck-game-check.ts",
+    "test:marble-seeds": "node --experimental-strip-types ./scripts/marble-seed-check.ts && node --experimental-strip-types ./scripts/marble-legacy-check.ts && node --experimental-strip-types ./scripts/marble-weather-check.ts",
+    "test:ducks": "node --experimental-strip-types ./scripts/duck-wave-check.ts && node --experimental-strip-types ./scripts/duck-game-check.ts && node --experimental-strip-types ./scripts/duck-classic-check.ts && node --experimental-strip-types ./scripts/duck-quick-check.ts",
     "test:fairness": "node --experimental-strip-types ./scripts/fairness-commitment-check.ts",
     "test:recovery": "node --experimental-strip-types ./scripts/recoverable-round-check.ts",
     "test:audio": "node --experimental-strip-types ./scripts/audio-engine-check.ts",

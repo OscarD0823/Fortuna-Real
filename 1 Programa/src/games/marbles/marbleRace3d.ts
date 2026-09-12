@@ -13,7 +13,8 @@ import {
   type TrackZone,
 } from "./marbleRaceEngine";
 import { createMarbleTrackPiece3D } from "./marbleTrackPieceKit";
-import { cameraFarDistance, cameraPathCeiling, marbleCameraResponse, marbleChaseFraming, measureCameraPath, offsetCameraProgress } from "./marbleCameraPath";
+import { cameraFarDistance, cameraPathCeiling, marbleCameraResponse, marbleChaseFraming, measureCameraPath, offsetCameraProgress, translateMarbleCamera } from "./marbleCameraPath";
+import { marbleWeatherEnvelope } from "./marbleWeather";
 import { constrainCameraSightline, createCameraCollisionCells, createCameraTrackCollider } from "./marbleCameraCollision";
 import { trackFrameQuaternion } from "./marbleTrackFrame";
 
@@ -75,6 +76,7 @@ interface MarbleSceneState {
   stagingCameraTarget: THREE.Vector3;
   cameraTarget: THREE.Vector3;
   followCameraTarget: THREE.Vector3;
+  followAnchorPosition: THREE.Vector3;
   followCameraUp: THREE.Vector3;
   followCameraForward: THREE.Vector3;
   racerPositions: THREE.Vector3[];
@@ -85,6 +87,7 @@ interface MarbleSceneState {
   projectedContentWidth: number;
   projectedContentHeight: number;
   animatedParts: AnimatedPart[];
+  weatherFeatures: { event: MarbleTrackEvent; group: THREE.Group }[];
   glowMaterials: THREE.MeshStandardMaterial[];
   participantCount: number;
   reducedMotion: boolean;
@@ -953,6 +956,7 @@ const addTrackEventFeature = (
 ) => {
   const group = new THREE.Group();
   group.name = `EVT_${event.type}_${event.id}`;
+  group.visible = false;
   orientGroupOnTrack(group, track, event.progress);
   scene.add(group);
   const width = trackWidthToWorld(track) * 1.25;
@@ -996,6 +1000,8 @@ const addTrackEventFeature = (
     const quakeRing = addMesh(group, new THREE.RingGeometry(width * 0.38, width * 0.46, 28), new THREE.MeshBasicMaterial({ color: event.color, transparent: true, opacity: 0.72, side: THREE.DoubleSide }), [0, 0.12, 0], [-Math.PI / 2, 0, 0]);
     animatedParts.push({ object: quakeRing, update: (object, time) => { const pulse = 1 + Math.sin(time * 7) * 0.16; object.scale.setScalar(pulse); } });
   }
+  animatedParts.push({ object: group, update: () => undefined });
+  return group;
 };
 
 const addStartFinishAndBay = (scene: THREE.Scene, race: PreparedMarbleRace) => {
@@ -1293,6 +1299,7 @@ const batchStaticMeshes = (
 ) => {
   scene.updateMatrixWorld(true);
   const dynamicObjects = new Set<THREE.Object3D>(preservedObjects);
+  preservedObjects.forEach(object => object.traverse(child => dynamicObjects.add(child)));
   const dynamicMaterials = new Set(animatedMaterials);
   animatedParts.forEach(({ object }) => object.traverse((child) => dynamicObjects.add(child)));
   const groups = new Map<string, THREE.Mesh[]>();
@@ -1480,7 +1487,7 @@ const buildScene = (renderer: THREE.WebGLRenderer, race: PreparedMarbleRace, key
     glowMaterials,
     false,
   ));
-  race.track.events.forEach((event) => addTrackEventFeature(scene, race.track, event, animatedParts));
+  const weatherFeatures = race.track.events.map(event => ({ event, group: addTrackEventFeature(scene, race.track, event, animatedParts) }));
   addStartFinishAndBay(scene, race);
 
   const sphereDetail = count > 150 ? [9, 6] : count > 100 ? [11, 7] : count > 40 ? [16, 10] : [18, 10];
@@ -1640,6 +1647,7 @@ const buildScene = (renderer: THREE.WebGLRenderer, race: PreparedMarbleRace, key
   const activeAnimatedParts = animateDecorations ? animatedParts : [];
   const activeGlowMaterials = animateDecorations ? glowMaterials : [];
   batchStaticMeshes(scene, activeAnimatedParts, activeGlowMaterials, [
+    ...weatherFeatures.map(feature => feature.group),
     racers,
     ...(racerCores ? [racerCores] : []),
     racerRings,
@@ -1705,6 +1713,7 @@ const buildScene = (renderer: THREE.WebGLRenderer, race: PreparedMarbleRace, key
     stagingCameraTarget,
     cameraTarget: new THREE.Vector3(),
     followCameraTarget: new THREE.Vector3(),
+    followAnchorPosition: new THREE.Vector3(),
     followCameraUp: new THREE.Vector3(0, 1, 0),
     followCameraForward: new THREE.Vector3(0, 0, 1),
     racerPositions: race.racers.map(() => new THREE.Vector3()),
@@ -1715,6 +1724,7 @@ const buildScene = (renderer: THREE.WebGLRenderer, race: PreparedMarbleRace, key
     projectedContentWidth,
     projectedContentHeight,
     animatedParts: activeAnimatedParts,
+    weatherFeatures,
     glowMaterials: activeGlowMaterials,
     participantCount: count,
     reducedMotion,
@@ -2007,6 +2017,21 @@ export const drawMarbleRace3D = (
       ? race.racers.findIndex((racer) => racer.id === followRacerId)
       : -1;
     const followActive = phase === "racing" && elapsedMs >= introMs && followIndex >= 0;
+    const weatherElapsed = phase === "racing" ? Math.max(0, elapsedMs - introMs) : -1;
+    let visibleWeather = "none";
+    state.weatherFeatures.forEach(({ event, group }) => {
+      const strength = marbleWeatherEnvelope(event, weatherElapsed);
+      group.visible = strength > 0.002;
+      if (!group.visible) return;
+      visibleWeather = event.type;
+      // Weather affects the whole field; illustrate it near the watched racer,
+      // not at an empty, permanently decorated section of the track.
+      const watched = race.racers[followActive ? followIndex : Math.floor(race.racers.length / 2)];
+      const progress = getMarbleMotion(watched, race.track, weatherElapsed).progress;
+      orientGroupOnTrack(group, race.track, progress);
+      group.scale.setScalar(reducedMotion ? 1 : 0.25 + strength * 0.75);
+    });
+    canvas.dataset.weatherEvent = visibleWeather;
     let renderCamera: THREE.Camera = state.camera;
     if (followActive) {
       const followedRacer = race.racers[followIndex];
@@ -2018,7 +2043,7 @@ export const drawMarbleRace3D = (
       const lookAheadPoint = sampleWorldPoint(state.trackSamples, lookAheadProgress, state.lookAheadPoint);
       const baseRadius = race.racers.length > 150 ? 0.085 : race.racers.length > 90 ? 0.105 : race.racers.length > 48 ? 0.13 : race.racers.length > 22 ? 0.16 : 0.22;
       const followedRadius = baseRadius * motion.radiusScale;
-      const framing = marbleChaseFraming(trackPoint.tangent.dot(lookAheadPoint.tangent), speedBlend);
+      const framing = marbleChaseFraming(trackPoint.tangent.dot(lookAheadPoint.tangent), speedBlend, followedRadius);
       const followDistance = framing.distance;
       const cameraAnchorProgress = offsetCameraProgress(state.cameraPathDistances, motion.progress, -followDistance);
       const cameraAnchorPoint = sampleWorldPoint(state.trackSamples, cameraAnchorProgress, state.cameraAnchorPoint);
@@ -2076,7 +2101,7 @@ export const drawMarbleRace3D = (
       const minimumCameraHeight = followCameraStyle === "onboard"
         ? trackPoint.position.y + followedRadius * 2 + 0.32
         : followCameraStyle === "chase"
-        ? Math.max(2.15, cameraAnchorPoint.position.y + 2.75)
+        ? Math.max(1.5, cameraAnchorPoint.position.y + 1.65)
         : Math.max(
           state.racerPositions[followIndex].y + 4.45,
           4.8 + rescueBlend * 0.8,
@@ -2141,11 +2166,13 @@ export const drawMarbleRace3D = (
         state.followCamera.up.copy(state.followCameraUp);
         state.racerLabels.forEach((label) => { label.visible = false; });
       } else {
+        translateMarbleCamera(state.followCamera.position, state.followCameraTarget, state.followAnchorPosition, trackPoint.position);
         const cameraResponse = marbleCameraResponse(cameraDeltaMs, followCameraStyle === "onboard" ? 55 : motion.recovering ? 95 : 145, state.reducedMotion);
         state.followCamera.position.lerp(desiredPosition, cameraResponse);
         state.followCameraTarget.lerp(desiredTarget, Math.min(1, cameraResponse * 1.28));
         state.followCamera.up.lerp(state.followCameraUp, cameraResponse * 0.7).normalize();
       }
+      state.followAnchorPosition.copy(trackPoint.position);
       if (followCameraStyle !== "aerial") {
         const cameraCeilingY = findOverheadTrackY(
           state.trackSamples,
@@ -2180,6 +2207,18 @@ export const drawMarbleRace3D = (
         state.followCamera.updateProjectionMatrix();
       }
       state.followCamera.lookAt(state.followCameraTarget);
+      state.followCamera.updateMatrixWorld(true);
+      const projectedRacer = state.labelVector.copy(state.racerPositions[followIndex]).project(state.followCamera);
+      // A retracted boom should aim at the marble, not past it into the next
+      // bend. Correct only off-screen framing, retaining normal anticipation.
+      if (followCameraStyle !== "onboard" && (Math.abs(projectedRacer.x) > 0.65 || Math.abs(projectedRacer.y) > 0.65 || Math.abs(projectedRacer.z) > 1)) {
+        state.followCameraTarget.copy(state.racerPositions[followIndex]);
+        state.followCamera.lookAt(state.followCameraTarget);
+      }
+      state.followCamera.updateMatrixWorld(true);
+      projectedRacer.copy(state.racerPositions[followIndex]).project(state.followCamera);
+      canvas.dataset.followInFrame = String(Math.abs(projectedRacer.x) <= 0.85 && Math.abs(projectedRacer.y) <= 0.85 && Math.abs(projectedRacer.z) <= 1);
+      canvas.dataset.followDistance = state.followCamera.position.distanceTo(state.racerPositions[followIndex]).toFixed(2);
       state.followBeacon.quaternion.copy(state.followCamera.quaternion);
       state.racerRings.visible = false;
       state.racerShadows.visible = false;

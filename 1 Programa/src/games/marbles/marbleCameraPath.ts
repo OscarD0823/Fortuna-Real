@@ -18,16 +18,24 @@ export const marbleCameraResponse = (elapsedMs: number, responseMs: number, redu
   reducedMotion || elapsedMs >= 250 ? 1 : 1 - Math.exp(-Math.max(0, elapsedMs) / responseMs);
 
 /** Shorten the trailing boom in bends, and leave more of the next turn in view. */
-export const marbleChaseFraming = (tangentAlignment: number, speed: number) => {
+export const marbleChaseFraming = (tangentAlignment: number, speed: number, radius = 0.22) => {
   const bend = Math.max(0, Math.min(1, (1 - tangentAlignment) / 0.85));
   const pace = Math.max(0, Math.min(1, speed));
+  const scale = Math.max(0.65, Math.min(1.08, Math.sqrt(Math.max(0.01, radius) / 0.22)));
   return {
-    distance: 5.4 + pace * 0.9 - bend * 1.5,
-    height: 2.65 + pace * 0.25 + bend * 0.7,
-    anticipation: 0.2 + bend * 0.12,
-    fov: 61 + pace * 3 + bend * 3,
+    distance: (4.7 + pace * 0.55 - bend * 1.15) * scale,
+    height: (2.4 + pace * 0.2 + bend * 0.65) * scale,
+    anticipation: 0.14 + bend * 0.1,
+    fov: 57 + pace * 3 + bend * 3,
   };
 };
+
+/** Feed-forward translation prevents a fast marble outrunning the camera spring. */
+export function translateMarbleCamera(camera: CameraPathPoint["position"], target: CameraPathPoint["position"], previous: CameraPathPoint["position"], anchor: CameraPathPoint["position"]) {
+  const dx = anchor.x - previous.x, dy = anchor.y - previous.y, dz = anchor.z - previous.z;
+  camera.x += dx; camera.y += dy; camera.z += dz;
+  target.x += dx; target.y += dy; target.z += dz;
+}
 
 /** World-space distances keep the framing identical on short and long circuits. */
 export const measureCameraPath = (samples: readonly CameraPathPoint[]) => {

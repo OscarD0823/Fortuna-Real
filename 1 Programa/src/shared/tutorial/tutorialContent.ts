@@ -74,12 +74,12 @@ export const gameGuides: Record<GameId, GameGuide> = {
     ],
   },
   ducks: {
-    title: "Patos 3D",
+    title: "Patos Retro",
     badge: "BETA",
     beta: true,
-    summary: "Puntería en un bosque vivo: bandadas de hasta cinco patos, tres disparos por tanda, refugios y tres vidas.",
+    summary: "Patos rápidos: un pato por participante, una vida y tres disparos por tanda. Un impacto oficial elimina al participante revelado.",
     steps: [
-      { title: "Elige la tanda", description: "Bandada muestra hasta cinco patos. También puedes practicar con uno o dos. Unos vuelan y otros asoman entre árboles y pasto; la cámara permanece estable mientras apuntas.", action: "Elige el modo y pulsa Soltar los patos." },
+      { title: "Toda la bandada", description: "Cada participante tiene un pato. Todos los que siguen con vidas despegan juntos, sin tandas limitadas a cinco. El cielo se distribuye según el tamaño de la lista y la cámara permanece fija.", action: "Pulsa Soltar los patos. Apunta al cuerpo o a las alas y haz clic." },
       { title: "Tres disparos", description: "Cada tanda permite tres intentos y tiene tiempo limitado. Si fallas los tres o se acaba el reloj, los patos escapan.", action: "Un impacto revela el siguiente nombre sellado y resta una vida." },
       { title: "Refugio y salida colectiva", description: "Dispara a la parte del pato que veas: los troncos y las hojas bloquean el disparo. Cuando se oculta por completo no puede recibir impactos. Tras un acierto sale toda la bandada.", action: "Espera a que asomen y apunta al cuerpo o la cabeza." },
       { title: "Bosque vivo y poderes", description: "Cada tanda puede traer viento, niebla, luciérnagas o tormenta. Además, algunos patos cambian la paleta, invierten colores o hacen temblar la vista; todo es visual y no altera quién gana.", action: "El último participante con vidas vence." },
@@ -95,7 +95,7 @@ export const guidedTours: Record<TutorialId, GuidedTourStep[]> = {
     { target: ".participant-list--full", eyebrow: "PASO 1 · REVISIÓN", title: "Comprueba tu lista", description: "Aquí verás a todas las personas cargadas. Si hay un error, usa la X junto al nombre para quitarlo y agrégalo de nuevo correctamente.", tip: "Necesitas al menos dos participantes habilitados para entrar al juego." },
     { target: ".game-options--large", eyebrow: "PASO 2", title: "Elige una experiencia", description: "Ruleta y Cartas son modos clásicos. Canicas y Patos están en BETA. Pinball está temporalmente desactivado mientras se mejora.", tip: "Seleccionar un juego actualiza inmediatamente las instrucciones inferiores." },
     { target: ".selected-game-guide", eyebrow: "DEMOSTRACIONES", title: "Aprende antes de jugar", description: "Cada juego incluye una demostración visual de cuatro pasos. Puedes verla antes de añadir nombres o repetirla cuando quieras.", tip: "Pulsa Ver demo paso a paso para explorar el juego seleccionado." },
-    { target: ".mode-choice-panel", eyebrow: "PASO 3", title: "Define cómo termina", description: "Ganador directo permite varios premios sin repetir. Eliminación retira participantes hasta dejar un ganador. Aquí también defines el premio y los controles especiales.", tip: "Patos siempre usa supervivencia de tres vidas." },
+    { target: ".mode-choice-panel", eyebrow: "PASO 3", title: "Define cómo termina", description: "Ganador directo permite varios premios sin repetir. Eliminación retira participantes hasta dejar un ganador. Aquí también defines el premio y los controles especiales.", tip: "Patos rápidos usa supervivencia de una vida; las partidas antiguas conservan sus tres vidas." },
     { target: ".setup-hero-start", eyebrow: "TODO LISTO", title: "Entra al juego", description: "Cuando los tres indicadores estén verdes, este botón abre el juego seleccionado. Allí verás sus controles reales.", tip: "El tutorial nunca realiza ni altera una partida." },
   ],
   roulette: [
@@ -122,7 +122,7 @@ export const guidedTours: Record<TutorialId, GuidedTourStep[]> = {
     { target: ".marble-controls", eyebrow: "CANICAS · 5", title: "Configura y abre la compuerta", description: "Elige dificultad y si decide el primero o el último. Después pulsa Iniciar carrera.", tip: "La posición elegida puede ganar o quedar eliminada según el modo general." },
   ],
   ducks: [
-    { target: ".duck-hunt__status", eyebrow: "PATOS · 1", title: "Elige una modalidad", description: "Un pato es el modo básico y Dos patos eleva la dificultad. Cada tanda tiene tres disparos y un reloj.", tip: "Todos empiezan con tres vidas." },
+    { target: ".duck-hunt__status", eyebrow: "PATOS · 1", title: "Una vida por participante", description: "Todos los participantes salen en la misma bandada. Cada tanda tiene tres disparos y un reloj; un impacto oficial elimina a un participante y los supervivientes vuelven a salir.", tip: "Patos rápidos empieza con una vida. Los nombres se revelan al registrar impactos, siguiendo el orden sellado." },
     { target: ".duck-hunt__arena", eyebrow: "PATOS · 2", title: "Cámara frontal y bosque vivo", description: "La vista permanece fija. Los patos vuelan frente al bosque, se esconden por completo y cada tanda activa viento, niebla, luciérnagas o tormenta.", tip: "El aviso superior identifica el evento; las lámparas registran las últimas diez tandas." },
     { target: ".duck-life-table", eyebrow: "PATOS · 3", title: "Sigue vidas y racha", description: "La tabla revela un nombre después de su primer impacto, resta corazones y conserva tu mejor racha.", tip: "Los participantes ocultos mantienen protegida su identidad." },
     { target: ".duck-hunt__controls", eyebrow: "PATOS · 4", title: "Dispara o resuelve", description: "Puedes apuntar directamente, usar Siguiente impacto o resolver el orden sellado con controles accesibles.", tip: "Paleta, temblor e inversión son efectos visuales temporales." },

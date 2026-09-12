@@ -1,5 +1,6 @@
 import type { DrawMode, MarbleDifficulty, MarbleFinishRule, Participant } from "../../core/types";
 import { buildMarbleGuide, marbleLayoutIds, type MarbleLayout } from "./marbleTrackLayouts.ts";
+import { activeMarbleWeather, marbleWeatherEnvelope, marbleWeatherTime, scheduleMarbleWeather } from "./marbleWeather.ts";
 
 export type MarblePower = "boost" | "shield" | "freeze" | "reverse" | "giant" | "tiny" | "restart";
 export type TrackObstacleType = "spinner" | "bumpers" | "gate" | "boost" | "ice" | "portal" | "hammer" | "funnel";
@@ -66,6 +67,9 @@ export interface MarbleTrackEvent {
   startProgress: number;
   endProgress: number;
   intensity: number;
+  /** Race clock, excluding the camera introduction. Absent on legacy static tracks. */
+  startsAtMs?: number;
+  durationMs?: number;
 }
 
 export interface TrackSection {
@@ -927,6 +931,8 @@ export const prepareMarbleRace = (
     ? racers.reduce((best, racer) => racer.durationMs < best.durationMs ? racer : best)
     : racers.reduce((last, racer) => racer.durationMs > last.durationMs ? racer : last);
 
+  track.events = scheduleMarbleWeather(track.events, Math.min(...racers.map(racer => racer.durationMs)), seededRandom(`weather-v1-${difficulty}-${seed}`));
+
   return { track, racers, selected, mode, difficulty, finishRule };
 };
 
@@ -967,7 +973,7 @@ const createTrackMotionProfile = (track: MarbleTrack): TrackMotionProfile => {
     const obstacleDrag = track.obstacles.some((obstacle) => Math.abs(obstacle.progress - currentProgress) < 0.012)
       ? 0.78
       : 1;
-    const event = track.events.find((item) => currentProgress >= item.startProgress && currentProgress <= item.endProgress);
+    const event = track.events.find((item) => item.startsAtMs === undefined && currentProgress >= item.startProgress && currentProgress <= item.endProgress);
     const eventEnvelope = event ? Math.sin(Math.PI * (currentProgress - event.startProgress) / Math.max(0.0001, event.endProgress - event.startProgress)) * event.intensity : 0;
     const eventDrag = event?.type === "freeze" ? 0.62 : event?.type === "river" ? 0.5 : event?.type === "tornado" ? 0.38 : 0.25;
     const eventSpeed = Math.max(0.28, 1 - eventEnvelope * eventDrag);
@@ -1054,7 +1060,8 @@ const applyPowerProgress = (
 
 const powerOnlyProgress = (racer: MarbleRacer, track: MarbleTrack, raw: number) => {
   // Arranque desde reposo y aceleración sostenida: no hay frenada artificial antes de meta.
-  const kineticTime = raw * raw * (2 - raw);
+  const weatherTime = marbleWeatherTime(track.events, raw, racer.durationMs);
+  const kineticTime = weatherTime * weatherTime * (2 - weatherTime);
   let progress = profileProgressAtTime(track, kineticTime);
   if (racer.power && !isOffensivePower(racer.power)) {
     progress = applyPowerProgress(progress, racer.power, racer.powerAt);
@@ -1088,16 +1095,18 @@ export const getMarbleMotion = (
 ): MarbleMotionState => {
   const raw = clamp(elapsedMs / racer.durationMs, 0, 1);
   const progress = powerAdjustedProgress(racer, track, raw);
-  const unadjustedProgress = profileProgressAtTime(track, raw * raw * (2 - raw));
+  const weatherTime = marbleWeatherTime(track.events, raw, racer.durationMs);
+  const unadjustedProgress = profileProgressAtTime(track, weatherTime * weatherTime * (2 - weatherTime));
   const beforeRecoveryProgress = powerOnlyProgress(racer, track, raw);
   const section = sectionAtProgress(track, progress);
-  const activeTrackEvent = track.events.find((event) =>
-    progress >= event.startProgress && progress <= event.endProgress,
+  const activeTrackEvent = raw >= 1 ? null : activeMarbleWeather(track.events, elapsedMs) ?? track.events.find((event) =>
+    event.startsAtMs === undefined && progress >= event.startProgress && progress <= event.endProgress,
   ) ?? null;
   const eventLocal = activeTrackEvent
     ? clamp((progress - activeTrackEvent.startProgress) / Math.max(0.0001, activeTrackEvent.endProgress - activeTrackEvent.startProgress), 0, 1)
     : 0;
-  const eventEnvelope = activeTrackEvent ? Math.sin(eventLocal * Math.PI) * activeTrackEvent.intensity : 0;
+  const eventEnvelope = activeTrackEvent ? (activeTrackEvent.startsAtMs === undefined
+    ? Math.sin(eventLocal * Math.PI) : marbleWeatherEnvelope(activeTrackEvent, elapsedMs)) * activeTrackEvent.intensity : 0;
   const deltaRaw = 0.0015;
   const before = powerAdjustedProgress(racer, track, Math.max(0, raw - deltaRaw));
   const after = powerAdjustedProgress(racer, track, Math.min(1, raw + deltaRaw));

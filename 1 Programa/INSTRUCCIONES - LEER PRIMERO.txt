@@ -68,7 +68,7 @@ estas prácticas no se guardan ni cambian tu sorteo real.
    Después pulsa “Agregar nombres”. Se omiten los nombres repetidos.
    Con diez nombres o más aparece un buscador para localizar y retirar rápidamente
    a una persona sin cambiar su número original.
-2. Selecciona Ruleta, Cartas, Canicas 3D o Patos 3D.
+2. Selecciona Ruleta, Cartas, Canicas 3D o Patos Retro.
    Canicas y Patos están en BETA. Pinball está desactivado mientras se mejora.
 3. Elige Ganador directo o Eliminación.
 4. Escribe el premio.

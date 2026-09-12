@@ -859,7 +859,7 @@ function Topbar({
                   : <Bird size={19} />}
           <div>
             <strong>Ronda {roundNumber} {(["pinball", "marbles", "ducks"] as ActiveScreen[]).includes(screen) && <em className="round-pill__beta">BETA</em>}</strong>
-            <span>{activeCount} participantes · {screen === "roulette" ? "ruleta" : screen === "cards" ? "cartas" : screen === "pinball" ? "pinball 3D" : screen === "marbles" ? "canicas 3D" : "patos 3D"}</span>
+            <span>{activeCount} participantes · {screen === "roulette" ? "ruleta" : screen === "cards" ? "cartas" : screen === "pinball" ? "pinball 3D" : screen === "marbles" ? "canicas 3D" : "patos retro"}</span>
           </div>
         </div>
       ) : (
@@ -996,7 +996,7 @@ function SetupScreen({
             disabled={!ready}
             title={!ready
               ? "Completa el paso marcado en amarillo"
-              : `Entrar a ${game === "roulette" ? "la ruleta" : game === "cards" ? "la mesa de cartas" : game === "marbles" ? "Canicas 3D" : "Patos 3D"}`}
+              : `Entrar a ${game === "roulette" ? "la ruleta" : game === "cards" ? "la mesa de cartas" : game === "marbles" ? "Canicas 3D" : "Patos Retro"}`}
           >
             <Play size={21} fill="currentColor" /> {!participantsReady ? "Faltan participantes" : !gameChosen ? "Selecciona un juego" : !modeChosen ? "Selecciona un modo" : `Entrar a ${selectedGuide.title}`}
           </button>

@@ -1,10 +1,21 @@
 # Fortuna Real
 
 Aplicación de escritorio para sorteos mediante ruleta, cartas,
-canicas y Patos 3D, con selección sin repeticiones, ganador directo y
+canicas y Patos Retro, con selección sin repeticiones, ganador directo y
 modo eliminación.
 
 Pinball 3D está temporalmente desactivado para jugar mientras se mejora.
+
+Desde 1.0.11: **Patos Retro** estrena un campo pixelado propio,
+cámara frontal y un pato por participante. Todos los supervivientes despegan en
+la misma tanda (hasta 200), sin el antiguo límite de cinco. Las alas, caída y
+escape se animan; los árboles y el pasto ocultan y bloquean impactos. El marcador
+queda fuera del campo. Las nuevas partidas usan **Patos rápidos**, con una vida
+por participante y mayor velocidad. Las partidas antiguas conservan sus tres
+vidas. Se mantienen los poderes y el orden sellado:
+acertar revela el siguiente impacto oficial, no permite elegir quién gana.
+Un impacto oficial elimina a un participante en modo rápido; hay tres disparos
+por tanda. La regla y el sello se muestran antes de iniciar.
 
 El botón **Novedades** muestra la versión del programa y el historial de cada
 actualización, con búsqueda y consulta sin conexión. El mismo registro está en
@@ -207,6 +218,32 @@ comprueba al iniciar si existe una versión más reciente, muestra sus notas,
 descarga el paquete firmado, lo instala y reinicia la aplicación. Los avisos
 esperan a que regreses al inicio y cierres cualquier guía o demo.
 
+Desde 1.0.11 se incorpora una pantalla integrada con cinco pasos:
+
+1. Comprobar la versión publicada en GitHub.
+2. Descargar archivos, mostrando bytes, porcentaje cuando se conoce el tamaño,
+   velocidad media y tiempo restante aproximado.
+3. Verificar la firma del paquete; terminar la descarga no significa que la firma
+   ya esté comprobada.
+4. Guardar la versión esperada para verificar el resultado después del reinicio.
+5. Aplicar el paquete en modo silencioso y confirmar la versión realmente abierta.
+
+El actualizador no muestra el asistente de instalación. Windows necesita cerrar
+brevemente Fortuna Real para reemplazar el ejecutable y volver a abrirlo; la
+interfaz avisa antes de ese paso. No se inventa un porcentaje de instalación ni
+se ocultan avisos de seguridad del sistema. El instalador abierto manualmente
+conserva sus opciones de instalar, actualizar o reinstalar.
+
+Si falla la descarga, la firma o la preparación, se puede reintentar o continuar
+con la versión disponible. Si el reinicio no abre la versión esperada, el próximo
+inicio lo indica sin entrar en un ciclo de instalación automática. Una consulta
+fallida a GitHub no bloquea el uso sin conexión.
+
+La primera transición desde un cliente antiguo puede mostrar su ventana de
+actualización anterior; el modo silencioso rige cuando ya se ejecuta un cliente
+compilado con esta configuración. La demostración local
+`marbles-preview.html?game=updater` solo muestra estados y no instala archivos.
+
 Las actualizaciones se publican en GitHub Releases del repositorio
 `OscarD0823/Fortuna-Real`. La clave privada de firma y la contraseña protegida
 se conservan únicamente en el perfil local de Windows, fuera del proyecto.
@@ -259,13 +296,45 @@ salga de él.
 <!-- VERSION-HISTORY:START -->
 ## Historial de cambios
 
-Versión actual del código: **1.0.10**. También disponible desde **Novedades** dentro del programa, sin conexión.
+Versión actual del código: **1.0.11**. También disponible desde **Novedades** dentro del programa, sin conexión.
 
 Los cambios se resumen por función; los enlaces llevan al registro original. Las fechas de Releases usan el día de publicación en Colombia. Las versiones sin un Release conservado lo indican expresamente.
 
+### 1.0.10 → 1.0.11 — Actualización integrada, clima en carrera y Patos rápidos
+
+Fecha: 2026-09-12. Versión actual del código.
+
+Canicas y Patos siguen en beta; Pinball continúa desactivado. La voz Daniela High no cambia. Las reglas de selección siguen siendo iguales para todos.
+
+#### Actualización dentro del programa
+
+- Cinco etapas visibles: comprobar versión, descargar, verificar firma, preparar y aplicar/reabrir. Descarga con bytes, velocidad media y tiempo restante aproximado.
+- Configuración silenciosa de NSIS, sin asistente durante las próximas actualizaciones. Se avisa del breve cierre necesario para reemplazar el ejecutable; no se ocultan avisos de seguridad de Windows.
+- La firma solo se confirma al terminar la verificación nativa. Al reabrir se comprueba la versión realmente ejecutada antes de anunciar éxito.
+- Recuperación ante descarga incompleta o reinicio interrumpido, reintento explícito y posibilidad de continuar. Escape no oculta la actualización activa.
+- Los clientes anteriores pueden mostrar todavía su ventana pasiva durante la transición a esta versión, pues usan su configuración ya compilada.
+
+#### Canicas: fenómenos naturales y cámara
+
+- Hielo, río, tornado y temblor aparecen por tiempo de carrera, con orden, inicio y duración aleatorios derivados de la semilla; dejan de ser decoraciones permanentemente activas.
+- Aviso previo y estado de clima activo. Los fenómenos alteran velocidad, deriva y elevación de las canicas en distintas posiciones, y desaparecen al terminar su intervalo.
+- La animación usa tiempo absoluto y transiciones suaves, sin depender de los FPS. Se conservan los tiempos de llegada y resultados comprometidos del sorteo.
+- La cámara compensa el desplazamiento de la canica antes del suavizado para evitar retraso en tramos rápidos. Acerca el encuadre para canicas pequeñas y corrige objetivos que quedan fuera de pantalla.
+- Se mantienen la colisión con piezas, el paso bajo tableros y los modos de persecución, a bordo, lateral y aéreo.
+
+#### Patos Retro y modo rápido
+
+- Escenario pixelado original con cielo, bosque y pasto; alas, caída y escape animados. Todos los supervivientes salen juntos, hasta 200 participantes.
+- Patos rápidos: nuevas partidas con una sola vida por participante y velocidad inicial mayor. Un impacto oficial elimina al participante revelado; se conserva el límite de tres disparos por tanda.
+- La regla de una vida se muestra en la interfaz y se incluye en el compromiso recuperable. Las partidas antiguas guardadas conservan sus tres vidas y su sello original.
+- Los árboles y el pasto ocultan por completo a los patos y bloquean disparos. El marcador queda fuera del campo y los poderes visuales no cambian quién gana.
+- Pruebas para 2–200 participantes, calendario de fenómenos, continuidad del movimiento, selección uniforme y compatibilidad con resultados anteriores.
+
+[Registro original de esta versión](https://github.com/OscarD0823/Fortuna-Real/compare/v1.0.10...v1.0.11).
+
 ### 1.0.9 → 1.0.10 — Nuevos circuitos de canicas e historial de versiones
 
-Fecha: 2026-09-08. Versión actual del código.
+Fecha: 2026-09-08.
 
 Canicas y Patos continúan en beta. Daniela High conserva el modelo y los ajustes aprobados en 1.0.9.
 

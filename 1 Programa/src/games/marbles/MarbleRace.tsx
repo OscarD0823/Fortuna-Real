@@ -21,6 +21,8 @@ import {
 import { disposeMarbleRace3D, drawMarbleRace3D, type MarbleFollowCameraStyle } from "./marbleRace3d";
 import { marbleLayoutLabels } from "./marbleTrackLayouts";
 import { createMarbleStandings, type MarbleStanding } from "./marbleStandings";
+import { activeMarbleWeather, marbleWeatherEnvelope, MARBLE_WEATHER_WARNING_MS } from "./marbleWeather";
+import "./marbleWeather.css";
 
 type RacePhase = "ready" | "racing" | "finished";
 const getMarbleCameraIntroMs = () =>
@@ -558,6 +560,7 @@ const drawTrackEvents = (
   elapsedMs: number,
 ) => {
   track.events.forEach((event, index) => {
+    if (event.startsAtMs !== undefined && marbleWeatherEnvelope(event, elapsedMs) <= 0.002) return;
     const point = getTrackPosition(track.points, event.progress);
     const scaled = scalePoint(point);
     const pulse = 1 + Math.sin(elapsedMs / 180 + index) * 0.12;
@@ -706,7 +709,7 @@ const drawRace = (
     drawZoneFeature(context, zone.type, zone.label, zone.color, scaled.x, scaled.y, Math.atan2(point.tangentY, point.tangentX), zone.scale, elapsedMs);
   });
   drawPowerZones(context, race.track, scalePoint, elapsedMs);
-  drawTrackEvents(context, race.track, scalePoint, elapsedMs);
+  if (phase === "racing") drawTrackEvents(context, race.track, scalePoint, elapsedMs - getMarbleCameraIntroMs());
 
   race.track.obstacles.forEach((obstacle) => {
     const point = getTrackPosition(race.track.points, obstacle.progress);
@@ -853,6 +856,7 @@ export function MarbleRace({
   const [commitError, setCommitError] = useState<string | null>(null);
   const [ranking, setRanking] = useState<RankingItem[]>([]);
   const [raceEvents, setRaceEvents] = useState<RaceEvent[]>([]);
+  const [weatherNotice, setWeatherNotice] = useState<{ title: string; detail: string; warning: boolean } | null>(null);
   const [fps, setFps] = useState(60);
   const [renderMode, setRenderMode] = useState<MarbleRenderMode>("webgl");
   const [cameraTargetId, setCameraTargetId] = useState<string | null>(null);
@@ -1061,9 +1065,17 @@ export function MarbleRace({
             tone: finishRule === "first" ? "race" : "risk",
           } satisfies RaceEvent : null;
         trackedPositionRef.current = trackedRacer.racer.id;
-        const activeGlobalEvent = race.track.events.find((event) =>
-          trackedRacer.progress >= event.startProgress && trackedRacer.progress <= event.endProgress,
-        );
+        const raceClock = elapsed - cameraIntroMs;
+        const activeGlobalEvent = activeMarbleWeather(race.track.events, raceClock);
+        const upcomingWeather = race.track.events.find(event => event.startsAtMs !== undefined
+          && event.startsAtMs > raceClock && event.startsAtMs - raceClock <= MARBLE_WEATHER_WARNING_MS);
+        const visibleWeather = activeGlobalEvent ?? upcomingWeather;
+        const notice = visibleWeather ? {
+          title: visibleWeather.title,
+          detail: activeGlobalEvent ? visibleWeather.detail : "Se aproxima: prepárate para el cambio de pista",
+          warning: !activeGlobalEvent,
+        } : null;
+        setWeatherNotice(current => current?.title === notice?.title && current?.warning === notice?.warning ? current : notice);
         const globalEventId = activeGlobalEvent ? `track-event-${activeGlobalEvent.id}` : null;
         const globalEvent: RaceEvent | null = activeGlobalEvent && globalEventId && !triggeredPowersRef.current.has(globalEventId)
           ? {
@@ -1124,6 +1136,7 @@ export function MarbleRace({
       }
 
       if (elapsed >= finishAt + cameraIntroMs) {
+        setWeatherNotice(null);
         setPhase("finished");
         setRaceEvents((current) => [({
           id: `finish-${race.selected.id}`,
@@ -1208,6 +1221,9 @@ export function MarbleRace({
         </div>
       </div>
 
+      {phase === "racing" && <div className={`marble-weather-notice ${weatherNotice?.warning ? "is-warning" : "is-active"}`} role="status" aria-live="polite">
+        <Sparkles size={19} aria-hidden="true" /><div><strong>{weatherNotice ? `${weatherNotice.warning ? "Se aproxima" : "Evento activo"} · ${weatherNotice.title}` : "Ambiente estable"}</strong><span>{weatherNotice?.detail ?? "Los fenómenos naturales pueden aparecer durante la carrera"}</span></div>
+      </div>}
       <div className="marble-arena">
         <div className="marble-canvas-stack">
           <canvas

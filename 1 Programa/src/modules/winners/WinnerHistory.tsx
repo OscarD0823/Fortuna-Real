@@ -34,7 +34,7 @@ const gameLabels: Record<GameId, string> = {
   cards: "Cartas",
   pinball: "Pinball",
   marbles: "Canicas",
-  ducks: "Patos 3D",
+  ducks: "Patos",
 };
 
 const formatAwardDate = (value: string, includeTime = false) => {

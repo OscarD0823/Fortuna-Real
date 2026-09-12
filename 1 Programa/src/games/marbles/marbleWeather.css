@@ -1,0 +1,6 @@
+.marble-weather-notice { display: flex; gap: 10px; align-items: center; padding: 9px 14px; border: 1px solid #418a9e; border-radius: 10px; background: #0b2b38; color: #d5f7ff; }
+.marble-weather-notice div { display: grid; gap: 2px; min-width: 0; }
+.marble-weather-notice strong { font-size: 13px; }
+.marble-weather-notice span { color: #b8d6df; font-size: 12px; }
+.marble-weather-notice svg { flex: 0 0 auto; }
+.marble-weather-notice.is-warning { background: #302719; border-color: #a48447; color: #ffe0a5; }

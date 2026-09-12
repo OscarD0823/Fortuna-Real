@@ -22,6 +22,8 @@ const secureNonce = () => {
 };
 
 export const createDuckCommitmentSeed = secureNonce;
+export const createQuickDuckCommitmentSeed = () => `quick1:${secureNonce()}`;
+export const duckStartingLivesFromSeed = (seed: string): 1 | 3 => seed.startsWith("quick1:") ? 1 : 3;
 
 export const shuffleCommittedIds = (
   participantIds: readonly string[],
@@ -97,7 +99,7 @@ export const createDuckCommittedOrderFromSeed = async (
 ) => {
   const key = await crypto.subtle.importKey(
     "raw",
-    hexToBytes(seed),
+    hexToBytes(seed.startsWith("quick1:") ? seed.slice(7) : seed),
     { name: "AES-CTR" },
     false,
     ["encrypt"],
@@ -115,7 +117,10 @@ export const createDuckCommittedOrderFromSeed = async (
     cursor += 1;
     return value;
   };
-  return createDuckCommittedOrder(participantIds, drawUint32, seed);
+  const legacy = createDuckCommittedOrder(participantIds, drawUint32, seed);
+  // The explicit seed format seals the one-life rule and preserves old saved
+  // matches. The uniform survivor selection is identical in both modes.
+  return duckStartingLivesFromSeed(seed) === 1 ? { ...legacy, hitOrder: [...legacy.eliminationOrder] } : legacy;
 };
 
 export const createSealedDuckCommitmentFromSeed = async (

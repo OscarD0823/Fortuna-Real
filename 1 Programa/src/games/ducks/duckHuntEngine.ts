@@ -30,7 +30,7 @@ export const duckForestEventDefinitions: Record<DuckForestEventType, Omit<DuckFo
   },
   storm: {
     label: "Tormenta del bosque",
-    description: "El cielo oscurece y relámpagos breves marcan el inicio de la tanda.",
+    description: "El cielo oscurece y cae lluvia suave sin destellos que tapen los patos.",
     color: "#9eb7ff",
   },
 };
@@ -211,6 +211,7 @@ export const prepareDuckContestants = (
   participants: readonly Participant[],
   seed: string,
   previousWinnerIds: ReadonlySet<string> = new Set(),
+  startingLives: 1 | 3 = DUCK_STARTING_LIVES,
 ): DuckContestant[] => participants.map((participant, index) => {
   const random = mulberry32(hashString(`${seed}:${participant.id}:${index}`));
   const band = index % 5;
@@ -221,8 +222,8 @@ export const prepareDuckContestants = (
     number: index + 1,
     participant,
     accent: `hsl(${hue}, 86%, 61%)`,
-    lives: DUCK_STARTING_LIVES,
-    speed: getDuckSpeed(DUCK_STARTING_LIVES),
+    lives: startingLives,
+    speed: getDuckSpeed(startingLives),
     revealed: false,
     knockedOut: false,
     previousWinner: previousWinnerIds.has(participant.id),

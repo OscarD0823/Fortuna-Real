@@ -110,7 +110,7 @@ export function DrawSetup({ onOpenDemo }: { onOpenDemo: (game: GameId) => void }
             }}
           >
             <Bird size={29} />
-            <span>Patos 3D</span>
+            <span>Patos Retro</span>
             <small>BETA · supervivencia</small>
           </button>
         </div>
@@ -145,7 +145,7 @@ export function DrawSetup({ onOpenDemo }: { onOpenDemo: (game: GameId) => void }
             className={modeChosen && mode === "direct" ? "is-active" : ""}
             onClick={() => setMode("direct")}
             disabled={game === "ducks"}
-            title={game === "ducks" ? "Patos 3D siempre se juega como supervivencia" : undefined}
+            title={game === "ducks" ? "Patos Retro siempre se juega como supervivencia" : undefined}
           >
             <Trophy size={22} />
             <span>

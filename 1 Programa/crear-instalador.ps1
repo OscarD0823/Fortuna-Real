@@ -3,7 +3,8 @@ param(
     [switch]$CheckOnly,
     [switch]$Elevated,
     [switch]$Publish,
-    [switch]$FullValidation
+    [switch]$FullValidation,
+    [switch]$NoOpenFolder
 )
 
 $ErrorActionPreference = "Stop"
@@ -774,7 +775,9 @@ Proyecto: https://github.com/OscarD0823/Fortuna-Real
         Write-Host "  Los usuarios solo deben abrir ese archivo e instalar." -ForegroundColor Gray
         Write-Host "  Para publicar sin exponer la clave, ejecuta: npm run publicar-actualizacion" -ForegroundColor Gray
     }
-    Start-Process -FilePath "explorer.exe" -ArgumentList "/select,`"$destination`""
+    if (-not $NoOpenFolder) {
+        Start-Process -FilePath "explorer.exe" -ArgumentList "/select,`"$destination`""
+    }
 }
 catch {
     Write-Host ""
