@@ -1,0 +1,12 @@
+.results-standings { max-height: 440px; overflow: auto; margin: 16px; border: 1px solid #415d70; border-radius: 9px; }
+.results-standings:focus-visible { outline: 3px solid #63e5db; outline-offset: 3px; }
+.results-standings table { width: 100%; border-collapse: collapse; font-size: 13px; text-align: left; }
+.results-standings caption { padding: 13px; text-align: left; font-weight: 650; color: #d7e7f0; }
+.results-standings th, .results-standings td { padding: 11px 13px; border-top: 1px solid #334857; }
+.results-standings thead th { position: sticky; top: 0; background: #1b3549; color: #eaf8ff; z-index: 1; }
+.results-standings tbody th { font-weight: 550; overflow-wrap: anywhere; }
+.results-standings tr.is-winner { background: #17413d; color: #bcffe8; }
+.results-standings td:last-child { min-width: 160px; color: #c9dae5; }
+.results-legacy-note { margin: 16px; color: #cedce8; font-size: 13px; line-height: 1.6; }
+.results-rounds-title { margin: 20px 16px 8px; font-size: 14px; color: #d1e4f0; }
+@media (max-width: 700px) { .results-standings { margin: 12px; } .results-standings th, .results-standings td { padding: 10px; } }

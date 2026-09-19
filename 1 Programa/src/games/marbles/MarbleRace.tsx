@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Camera, ChevronLeft, ChevronRight, Crown, Flag, Gauge, Gem, Play, RefreshCw, Sparkles, WandSparkles } from "lucide-react";
-import type { DrawMode, MarbleDifficulty, MarbleFinishRule, Participant } from "../../core/types";
+import type { DrawMode, GameStanding, MarbleDifficulty, MarbleFinishRule, Participant } from "../../core/types";
 import { fortunaAudio } from "../../shared/audio/audioEngine";
 import {
   createMarbleSeed,
@@ -846,7 +846,7 @@ export function MarbleRace({
   onDifficultyChange: (difficulty: MarbleDifficulty) => void;
   onFinishRuleChange: (finishRule: MarbleFinishRule) => void;
   onTrackPrepared?: (track: MarbleTrack) => void;
-  onFinish: (racer: MarbleRacer, label: string) => void;
+  onFinish: (racer: MarbleRacer, label: string, standings?: readonly GameStanding[]) => void;
 }) {
   const [seed, setSeed] = useState(() => initialSeed?.trim() || createMarbleSeed());
   const [resumedSeed] = useState(() => Boolean(initialSeed?.trim()));
@@ -1148,7 +1148,11 @@ export function MarbleRace({
         fortunaAudio.playMarbleFinish();
         const resultLabel = `Canica #${race.selected.number} · llegó ${finishRule === "first" ? "primera" : "de última"}`;
         finishTimerRef.current = window.setTimeout(() => {
-          if (mountedRef.current) onFinish(race.selected, resultLabel);
+          if (mountedRef.current) onFinish(race.selected, resultLabel, createMarbleStandings(race, finishAt).map(item => ({
+            participantId: item.racer.participant.id, position: item.position,
+            detail: item.finished ? `En meta · ${(item.racer.durationMs / 1000).toFixed(2)} s`
+              : `En pista al cerrar la carrera · ${(item.progress * 100).toFixed(1)} %`,
+          })));
         }, 650);
         return;
       }

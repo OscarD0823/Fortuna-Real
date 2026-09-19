@@ -3446,7 +3446,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible {
 .setup-help button, .appearance-toggle { display: inline-flex; align-items: center; justify-content: center; gap: 7px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel-strong); color: #d7e5ef; padding: 10px 12px; cursor: pointer; font-size: 12px; }
 .appearance-toggle.is-active { color: #c2d7ff; border-color: #829ef9; background: #263555; }
 .game-option:disabled { opacity: .42; filter: grayscale(1); cursor: not-allowed; }
-.results-open { cursor: pointer; text-align: left; min-width: 215px; color: #ecf9fa; }
+.results-open { display: flex; cursor: pointer; text-align: left; min-width: 215px; color: #ecf9fa; }
 .results-open small { color: var(--muted); font-size: 12px; }
 .topbar { grid-template-columns: minmax(220px,1fr) auto auto; height: auto; min-height: 78px; }
 .topbar-actions { flex-wrap: wrap; }

@@ -24,6 +24,7 @@ export interface RouletteEntry {
 
 export interface WinnerRecord {
   id: string;
+  sessionId?: string;
   participantId: string;
   participantName: string;
   prize: string;
@@ -32,12 +33,31 @@ export interface WinnerRecord {
   createdAt: string;
 }
 
+export interface GameStanding {
+  participantId: string;
+  position: number;
+  detail?: string;
+}
+
+export interface ResultStanding {
+  participantId: string;
+  participantName: string;
+  /** Null when the game only selects a winner and does not award other places. */
+  position: number | null;
+  outcome: "winner" | "eliminated" | "not-selected";
+  detail?: string;
+  round?: number;
+}
+
 export interface RoundResult {
   id: string;
   sessionId?: string;
   participantId: string | null;
   participantName: string;
   selectedParticipantName?: string;
+  selectedParticipantId?: string;
+  standings?: ResultStanding[];
+  standingsLabel?: string;
   selectionLabel?: string;
   kind: "winner" | "eliminated" | "qualified" | "parity-selected";
   landedNumber: number;

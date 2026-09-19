@@ -41,6 +41,7 @@ import "./App.css";
 import type {
   DrawMode,
   GameId,
+  GameStanding,
   MarbleDifficulty,
   MarbleFinishRule,
   Participant,
@@ -52,6 +53,7 @@ import type {
 import { CardGame } from "./games/cards/CardGame";
 import { prepareCardRound, type CardAssignment } from "./games/cards/cardDeck";
 import { DuckHunt } from "./games/ducks/DuckHunt";
+import { duckStartingLivesFromSeed } from "./games/ducks/duckCommitment";
 import type { DuckContestant } from "./games/ducks/duckHuntEngine";
 import { MarbleRace } from "./games/marbles/MarbleRace";
 import {
@@ -87,6 +89,7 @@ import { parseAudioVolume } from "./shared/audio/audioPreferences";
 import { sha256Hex } from "./shared/crypto/sha256";
 import { SplashScreen } from "./shared/components/SplashScreen";
 import { AppUpdater } from "./shared/components/AppUpdater";
+import { AuthorCard } from "./shared/components/AuthorCard";
 import { currentVersion, ReleaseHistory } from "./shared/releases/ReleaseHistory";
 import { GameDemoModal } from "./shared/tutorial/GameDemoModal";
 import { GuidedTour } from "./shared/tutorial/GuidedTour";
@@ -416,8 +419,8 @@ function App() {
     }, 170);
   }, [recordSelection]);
 
-  const finishMarbleSelection = useCallback((racer: MarbleRacer, label: string) => {
-    const result = recordSelection(racer.participant.id, racer.number, label);
+  const finishMarbleSelection = useCallback((racer: MarbleRacer, label: string, standings?: readonly GameStanding[]) => {
+    const result = recordSelection(racer.participant.id, racer.number, label, standings);
     setRoundAnimating(false);
     setCurrentResult(result);
     window.setTimeout(() => {
@@ -769,6 +772,7 @@ function App() {
             restartDisabled={roundLocked}
           />
         )}
+        <AuthorCard />
       </main>
 
       {currentResult && (
@@ -1585,7 +1589,7 @@ function MarblesScreen({
   previousWinnerIds: ReadonlySet<string>;
   onCommit: (seed: string) => void;
   initialSeed?: string;
-  onFinish: (racer: MarbleRacer, label: string) => void;
+  onFinish: (racer: MarbleRacer, label: string, standings?: readonly GameStanding[]) => void;
   onDifficultyChange: (difficulty: MarbleDifficulty) => void;
   onFinishRuleChange: (finishRule: MarbleFinishRule) => void;
   onRestart: () => void;
@@ -1785,16 +1789,17 @@ function DucksScreen({
 }) {
   const finalWinner = resolveFinalWinner(sessionWinner, latestResult, activeParticipants.length);
   const cannotPlay = !!finalWinner || activeParticipants.length < 2;
+  const startingLives = resumedCommitment ? duckStartingLivesFromSeed(resumedCommitment.seed) : 1;
 
   return (
     <section className="ducks-workspace">
       <section className="ducks-stage-column">
         <div className="stage-heading casino-stage-heading ducks-stage-heading">
           <div>
-            <span className="eyebrow">BETA · SUPERVIVENCIA · 3 VIDAS</span>
+            <span className="eyebrow">BETA · SUPERVIVENCIA · {startingLives === 1 ? "1 VIDA" : "3 VIDAS"}</span>
             <h1>Patos de Fortuna</h1>
           </div>
-          <div className="live-badge"><span /> {finalWinner ? "PARTIDA FINALIZADA" : "CAMPO DE TIRO 3D"}</div>
+          <div className="live-badge"><span /> {finalWinner ? "PARTIDA FINALIZADA" : "CAMPO DE TIRO RETRO"}</div>
         </div>
 
         {finalWinner ? (
@@ -1820,8 +1825,8 @@ function DucksScreen({
         <section className="panel ducks-rule-card">
           <div className="panel-title"><Crosshair size={18} /> Reglas de supervivencia</div>
           <div className="duck-rule-steps">
-            <span><b>1</b><strong>Tres vidas</strong><small>Cada participante empieza completo.</small></span>
-            <span><b>2</b><strong>Tandas clásicas</strong><small>Uno o dos patos y solo tres disparos.</small></span>
+            <span><b>1</b><strong>{startingLives === 1 ? "Una vida" : "Tres vidas"}</strong><small>{startingLives === 1 ? "Un impacto oficial elimina al participante revelado." : "La partida recuperada conserva sus vidas originales."}</small></span>
+            <span><b>2</b><strong>Bandada completa</strong><small>Todos los supervivientes salen juntos; tres disparos por tanda.</small></span>
             <span><b>3</b><strong>Cámara fija</strong><small>El campo no se mueve mientras apuntas.</small></span>
             <span><b>4</b><strong>Orden comprometido</strong><small>El clic solo avanza el próximo impacto ya sellado.</small></span>
             <span><b>5</b><strong>Identidad protegida</strong><small>Nombre, color y corona se revelan después del impacto.</small></span>

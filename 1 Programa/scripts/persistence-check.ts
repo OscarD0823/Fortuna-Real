@@ -236,7 +236,7 @@ assert.equal(useDrawStore.getState().resultArchive[0].id, auditedResult.id, "Cam
 const reloaded = mergePersistedDrawState(JSON.parse(persistedItems.get("fortuna-real-draw-v2")!).state, initial);
 assert.equal(reloaded.resultArchive[0].sessionId, auditedResult.sessionId);
 const importedArchive = mergePersistedDrawState({ history: [result(ana)] }, initial);
-assert.equal(importedArchive.resultArchive[0].id, result(ana).id, "Las rondas antiguas disponibles se deben migrar.");
+assert.deepEqual(importedArchive.resultArchive, [], "Una ronda antigua sin ganador no debe publicarse como partida terminada.");
 const { groupResultArchive } = await import("../src/modules/results/resultArchive.ts");
 resetStore();
 const cami = { id: "cami", name: "Camila", color: "#238ad5" };

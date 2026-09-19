@@ -3,5 +3,8 @@
   "identifier": "default",
   "description": "Capability for the main window",
   "windows": ["main"],
-  "permissions": ["core:default", "updater:default", "process:default"]
+  "permissions": ["core:default", "updater:default", "process:default", {
+    "identifier": "opener:allow-open-url",
+    "allow": [{ "url": "https://github.com/OscarD0823/Fortuna-Real" }]
+  }]
 }

@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import type { GameId, WinnerRecord } from "../../core/types";
 import { useDrawStore } from "../participants/drawStore";
+import { publishedWinners } from "../results/resultArchive";
 
 interface WinnerGroup {
   participantId: string;
@@ -59,7 +60,10 @@ const AwardGameIcon = ({ game, size = 12 }: { game: GameId; size?: number }) => 
       : <CircleDot size={size} />;
 
 export function WinnerHistory({ compact = false }: { compact?: boolean }) {
-  const winnerRecords = useDrawStore((state) => state.winnerRecords);
+  const records = useDrawStore((state) => state.winnerRecords);
+  const archive = useDrawStore((state) => state.resultArchive);
+  const cancellations = useDrawStore((state) => state.sessionAudit);
+  const winnerRecords = useMemo(() => publishedWinners(records, archive, cancellations), [records, archive, cancellations]);
   const blockedWinnerIds = useDrawStore((state) => state.blockedWinnerIds);
   const reenableWinner = useDrawStore((state) => state.reenableWinner);
   const reenableAllWinners = useDrawStore((state) => state.reenableAllWinners);

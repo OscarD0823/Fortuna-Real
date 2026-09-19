@@ -4,6 +4,7 @@ import { drawStorage } from "./drawStorage.ts";
 import type {
   DrawMode,
   GameId,
+  GameStanding,
   MarbleDifficulty,
   MarbleFinishRule,
   Participant,
@@ -13,6 +14,8 @@ import type {
   WinnerRecord,
 } from "../../core/types";
 import { canonicalJson, sha256Hex } from "../../shared/crypto/sha256.ts";
+import { buildFinalStandings, sanitizeStandings } from "../results/resultStandings.ts";
+import { completedArchive } from "../results/resultArchive.ts";
 
 const PALETTE = [
   "#14d9d5",
@@ -27,7 +30,7 @@ const PALETTE = [
 
 export const MAX_PARTICIPANTS = 200;
 export const MAX_PARTICIPANT_NAME_LENGTH = 42;
-export const DRAW_STATE_VERSION = 5;
+export const DRAW_STATE_VERSION = 6;
 const MAX_PRIZE_LENGTH = 60;
 const MAX_HISTORY_RECORDS = 1_000;
 const MAX_SESSION_AUDIT_RECORDS = 100;
@@ -139,6 +142,7 @@ const sanitizeWinnerRecords = (value: unknown): WinnerRecord[] => {
     ids.add(id);
     records.push({
       id,
+      sessionId: sanitizeOptionalText(candidate.sessionId, MAX_ID_LENGTH),
       participantId,
       participantName,
       prize:
@@ -187,6 +191,7 @@ const sanitizeHistory = (value: unknown, limit = MAX_HISTORY_RECORDS): RoundResu
       || (candidate.participantId !== null && participantId === null)
     ) continue;
     ids.add(id);
+    const standings = kind === "winner" ? sanitizeStandings(candidate.standings) : undefined;
     history.push({
       id,
       sessionId: sanitizeOptionalText(candidate.sessionId, MAX_ID_LENGTH),
@@ -196,6 +201,9 @@ const sanitizeHistory = (value: unknown, limit = MAX_HISTORY_RECORDS): RoundResu
         candidate.selectedParticipantName,
         MAX_PARTICIPANT_NAME_LENGTH,
       ),
+      selectedParticipantId: sanitizeOptionalText(candidate.selectedParticipantId, MAX_ID_LENGTH),
+      standings: standings?.some(row => row.outcome === "winner" && row.participantId === participantId) ? standings : undefined,
+      standingsLabel: sanitizeOptionalText(candidate.standingsLabel, 160),
       selectionLabel: sanitizeOptionalText(candidate.selectionLabel, 100),
       kind,
       landedNumber,
@@ -295,6 +303,8 @@ export interface DrawState {
   eliminatedIds: string[];
   history: RoundResult[];
   resultArchive: RoundResult[];
+  /** Private recovery/audit rows, never displayed as completed matches or exported as winners. */
+  unpublishedResults: RoundResult[];
   winnerRecords: WinnerRecord[];
   blockedWinnerIds: string[];
   eliminationParity: Parity | null;
@@ -330,6 +340,7 @@ export interface DrawState {
     participantId: string,
     landedNumber: number,
     selectionLabel?: string,
+    gameStandings?: readonly GameStanding[],
   ) => RoundResult;
   recordParitySelection: (parity: Parity, landedNumber: number) => RoundResult;
   recordDuckSurvival: (
@@ -622,13 +633,22 @@ export const mergePersistedDrawState = (
   const roundAudits = Array.isArray(stored.roundAudits)
     ? sanitizeRoundAudits(stored.roundAudits)
     : currentState.roundAudits;
+  const cancelledIds = new Set(sessionAudit.map(entry => entry.sessionId));
+  const previousArchive = sanitizeHistory(stored.resultArchive ?? stored.history, Infinity);
+  const publishedArchive = completedArchive(previousArchive, cancelledIds);
+  const publishedIds = new Set(publishedArchive.map(result => result.id));
+  const unpublishedResults = sanitizeHistory([
+    ...previousArchive.filter(result => !publishedIds.has(result.id)),
+    ...sanitizeHistory(stored.unpublishedResults, Infinity),
+  ], Infinity).filter(result => !publishedIds.has(result.id));
   return {
     ...currentState,
     participants,
     eliminatedIds,
     history,
-    resultArchive: sanitizeHistory(stored.resultArchive ?? stored.history, Infinity),
-    winnerRecords,
+    resultArchive: publishedArchive,
+    unpublishedResults,
+    winnerRecords: winnerRecords.filter(record => !record.sessionId || !cancelledIds.has(record.sessionId)),
     blockedWinnerIds,
     eliminationParity,
     mode,
@@ -696,8 +716,10 @@ const createWinnerRecord = (
   prize: string,
   mode: DrawMode,
   game: GameId,
+  sessionId: string,
 ): WinnerRecord => ({
   id: makeId(),
+  sessionId,
   participantId: participant.id,
   participantName: participant.name,
   prize: prize.trim() || "Premio del sorteo",
@@ -713,6 +735,7 @@ export const useDrawStore = create<DrawState>()(
       eliminatedIds: [],
       history: [],
       resultArchive: [],
+      unpublishedResults: [],
       winnerRecords: [],
       blockedWinnerIds: [],
       eliminationParity: null,
@@ -905,6 +928,9 @@ export const useDrawStore = create<DrawState>()(
         if (state.activeSession?.roundCommitment) {
           throw new Error("Resuelve la ronda comprometida antes de completar la sesión.");
         }
+        if (!state.activeSession || !state.history.some(result => result.sessionId === state.activeSession!.sessionId && result.kind === "winner")) {
+          throw new Error("Solo se puede completar una partida con ganador confirmado.");
+        }
         set({ activeSession: markSessionCompleted(state.activeSession) });
       },
 
@@ -912,7 +938,7 @@ export const useDrawStore = create<DrawState>()(
         const reason = sanitizeOptionalText(rawReason, MAX_CANCELLATION_REASON_LENGTH);
         if (!reason) throw new Error("Debes indicar el motivo de cancelación.");
         const state = get();
-        if (!state.activeSession) throw new Error("No hay una sesión activa para cancelar.");
+        if (state.activeSession?.status !== "committed") throw new Error("No hay una sesión activa para cancelar.");
         const cancellation: DrawSessionCancellation = {
           sessionId: state.activeSession.sessionId,
           status: "cancelled",
@@ -928,6 +954,9 @@ export const useDrawStore = create<DrawState>()(
         };
         set({
           activeSession: null,
+          resultArchive: state.resultArchive.filter(result => result.sessionId !== cancellation.sessionId),
+          unpublishedResults: sanitizeHistory([...state.history, ...state.resultArchive.filter(result => result.sessionId === cancellation.sessionId), ...state.unpublishedResults], Infinity),
+          winnerRecords: state.winnerRecords.filter(record => record.sessionId !== cancellation.sessionId),
           sessionAudit: [cancellation, ...state.sessionAudit]
             .slice(0, MAX_SESSION_AUDIT_RECORDS),
           eliminatedIds: [],
@@ -950,7 +979,7 @@ export const useDrawStore = create<DrawState>()(
         });
       },
 
-      recordSelection: (participantId, landedNumber, selectionLabel) => {
+      recordSelection: (participantId, landedNumber, selectionLabel, gameStandings) => {
         const state = get();
         const { session, commitment } = assertCommittedRound(state, state.game, participantId);
         if (
@@ -998,7 +1027,7 @@ export const useDrawStore = create<DrawState>()(
               new Set([...state.blockedWinnerIds, resultParticipant.id]),
             );
             nextWinnerRecords = [
-              createWinnerRecord(resultParticipant, state.prize, state.mode, state.game),
+              createWinnerRecord(resultParticipant, state.prize, state.mode, state.game, session.sessionId),
               ...state.winnerRecords,
             ];
           } else {
@@ -1012,7 +1041,7 @@ export const useDrawStore = create<DrawState>()(
             new Set([...state.blockedWinnerIds, participantId]),
           );
           nextWinnerRecords = [
-            createWinnerRecord(participant, state.prize, state.mode, state.game),
+            createWinnerRecord(participant, state.prize, state.mode, state.game, session.sessionId),
             ...state.winnerRecords,
           ];
         }
@@ -1023,6 +1052,7 @@ export const useDrawStore = create<DrawState>()(
           participantId: resultParticipant.id,
           participantName: resultParticipant.name,
           selectedParticipantName,
+          selectedParticipantId: selectedParticipantName ? participantId : undefined,
           selectionLabel,
           kind,
           landedNumber,
@@ -1035,11 +1065,20 @@ export const useDrawStore = create<DrawState>()(
           eligibleCount,
           createdAt: new Date().toISOString(),
         };
-
+        if (kind === "winner") {
+          result.standings = buildFinalStandings(
+            state.participants.filter(person => session.participantIds.includes(person.id)), resultParticipant.id,
+            state.mode, nextEliminatedIds, [result, ...state.history], state.mode === "direct" ? gameStandings : undefined,
+          );
+          result.standingsLabel = state.mode === "elimination" ? "Clasificación final por orden de eliminación"
+            : gameStandings ? "Clasificación al decidir el ganador" : "Ganador y participantes · sin puestos para los no seleccionados";
+        }
         const audited = attachRoundAudit(state, result, participantId);
         set({
           history: [audited.result, ...state.history].slice(0, MAX_HISTORY_RECORDS),
-          resultArchive: [audited.result, ...state.resultArchive],
+          resultArchive: kind === "winner" ? [audited.result, ...state.history.filter(entry => entry.sessionId === session.sessionId),
+            ...state.resultArchive.filter(entry => entry.sessionId !== session.sessionId)] : state.resultArchive,
+          unpublishedResults: kind === "winner" ? state.unpublishedResults.filter(entry => entry.sessionId !== session.sessionId) : state.unpublishedResults,
           eliminatedIds: nextEliminatedIds,
           blockedWinnerIds: nextBlockedWinnerIds,
           winnerRecords: nextWinnerRecords,
@@ -1090,7 +1129,7 @@ export const useDrawStore = create<DrawState>()(
             sessionId: session.sessionId,
             participantId: participant.id,
             participantName: participant.name,
-            selectionLabel: `Pato #${knockout.number} · perdió sus 3 vidas`,
+            selectionLabel: `Pato #${knockout.number} · sin vidas`,
             kind: "eliminated" as const,
             landedNumber: knockout.number,
             parity: (knockout.number % 2 === 0 ? "even" : "odd") as Parity,
@@ -1110,6 +1149,7 @@ export const useDrawStore = create<DrawState>()(
           participantId: survivor.id,
           participantName: survivor.name,
           selectedParticipantName: lastKnockout?.participantName,
+          selectedParticipantId: lastKnockout?.participantId ?? undefined,
           selectionLabel: `Pato #${survivorNumber} · último en pie`,
           kind: "winner",
           landedNumber: survivorNumber,
@@ -1122,16 +1162,21 @@ export const useDrawStore = create<DrawState>()(
           eligibleCount: 1,
           createdAt,
         };
-
+        winnerResult.standings = buildFinalStandings(
+          state.participants.filter(person => session.participantIds.includes(person.id)), survivor.id, "elimination",
+          knockoutIds, [winnerResult, ...eliminatedResults],
+        );
+        winnerResult.standingsLabel = "Clasificación final por orden de eliminación";
         const audited = attachRoundAudit(state, winnerResult, survivorId);
         set({
           resultArchive: [audited.result, ...eliminatedResults.slice().reverse(), ...state.resultArchive],
+          unpublishedResults: state.unpublishedResults.filter(entry => entry.sessionId !== session.sessionId),
           history: [audited.result, ...eliminatedResults.reverse(), ...state.history]
             .slice(0, MAX_HISTORY_RECORDS),
           eliminatedIds: Array.from(new Set([...state.eliminatedIds, ...knockouts.map((knockout) => knockout.participantId)])),
           blockedWinnerIds: Array.from(new Set([...state.blockedWinnerIds, survivor.id])),
           winnerRecords: [
-            createWinnerRecord(survivor, state.prize, "elimination", "ducks"),
+            createWinnerRecord(survivor, state.prize, "elimination", "ducks", session.sessionId),
             ...state.winnerRecords,
           ],
           roundNumber: Math.max(1, knockouts.length + 1),
@@ -1193,6 +1238,7 @@ export const useDrawStore = create<DrawState>()(
         eliminatedIds: state.eliminatedIds,
         history: state.history,
         resultArchive: state.resultArchive,
+        unpublishedResults: state.unpublishedResults,
         eliminationParity: state.eliminationParity,
         roundNumber: state.roundNumber,
         activeSession: state.activeSession,
