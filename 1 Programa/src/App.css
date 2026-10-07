@@ -1089,7 +1089,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible {
 
 /* Patos de Fortuna · supervivencia 3D */
 .game-options--large {
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
 .game-option--ducks.is-active {
@@ -2758,7 +2758,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible {
 }
 
 @media (min-width: 1281px) {
-  .game-options--large { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+  .game-options--large { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }
 
 /* Accesibilidad y reflujo: ningún panel informativo desaparece por zoom o ancho. */
@@ -3114,7 +3114,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible {
 .game-demo-modal__title h2 { margin: 3px 0 0; color: white; font: 850 22px/1 "Montserrat",sans-serif; }
 .game-demo-modal__title em { padding: 5px 8px; border: 1px solid rgba(9,224,223,.28); border-radius: 99px; color: var(--cyan); background: rgba(9,224,223,.06); font-size: 12px; font-style: normal; font-weight: 900; }
 .game-demo-modal__title em.is-beta { color: var(--gold); border-color: rgba(246,189,53,.32); background: rgba(246,189,53,.07); }
-.game-demo-tabs { display: grid; grid-template-columns: repeat(5,minmax(0,1fr)); gap: 6px; padding: 8px; border-bottom: 1px solid rgba(113,168,181,.13); background: rgba(0,0,0,.14); }
+.game-demo-tabs { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 6px; padding: 8px; border-bottom: 1px solid rgba(113,168,181,.13); background: rgba(0,0,0,.14); }
 .game-demo-tabs button { min-width: 0; min-height: 42px; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 0 8px; border: 1px solid rgba(113,168,181,.15); border-radius: 8px; color: #789198; background: rgba(4,15,21,.7); font-size: 12px; font-weight: 800; cursor: pointer; }
 .game-demo-tabs button span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .game-demo-tabs button small { color: var(--gold); font-size: 12px; }
@@ -3421,10 +3421,8 @@ button:focus-visible, input:focus-visible, textarea:focus-visible {
 .duck-cover-radar small { overflow: hidden; color: #a8c986; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 
 @media (min-width: 1041px) and (max-width: 1280px) {
-  .game-options--large { grid-template-columns: repeat(6,minmax(0,1fr)); }
-  .game-options--large .game-option { grid-column: span 2; }
-  .game-options--large .game-option:nth-child(4),
-  .game-options--large .game-option:nth-child(5) { grid-column: span 3; }
+  .game-options--large { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .game-options--large .game-option { grid-column: auto; }
 }
 @media (max-width: 720px) {
   .duck-cover-radar { top: 45px; width: min(215px,52%); }

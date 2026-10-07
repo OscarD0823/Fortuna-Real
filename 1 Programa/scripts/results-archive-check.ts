@@ -106,10 +106,14 @@ const cancelledMigration = mergePersistedDrawState({ ...finalState, sessionAudit
 assert.equal(cancelledMigration.resultArchive.length, 0);
 assert.equal(cancelledMigration.winnerRecords.length, 0);
 
-const credit = readFileSync("src/shared/components/AuthorCard.tsx", "utf8");
+const retiredSelection = mergePersistedDrawState({ ...initial, game: "pinball", setupGameChosen: true }, initial);
+assert.equal(retiredSelection.game, "roulette");
+assert.equal(retiredSelection.setupGameChosen, false);
+
+const credit = readFileSync("src/shared/project.ts", "utf8");
 const permissions = JSON.parse(readFileSync("src-tauri/capabilities/default.json", "utf8"));
 assert.ok(credit.includes('"OscarD0823"') && credit.includes('"https://github.com/OscarD0823/Fortuna-Real"'));
-assert.deepEqual(permissions.permissions.find((entry: { identifier?: string }) => entry.identifier === "opener:allow-open-url").allow, [{ url: "https://github.com/OscarD0823/Fortuna-Real" }]);
+assert.deepEqual(permissions.permissions.find((entry: { identifier?: string }) => entry.identifier === "opener:allow-open-url").allow, [{ url: "https://github.com/OscarD0823/Fortuna-Real" }, { url: "https://oscard0823.github.io/Fortuna-Real/" }]);
 assert.ok(readFileSync("src/App.tsx", "utf8").includes("<AuthorCard />"));
 const appCss = readFileSync("src/App.css", "utf8");
 assert.ok(appCss.includes(".results-open { display: flex;"), "El acceso al historial debe seguir visible en ventanas estrechas.");

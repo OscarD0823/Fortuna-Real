@@ -1,10 +1,30 @@
 # Fortuna Real
 
-Aplicación de escritorio para sorteos mediante ruleta, cartas,
+Aplicación de escritorio y web instalable para sorteos mediante ruleta, cartas,
 canicas y Patos Retro, con selección sin repeticiones, ganador directo y
 modo eliminación.
 
-Pinball 3D está temporalmente desactivado para jugar mientras se mejora.
+Pinball está retirado definitivamente de los juegos disponibles. Sus resultados antiguos se conservan.
+
+## Web oficial: jugar, instalar o descargar Windows
+
+Abre **[Fortuna Real en la web](https://oscard0823.github.io/Fortuna-Real/)**.
+Puedes jugar allí, pulsar **Instalar web** en un navegador compatible o elegir
+**Descargar Windows** para ir al [instalador estable](https://github.com/OscarD0823/Fortuna-Real/releases/latest).
+No son la misma instalación: la web no incluye Daniela High y no comparte el historial con Windows.
+
+El código y la web están en **1.0.13**; el instalador firmado publicado sigue en **1.0.12**
+hasta preparar una nueva entrega de escritorio. No se anuncia 1.0.13 al actualizador nativo.
+
+La web usa GitHub Pages sin dominio de pago. Después de descargar todos los recursos
+puede funcionar sin conexión mientras el navegador conserve su caché. Para aplicar una
+actualización preparada, termina las partidas, cierra todas las ventanas y vuelve a abrir.
+No borres los datos del navegador si quieres conservar el historial; exporta primero tus resultados.
+Consulta [Privacidad](https://oscard0823.github.io/Fortuna-Real/privacidad.html).
+
+Las salas por código **todavía no están implementadas**. Consulta el
+[plan de interacción y mejoras](1%20Programa/docs/SALAS-Y-JUEGOS.md) y la
+[guía para Microsoft Store](1%20Programa/docs/MICROSOFT-STORE.md).
 
 Desde 1.0.11: **Patos Retro** estrena un campo pixelado propio,
 cámara frontal y un pato por participante. Todos los supervivientes despegan en
@@ -25,7 +45,7 @@ La Ruleta compromete uniformemente a una persona antes de animar (PAR/IMPAR es
 solo presentación). Patos genera un orden recuperable con CSPRNG AES-CTR/256 y
 publica su sello SHA-256 antes de iniciar. Las sesiones y compromisos pendientes
 persisten; cancelarlos exige un motivo que queda en el registro local de auditoría.
-Cartas, Pinball y Canicas guardan además una semilla CSPRNG por ronda para
+Cartas y Canicas guardan además una semilla CSPRNG por ronda para
 reconstruir exactamente su asignación, distribución o pista después de reiniciar.
 
 ## Estructura del repositorio
@@ -296,13 +316,39 @@ salga de él.
 <!-- VERSION-HISTORY:START -->
 ## Historial de cambios
 
-Versión actual del código: **1.0.12**. También disponible desde **Novedades** dentro del programa, sin conexión.
+Versión actual del código: **1.0.13**. También disponible desde **Novedades** dentro del programa, sin conexión.
 
 Los cambios se resumen por función; los enlaces llevan al registro original. Las fechas de Releases usan el día de publicación en Colombia. Las versiones sin un Release conservado lo indican expresamente.
 
+### 1.0.12 → 1.0.13 — Web instalable, autor en la cabecera y retirada de Pinball
+
+Fecha: 2026-10-07. Versión actual del código.
+
+Versión del código y de la web. El instalador estable de Windows sigue siendo 1.0.12 hasta publicar un nuevo paquete firmado. Las salas por Internet y Microsoft Store son propuestas documentadas, aún no disponibles.
+
+#### Web oficial e instalación
+
+- Fortuna Real se publica en GitHub Pages con instalación desde navegadores compatibles y enlace separado a la descarga estable de Windows.
+- Tras cargar sus recursos en línea, la web puede abrirse sin conexión mientras el navegador conserve su caché. No incluye la voz nativa Daniela High: usa las voces disponibles en el navegador.
+- La web prepara las actualizaciones sin recargar partidas abiertas. La versión nueva se activa después de cerrar todas las ventanas de Fortuna Real.
+- Los historiales de la web y del programa son locales e independientes; no se sincronizan entre equipos.
+
+#### Interfaz y juegos disponibles
+
+- Creado por OscarD0823 se coloca junto al nombre, cerca de Ver resultados, con enlaces al repositorio y a la web oficial.
+- Pinball se retira de la selección, del renderizado y de las demostraciones. Sus registros históricos se conservan; una sesión antigua pendiente requiere cancelación explícita.
+- Ruleta, Cartas, Canicas y Patos siguen disponibles con sus reglas y resultados verificables.
+
+#### Siguientes pasos documentados
+
+- Guía para publicar la PWA en Microsoft Store y explicación de las diferencias frente al instalador firmado de escritorio.
+- Propuesta de salas por código, turnos de Ruleta y Cartas, nuevos juegos y mejoras de cámaras, pistas y Patos. No se habilita un servidor ni se cobran servicios.
+
+[Registro original de esta versión](https://github.com/OscarD0823/Fortuna-Real/tree/main).
+
 ### 1.0.11 → 1.0.12 — Autor visible e historial con clasificación completa
 
-Fecha: 2026-09-19. Versión actual del código.
+Fecha: 2026-09-19.
 
 Se conservan la voz Daniela High, los juegos y sus reglas. Los cambios de historial no alteran los resultados comprometidos. Canicas y Patos siguen en beta; Pinball continúa desactivado.
 

@@ -7,15 +7,15 @@ const instructions = readFileSync(resolve(root, "INSTRUCCIONES - LEER PRIMERO.tx
 const setup = readFileSync(resolve(root, "src/modules/draw/DrawSetup.tsx"), "utf8");
 const marbleRace = readFileSync(resolve(root, "src/games/marbles/MarbleRace.tsx"), "utf8");
 const marbleScene = readFileSync(resolve(root, "src/games/marbles/marbleRace3d.ts"), "utf8");
-const pinballGame = readFileSync(resolve(root, "src/games/pinball/PinballGame.tsx"), "utf8");
+
 const participantPanel = readFileSync(resolve(root, "src/modules/participants/ParticipantPanel.tsx"), "utf8");
 const duckGame = readFileSync(resolve(root, "src/games/ducks/DuckHunt.tsx"), "utf8");
 const duckScene = readFileSync(resolve(root, "src/games/ducks/duckHuntClassic.ts"), "utf8");
 const duckPixels = readFileSync(resolve(root, "src/games/ducks/duckClassicMotion.ts"), "utf8");
 const duckCss = readFileSync(resolve(root, "src/games/ducks/duckClassic.css"), "utf8");
 const duckEngine = readFileSync(resolve(root, "src/games/ducks/duckHuntEngine.ts"), "utf8");
-const pinballScene = readFileSync(resolve(root, "src/games/pinball/pinball3d.ts"), "utf8");
-const pinballEngine = readFileSync(resolve(root, "src/games/pinball/pinballEngine.ts"), "utf8");
+
+
 const app = readFileSync(resolve(root, "src/App.tsx"), "utf8");
 const tutorialContent = readFileSync(resolve(root, "src/shared/tutorial/tutorialContent.ts"), "utf8");
 const guidedTour = readFileSync(resolve(root, "src/shared/tutorial/GuidedTour.tsx"), "utf8");
@@ -45,14 +45,11 @@ if (!instructions.includes(expectedInstruction)) {
 for (const betaLabel of ["BETA · 3D procedural", "BETA · supervivencia"]) {
   if (!setup.includes(betaLabel)) throw new Error(`Falta identificar como beta: ${betaLabel}`);
 }
-if (!/<button[^>]*\sdisabled\s[^>]*>[\s\S]*?<span>Pinball 3D<\/span>/u.test(setup) || !setup.includes("No disponible · en mejora")) {
-  throw new Error("Pinball debe aparecer desactivado y explicar que está en mejora.");
+if (setup.includes("Pinball") || app.includes("<PinballScreen") || app.includes("./games/pinball/")) {
+  throw new Error("Pinball debe estar retirado del menú y del renderizado de producción.");
 }
 for (const cameraLabel of ["PERSECUCIÓN", "A BORDO", "LATERAL", "AÉREA"]) {
   if (!marbleRace.includes(cameraLabel)) throw new Error(`Falta el modo de cámara de Canicas: ${cameraLabel}`);
-}
-for (const cameraLabel of ["CENITAL", "PERSECUCIÓN"]) {
-  if (!pinballGame.includes(cameraLabel)) throw new Error(`Falta el modo de cámara de Pinball: ${cameraLabel}`);
 }
 if (!marbleRace.includes("data-camera-director") || !marbleRace.includes("Director estable: sigue al líder")) {
   throw new Error("Canicas debe incluir un director automático de cámara verificable.");
@@ -75,17 +72,6 @@ if (
 if (!css.includes(".marble-race { width: 100%; max-width: 100%; min-width: 0;")) {
   throw new Error("Canicas debe ajustarse al ancho disponible sin crear desplazamiento horizontal.");
 }
-if (!pinballGame.includes("Seguir la pelota anterior") || !pinballGame.includes("Seguir la pelota siguiente")) {
-  throw new Error("Pinball debe permitir recorrer las cámaras sin abrir el selector.");
-}
-if (
-  !pinballGame.includes("AMBOS FLIPPERS")
-  || !pinballScene.includes("followBeacon")
-  || !pinballScene.includes("flipperAssist")
-  || !pinballEngine.includes("getPinballAutomaticFlipperThreat")
-) {
-  throw new Error("Pinball debe incluir control manual dual, seguimiento visible y piloto automático predictivo.");
-}
 if (!duckGame.includes("duck-cover-radar") || !duckGame.includes("data-cover-percent")) {
   throw new Error("Patos debe mostrar el estado de cobertura del bosque y el pasto.");
 }
@@ -105,7 +91,7 @@ if (!duckGame.includes("createDuckHuntClassic(") || !duckScene.includes("pickCla
   || !duckCss.includes("prefers-reduced-motion") || !duckGame.includes("event.repeat") || !duckGame.includes("crosshairRef")) {
   throw new Error("El campo retro debe usar colisión de píxeles, liberar recursos y conservar controles accesibles.");
 }
-for (const game of ["roulette", "cards", "pinball", "marbles", "ducks"]) {
+for (const game of ["roulette", "cards", "marbles", "ducks"]) {
   if (!tutorialContent.includes(`${game}: {`)) throw new Error(`Falta la demostración de ${game}.`);
   if (!tutorialContent.includes(`target: \".`)) throw new Error("Las guías deben apuntar a controles reales.");
 }
@@ -124,24 +110,20 @@ if (!app.includes("Ayuda del inicio") || !app.includes("Guía paso a paso")) {
 console.log(JSON.stringify({
   minimumTextSizePx: 12,
   lowContrastTokensRemoved: inaccessibleColors,
-  fiveGamesDocumented: true,
+  fourPlayableGamesDocumented: true,
   betaGamesIdentified: ["marbles", "ducks"],
-  pinballDisabled: true,
+  pinballRetired: true,
   marbleCameraModes: 4,
-  pinballCameraModes: 2,
   automaticMarbleCameraDirector: true,
   marbleCameraOcclusionGuard: true,
   marbleUnderpassCamera: true,
   marbleResponsiveWidth: true,
   marbleFinishRules: ["first", "last"],
   marbleTrackEvents: ["freeze", "river", "tornado", "quake"],
-  pinballCameraStepper: true,
-  pinballPredictiveAutomaticMode: true,
-  pinballDualManualControl: true,
   duckCoverRadar: true,
   duckForestEvents: ["wind", "mist", "fireflies", "storm"],
   participantSearch: true,
   duckModelDetails: ["pixelPupils", "webbedFeet", "fourWingFrames", "pixelShotMask"],
-  guidedDemos: ["roulette", "cards", "pinball", "marbles", "ducks"],
+  guidedDemos: ["roulette", "cards", "marbles", "ducks"],
   keyboardAccessibleTutorials: true,
 }, null, 2));

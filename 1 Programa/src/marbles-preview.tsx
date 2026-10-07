@@ -5,7 +5,6 @@ import { useDrawStore } from "./modules/participants/drawStore";
 import "./App.css";
 import type { MarbleDifficulty, MarbleFinishRule, Participant } from "./core/types";
 import { MarbleRace } from "./games/marbles/MarbleRace";
-import { PinballGame } from "./games/pinball/PinballGame";
 import { DuckHunt } from "./games/ducks/DuckHunt";
 import { UpdateDialog } from "./shared/components/AppUpdater";
 import { updateHeadings, type UpdateStatus } from "./shared/update/updatePresentation";
@@ -89,7 +88,7 @@ function MarblePreview() {
     <main style={{ minHeight: "100vh", height: "100vh", padding: 12, background: "#02070c", color: "#edf8f8", display: "flex", boxSizing: "border-box" }}>
       {import.meta.env.DEV && game === "updater" ? <UpdaterInspection />
         : import.meta.env.DEV && game === "camera" ? <CameraInspection participants={participants} />
-        : game === "pinball" ? <PinballGame participants={participants} mode="direct" controlMode={query.get("control") === "manual" ? "manual" : "automatic"} disabled={false} previousWinnerIds={new Set()} initialSeed={requestedSeed} onCommit={() => undefined} onFinish={() => undefined} />
+        : game === "pinball" ? <p>Pinball ha sido retirado. Elige otro juego.</p>
         : game === "ducks" ? <DuckHunt participants={participants} previousWinnerIds={new Set()} disabled={false} onCommit={() => undefined} onFinish={() => undefined} />
         : <MarbleRace
         participants={participants}

@@ -4,10 +4,10 @@ import { resolve } from "node:path";
 import { gameGuides, guidedTours } from "../src/shared/tutorial/tutorialContent.ts";
 
 const root = resolve(import.meta.dirname, "..");
-const games = ["roulette", "cards", "pinball", "marbles", "ducks"] as const;
+const games = ["roulette", "cards", "marbles", "ducks"] as const;
 const screenFiles = [
   "src/App.tsx", "src/modules/participants/ParticipantPanel.tsx", "src/modules/draw/DrawSetup.tsx",
-  "src/games/cards/CardGame.tsx", "src/games/pinball/PinballGame.tsx",
+  "src/games/cards/CardGame.tsx",
   "src/games/marbles/MarbleRace.tsx", "src/games/ducks/DuckHunt.tsx",
 ];
 const screenSources = screenFiles.map((path) => readFileSync(resolve(root, path), "utf8")).join("\n");
@@ -17,7 +17,7 @@ const appSource = readFileSync(resolve(root, "src/App.tsx"), "utf8");
 for (const game of games) {
   const guide = gameGuides[game];
   assert.equal(guide.steps.length, 4, `${game}: la demo debe tener cuatro pasos breves.`);
-  assert.equal(guide.beta, ["pinball", "marbles", "ducks"].includes(game));
+  assert.equal(guide.beta, ["marbles", "ducks"].includes(game));
   assert.ok(guide.steps.every((step) => step.title && step.description && step.action));
   assert.ok(guidedTours[game].length >= 3, `${game}: faltan instrucciones sobre los controles.`);
 }
@@ -43,4 +43,4 @@ for (const source of [demoSource, readFileSync(resolve(root, "src/modules/partic
 assert.ok(dialogSource.includes('document.documentElement.style.overflow = "hidden"'), "El fondo no debe desplazarse mientras se usa la guía.");
 assert.ok(!appSource.includes("Bienvenido a Fortuna Real. Los sistemas están listos"), "No debe reproducirse un saludo automático al abrir.");
 assert.ok(!appSource.includes("welcomePhase"), "La apertura no debe retrasar el tutorial con un mensaje eliminado.");
-console.log(JSON.stringify({ games, demoSteps: 20, setupSteps: guidedTours.setup.length, isolatedPractice: true, targetsChecked: Object.values(guidedTours).reduce((total, steps) => total + steps.length, 0), status: "passed" }, null, 2));
+console.log(JSON.stringify({ games, demoSteps: 16, setupSteps: guidedTours.setup.length, isolatedPractice: true, targetsChecked: Object.values(guidedTours).reduce((total, steps) => total + steps.length, 0), status: "passed" }, null, 2));

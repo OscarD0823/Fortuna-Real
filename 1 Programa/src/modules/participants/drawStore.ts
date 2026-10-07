@@ -626,7 +626,7 @@ export const mergePersistedDrawState = (
     : normalizeDrawMode(stored.mode);
   const game = activeSession?.status === "committed"
     ? activeSession.game
-    : normalizeGame(stored.game);
+    : stored.game === "pinball" ? "roulette" : normalizeGame(stored.game);
   const sessionAudit = Array.isArray(stored.sessionAudit)
     ? sanitizeSessionAudit(stored.sessionAudit)
     : currentState.sessionAudit;
@@ -653,7 +653,7 @@ export const mergePersistedDrawState = (
     eliminationParity,
     mode,
     game,
-    setupGameChosen: stored.setupGameChosen === true,
+    setupGameChosen: stored.setupGameChosen === true && stored.game !== "pinball",
     setupModeChosen: stored.setupModeChosen === true,
     marbleDifficulty: normalizeMarbleDifficulty(stored.marbleDifficulty),
     marbleFinishRule:

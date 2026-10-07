@@ -1,0 +1,9 @@
+.web-app-panel { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin: 4px 0 14px; padding: 14px 16px; border: 1px solid #386065; border-radius: 12px; background: #0e252d; color: #e4f7f6; }
+.web-app-panel strong, .web-app-panel small { display: block; }
+.web-app-panel small { color: #bad0d6; font-size: 12px; margin-top: 4px; }
+.web-app-panel__actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.web-app-panel button, .web-app-panel__actions a { display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 10px 12px; border: 1px solid #517b84; background: #183e47; border-radius: 8px; color: #e4f7f6; font-size: 13px; text-decoration: none; cursor: pointer; }
+.web-app-panel button:disabled { opacity: .6; cursor: not-allowed; }
+.web-app-panel :focus-visible { outline: 3px solid #65e4dd; outline-offset: 3px; }
+.web-app-panel p { flex-basis: 100%; margin: 0; font-size: 13px; line-height: 1.6; color: #d0e2e6; }
+.web-privacy { color: #92d4cf; font-size: 12px; }

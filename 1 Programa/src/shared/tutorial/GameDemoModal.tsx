@@ -5,7 +5,6 @@ import {
   Bird,
   Check,
   CircleDot,
-  Gamepad2,
   Gem,
   Layers3,
   Lightbulb,
@@ -14,15 +13,15 @@ import {
   X,
 } from "lucide-react";
 import type { GameId } from "../../core/types";
+import { isGamePlayable, type PlayableGameId } from "../../core/gameAvailability";
 import { fortunaAudio } from "../audio/audioEngine";
 import { gameGuides } from "./tutorialContent";
 import { useTutorialDialog } from "./useTutorialDialog";
 
-const demoGames: GameId[] = ["roulette", "cards", "marbles", "ducks"];
+const demoGames: PlayableGameId[] = ["roulette", "cards", "marbles", "ducks"];
 const gameIcons = {
   roulette: CircleDot,
   cards: Layers3,
-  pinball: Gamepad2,
   marbles: Gem,
   ducks: Bird,
 };
@@ -84,16 +83,13 @@ function CardPractice({ step }: { step: number }) {
   );
 }
 
-function DemoScene({ game, step }: { game: GameId; step: number }) {
+function DemoScene({ game, step }: { game: PlayableGameId; step: number }) {
   if (game === "roulette") {
     if (step === 0) return <ParticipantPractice />;
     return <div className={`game-demo-scene demo-roulette demo-step-${step}`} aria-hidden="true"><div className="demo-roster"><i /><i /><i /><i /></div><div className="demo-wheel"><span /></div><div className="demo-result-token">7</div></div>;
   }
   if (game === "cards") {
     return <CardPractice step={step} />;
-  }
-  if (game === "pinball") {
-    return <div className={`game-demo-scene demo-pinball demo-step-${step}`} aria-hidden="true"><div className="demo-pinball-rail" /><i /><i /><i /><div className="demo-flipper demo-flipper--left" /><div className="demo-flipper demo-flipper--right" /></div>;
   }
   if (game === "marbles") {
     return <div className={`game-demo-scene demo-marbles demo-step-${step}`} aria-hidden="true"><div className="demo-track" /><i /><i /><i /><span className="demo-power">✦</span></div>;
@@ -102,7 +98,7 @@ function DemoScene({ game, step }: { game: GameId; step: number }) {
 }
 
 export function GameDemoModal({ initialGame, onDone, canNarrate }: { initialGame: GameId; onDone: () => void; canNarrate: boolean }) {
-  const [game, setGame] = useState(initialGame);
+  const [game, setGame] = useState<PlayableGameId>(isGamePlayable(initialGame) ? initialGame : "roulette");
   const [stepIndex, setStepIndex] = useState(0);
   const guide = gameGuides[game];
   const step = guide.steps[stepIndex];
@@ -115,7 +111,7 @@ export function GameDemoModal({ initialGame, onDone, canNarrate }: { initialGame
   );
 
   const Icon = gameIcons[game];
-  const changeGame = (nextGame: GameId) => {
+  const changeGame = (nextGame: PlayableGameId) => {
     setGame(nextGame);
     setStepIndex(0);
     fortunaAudio.playClick();

@@ -1,6 +1,6 @@
-import type { GameId } from "../../core/types";
+import type { PlayableGameId } from "../../core/gameAvailability";
 
-export type TutorialId = "setup" | GameId;
+export type TutorialId = "setup" | PlayableGameId;
 
 export interface GuidedTourStep {
   target: string;
@@ -24,7 +24,7 @@ export interface GameGuide {
   steps: GameDemoStep[];
 }
 
-export const gameGuides: Record<GameId, GameGuide> = {
+export const gameGuides: Record<PlayableGameId, GameGuide> = {
   roulette: {
     title: "Ruleta",
     badge: "CLÁSICO",
@@ -47,18 +47,6 @@ export const gameGuides: Record<GameId, GameGuide> = {
       { title: "Reúne y baraja", description: "El botón principal recoge todas las cartas, sella la ronda y ejecuta el barajado visual.", action: "Pulsa Reunir y barajar una sola vez." },
       { title: "Escoge cualquier reverso", description: "Cuando las cartas estén boca abajo, toca cualquiera. La posición elegida revela el resultado previamente sellado.", action: "Las cartas disponibles brillan al pasar el cursor." },
       { title: "Revela y continúa", description: "La carta gira, muestra la persona y el historial conserva el resultado para las rondas siguientes.", action: "Usa Continuar en el anuncio final." },
-    ],
-  },
-  pinball: {
-    title: "Pinball 3D",
-    badge: "BETA",
-    beta: true,
-    summary: "Todas las pelotas salen juntas y cada una representa a un participante durante la misma partida.",
-    steps: [
-      { title: "Prepara la mesa", description: "El sistema crea una distribución verificable y asigna un número a cada pelota antes de encender la máquina.", action: "Puedes generar otra distribución antes de jugar." },
-      { title: "Elige automático o manual", description: "Automático anticipa la trayectoria y activa cada flipper antes de que la pelota llegue. Manual usa A/D, flechas, W o flecha arriba para ambos y espacio para lanzar.", action: "El control se elige desde el inicio." },
-      { title: "Sigue una pelota", description: "La cámara puede acompañar a cualquier participante en persecución o vista cenital; un aro luminoso y un encuadre amplio evitan perderlo de vista.", action: "Usa el selector Cámara sobre la mesa." },
-      { title: "Lanza el lote completo", description: "Todas las pelotas salen al mismo tiempo. Choques, flippers y puntos presentan la ronda hasta confirmar el resultado.", action: "Pulsa Encender y jugar o Lanzar todas." },
     ],
   },
   marbles: {
@@ -93,7 +81,7 @@ export const guidedTours: Record<TutorialId, GuidedTourStep[]> = {
     { target: ".setup-name-entry", eyebrow: "PASO 1 · UN NOMBRE", title: "Escribe y agrega", description: "Escribe el nombre de una persona en este campo. Presiona Enter o el botón + para añadirla. Repite la operación con las demás personas.", tip: "Ejemplo: escribe Ana López y pulsa +. No pongas una coma si agregas solo una persona." },
     { target: ".setup-participant-actions", eyebrow: "PASO 1 · LISTA COMPLETA", title: "También puedes pegar varios", description: "Pulsa Pegar varios nombres. En el cuadro que se abre, escribe una persona por línea o sepáralas con comas. Después pulsa Agregar nombres.", tip: "Ejemplo: Ana, Bruno, Camila. Los nombres repetidos se omiten; no necesitas numerarlos." },
     { target: ".participant-list--full", eyebrow: "PASO 1 · REVISIÓN", title: "Comprueba tu lista", description: "Aquí verás a todas las personas cargadas. Si hay un error, usa la X junto al nombre para quitarlo y agrégalo de nuevo correctamente.", tip: "Necesitas al menos dos participantes habilitados para entrar al juego." },
-    { target: ".game-options--large", eyebrow: "PASO 2", title: "Elige una experiencia", description: "Ruleta y Cartas son modos clásicos. Canicas y Patos están en BETA. Pinball está temporalmente desactivado mientras se mejora.", tip: "Seleccionar un juego actualiza inmediatamente las instrucciones inferiores." },
+    { target: ".game-options--large", eyebrow: "PASO 2", title: "Elige una experiencia", description: "Ruleta y Cartas son modos clásicos. Canicas y Patos están en BETA.", tip: "Seleccionar un juego actualiza inmediatamente las instrucciones inferiores." },
     { target: ".selected-game-guide", eyebrow: "DEMOSTRACIONES", title: "Aprende antes de jugar", description: "Cada juego incluye una demostración visual de cuatro pasos. Puedes verla antes de añadir nombres o repetirla cuando quieras.", tip: "Pulsa Ver demo paso a paso para explorar el juego seleccionado." },
     { target: ".mode-choice-panel", eyebrow: "PASO 3", title: "Define cómo termina", description: "Ganador directo permite varios premios sin repetir. Eliminación retira participantes hasta dejar un ganador. Aquí también defines el premio y los controles especiales.", tip: "Patos rápidos usa supervivencia de una vida; las partidas antiguas conservan sus tres vidas." },
     { target: ".setup-hero-start", eyebrow: "TODO LISTO", title: "Entra al juego", description: "Cuando los tres indicadores estén verdes, este botón abre el juego seleccionado. Allí verás sus controles reales.", tip: "El tutorial nunca realiza ni altera una partida." },
@@ -107,12 +95,6 @@ export const guidedTours: Record<TutorialId, GuidedTourStep[]> = {
     { target: ".card-game-status", eyebrow: "CARTAS · 1", title: "Sigue la fase actual", description: "La cabecera te dice si estás verificando, reuniendo, barajando, repartiendo o revelando.", tip: "No necesitas memorizar el orden de acciones." },
     { target: ".card-table", eyebrow: "CARTAS · 2", title: "Verifica y escoge", description: "Primero verás nombres y cartas; después del barajado quedarán boca abajo y podrás tocar cualquier posición disponible.", tip: "La elección visual no puede cambiar el resultado sellado." },
     { target: ".card-game-controls", eyebrow: "CARTAS · 3", title: "Un botón te guía", description: "El control inferior cambia su mensaje según la fase y solo permite la acción correcta en cada momento.", tip: "Espera el mensaje Toca una carta antes de elegir." },
-  ],
-  pinball: [
-    { target: ".pinball-game__status", eyebrow: "PINBALL · 1", title: "Comprueba modo y sello", description: "Aquí ves si la mesa es automática o manual y confirmas que la ronda ya tiene un resultado protegido.", tip: "Los controles solo afectan la presentación física." },
-    { target: ".pinball-cabinet", eyebrow: "PINBALL · 2", title: "Todas salen juntas", description: "La mesa libera el lote completo al mismo tiempo y muestra lanzamientos, pelotas activas, impactos y rendimiento.", tip: "Cada pelota mantiene el número de su participante." },
-    { target: ".pinball-camera-control", eyebrow: "PINBALL · 3", title: "Acompaña una pelota", description: "Selecciona un nombre para activar su estela y alterna entre cámara de persecución o cenital. Vista general vuelve a mostrar toda la mesa.", tip: "Puedes cambiar de participante y de ángulo durante la partida." },
-    { target: ".pinball-controls", eyebrow: "PINBALL · 4", title: "Enciende o controla", description: "Automático anticipa qué lado está en peligro. En manual, espacio lanza todo el lote, A/D o izquierda/derecha controlan cada lado y W o arriba accionan ambos flippers.", tip: "La mesa terminará la ronda de forma automática." },
   ],
   marbles: [
     { target: ".marble-race-status", eyebrow: "CANICAS · 1", title: "Lee el mapa antes de salir", description: "Dificultad, riesgo, poderes, eventos, altura y cantidad de canicas están resumidos en la cabecera.", tip: "Longitud, escala y separación vertical crecen con la dificultad." },

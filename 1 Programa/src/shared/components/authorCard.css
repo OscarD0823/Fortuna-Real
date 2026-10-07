@@ -1,10 +1,13 @@
-.project-credit { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 12px; margin-top: 18px; }
-.project-author-card { display: flex; align-items: center; gap: 12px; min-width: 245px; padding: 12px 16px; border: 1px solid #3f6370; border-radius: 13px; background: #0d2732; color: #def8f5; text-decoration: none; }
-.project-author-card > svg:first-child { color: #53dfda; }
-.project-author-card > span { flex: 1; display: grid; gap: 3px; }
-.project-author-card small, .project-author-card span > span { font-size: 12px; color: #b4ced3; }
+.project-credit { position: relative; display: grid; gap: 5px; border-left: 1px solid #415866; padding: 3px 16px; min-width: 160px; }
+.project-author-card { display: flex; align-items: center; gap: 9px; color: #e4f7f6; text-decoration: none; }
+.project-author-card > svg { color: #53dfda; }
+.project-author-card > span { display: grid; gap: 2px; }
+.project-author-card small { font-size: 12px; color: #b4ced3; }
 .project-author-card strong { font-size: 14px; }
-.project-author-card:hover { border-color: #65e4dd; background: #133740; }
-.project-author-card:focus-visible { outline: 3px solid #65e4dd; outline-offset: 4px; }
-.project-credit > p { max-width: 480px; overflow-wrap: anywhere; color: #ffc9a0; font-size: 13px; }
-@media (max-width: 700px) { .project-credit, .project-author-card { width: 100%; } }
+.project-website { display: inline-flex; gap: 6px; align-items: center; color: #84ded6; font-size: 12px; text-decoration: none; }
+.project-credit a:hover { text-decoration: underline; }
+.project-credit a:focus-visible { outline: 3px solid #65e4dd; outline-offset: 4px; border-radius: 4px; }
+.project-credit > p { position: absolute; top: 100%; left: 0; z-index: 10; width: min(380px, 80vw); padding: 12px; background: #203340; overflow-wrap: anywhere; color: #ffc9a0; font-size: 13px; }
+.brand-and-credit { display: flex; align-items: center; flex-wrap: wrap; gap: 16px; min-width: 0; }
+@media (max-width: 1700px) { .topbar { grid-template-columns: 1fr auto; } .topbar-actions { grid-column: 1 / -1; } }
+@media (max-width: 620px) { .topbar { grid-template-columns: 1fr; } .project-credit { padding-left: 12px; } }

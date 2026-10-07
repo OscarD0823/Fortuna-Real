@@ -72,11 +72,9 @@ export function ParticipantPanel() {
               ? "Agrega una persona por nombre o pega la lista completa"
               : game === "cards"
                 ? "Cada nombre recibe una carta visible antes de barajar"
-                : game === "pinball"
-                  ? "Cada nombre recibe una pelota numerada en la mesa 3D"
-                  : game === "marbles"
+                : game === "marbles"
                     ? "Cada nombre recibe una canica identificada en la carrera"
-                    : "Cada nombre recibe una ficha de pato con tres vidas"}
+                    : "Cada nombre recibe un pato con una vida"}
           </p>
         </div>
         <span className="count-pill">

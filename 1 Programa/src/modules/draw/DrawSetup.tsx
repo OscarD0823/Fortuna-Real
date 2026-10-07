@@ -1,13 +1,11 @@
 import {
   Bird,
   BookOpen,
-  Bot,
   Check,
   ChevronRight,
   CircleDot,
   Flag,
   Gem,
-  Gamepad2,
   Layers3,
   Trophy,
   UsersRound,
@@ -25,21 +23,17 @@ export function DrawSetup({ onOpenDemo }: { onOpenDemo: (game: GameId) => void }
   const gameChosen = useDrawStore((state) => state.setupGameChosen);
   const modeChosen = useDrawStore((state) => state.setupModeChosen);
   const prize = useDrawStore((state) => state.prize);
-  const pinballControlMode = useDrawStore((state) => state.pinballControlMode);
   const marbleFinishRule = useDrawStore((state) => state.marbleFinishRule);
   const setGame = useDrawStore((state) => state.setGame);
   const setMode = useDrawStore((state) => state.setMode);
   const setPrize = useDrawStore((state) => state.setPrize);
-  const setPinballControlMode = useDrawStore((state) => state.setPinballControlMode);
   const setMarbleFinishRule = useDrawStore((state) => state.setMarbleFinishRule);
-  const selectedGuide = gameGuides[game];
+  const selectedGuide = gameGuides[isGamePlayable(game) ? game : "roulette"];
   const selectedIcon = game === "roulette"
     ? <CircleDot size={24} />
     : game === "cards"
       ? <Layers3 size={24} />
-      : game === "pinball"
-        ? <Gamepad2 size={24} />
-        : game === "marbles"
+      : game === "marbles"
           ? <Gem size={24} />
           : <Bird size={24} />;
 
@@ -50,7 +44,7 @@ export function DrawSetup({ onOpenDemo }: { onOpenDemo: (game: GameId) => void }
           <span className="step-number">2</span>
           <div>
             <h2>Elegir juego</h2>
-            <p>Elige una experiencia. Pinball está en mantenimiento.</p>
+            <p>Cuatro formas de jugar: dos clásicos y dos juegos en BETA.</p>
           </div>
         </div>
         <div className="game-options game-options--large" data-tour="game-picker" role="radiogroup" aria-label="Juego del sorteo">
@@ -75,18 +69,6 @@ export function DrawSetup({ onOpenDemo }: { onOpenDemo: (game: GameId) => void }
             <Layers3 size={29} />
             <span>Cartas</span>
             <small>Disponible</small>
-          </button>
-          <button
-            type="button"
-            role="radio"
-            aria-checked={game === "pinball"}
-            disabled
-            className={`game-option game-option--beta ${game === "pinball" ? "is-active" : ""}`}
-            onClick={() => setGame("pinball")}
-          >
-            <Gamepad2 size={29} />
-            <span>Pinball 3D</span>
-            <small>No disponible · en mejora</small>
           </button>
           <button
             type="button"
@@ -163,7 +145,7 @@ export function DrawSetup({ onOpenDemo }: { onOpenDemo: (game: GameId) => void }
             <UsersRound size={22} />
             <span>
               <strong>Eliminación</strong>
-              <small>{game === "roulette" ? "Incluye las casillas PAR e IMPAR" : game === "pinball" ? "La pelota sellada representa al eliminado" : game === "marbles" ? "La última canica queda eliminada" : game === "ducks" ? "Tres vidas; gana el último en pie" : "Una carta sale en cada ronda"}</small>
+              <small>{game === "roulette" ? "Incluye las casillas PAR e IMPAR" : game === "marbles" ? "La última canica queda eliminada" : game === "ducks" ? "Una vida; gana el último en pie" : "Una carta sale en cada ronda"}</small>
             </span>
           </button>
         </div>
@@ -181,30 +163,6 @@ export function DrawSetup({ onOpenDemo }: { onOpenDemo: (game: GameId) => void }
           <div className="direct-rule-preview cards-rule-preview">
             <Layers3 size={17} />
             <p>Las cartas se muestran, se reúnen, se barajan y se reparten boca abajo. El resultado se sella antes de elegir una posición; el mazo se reconstruye con quienes continúan.</p>
-          </div>
-        )}
-
-        {game === "pinball" && (
-          <div className="pinball-control-choice">
-            <div className="pinball-control-choice__heading">
-              <Gamepad2 size={17} />
-              <span><strong>Control de la mesa</strong><small>Ambos modos conservan el mismo resultado sellado; Manual cambia la presentación.</small></span>
-            </div>
-            <div className="pinball-control-choice__options" role="radiogroup" aria-label="Control del Pinball 3D">
-              <button type="button" role="radio" aria-checked={pinballControlMode === "automatic"} className={pinballControlMode === "automatic" ? "is-active" : ""} onClick={() => setPinballControlMode("automatic")}>
-                <Bot size={20} /><span><strong>Automático</strong><small>La mesa lanza y acciona los flippers</small></span>
-              </button>
-              <button type="button" role="radio" aria-checked={pinballControlMode === "manual"} className={pinballControlMode === "manual" ? "is-active" : ""} onClick={() => setPinballControlMode("manual")}>
-                <Gamepad2 size={20} /><span><strong>Manual</strong><small>Controla lanzador y flippers sin alterar el resultado</small></span>
-              </button>
-            </div>
-          </div>
-        )}
-
-        {mode === "elimination" && game === "pinball" && (
-          <div className="direct-rule-preview pinball-rule-preview">
-            <Gamepad2 size={17} />
-            <p>Antes de iniciar se sella una pelota de manera uniforme. La mesa representa ese compromiso y la siguiente ronda crea otra distribución verificable.</p>
           </div>
         )}
 

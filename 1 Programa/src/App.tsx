@@ -46,7 +46,6 @@ import type {
   MarbleFinishRule,
   Participant,
   Parity,
-  PinballControlMode,
   RouletteEntry,
   RoundResult,
 } from "./core/types";
@@ -64,11 +63,6 @@ import {
   type MarbleRacer,
   type MarbleTrack,
 } from "./games/marbles/marbleRaceEngine";
-import { PinballGame } from "./games/pinball/PinballGame";
-import {
-  preparePinballRound,
-  type PinballBallAssignment,
-} from "./games/pinball/pinballEngine";
 import { RouletteWheel } from "./games/roulette/RouletteWheel";
 import { createRouletteCommitment } from "./games/roulette/rouletteCommitment";
 import { arrangeEliminationEntries } from "./games/roulette/rouletteEntries";
@@ -90,6 +84,7 @@ import { sha256Hex } from "./shared/crypto/sha256";
 import { SplashScreen } from "./shared/components/SplashScreen";
 import { AppUpdater } from "./shared/components/AppUpdater";
 import { AuthorCard } from "./shared/components/AuthorCard";
+import { WebAppPanel } from "./shared/web/WebAppPanel";
 import { currentVersion, ReleaseHistory } from "./shared/releases/ReleaseHistory";
 import { GameDemoModal } from "./shared/tutorial/GameDemoModal";
 import { GuidedTour } from "./shared/tutorial/GuidedTour";
@@ -156,7 +151,6 @@ function App() {
   const [showSplash, setShowSplash] = useState(true);
   const [screen, setScreen] = useState<ActiveScreen>("setup");
   const [cardRoundKey, setCardRoundKey] = useState(0);
-  const [pinballRoundKey, setPinballRoundKey] = useState(0);
   const [marbleRoundKey, setMarbleRoundKey] = useState(0);
   const [duckRoundKey, setDuckRoundKey] = useState(0);
   const [activeTutorial, setActiveTutorial] = useState<TutorialId | null>(null);
@@ -190,7 +184,6 @@ function App() {
   const game = useDrawStore((state) => state.game);
   const mode = useDrawStore((state) => state.mode);
   const prize = useDrawStore((state) => state.prize);
-  const pinballControlMode = useDrawStore((state) => state.pinballControlMode);
   const marbleDifficulty = useDrawStore((state) => state.marbleDifficulty);
   const marbleFinishRule = useDrawStore((state) => state.marbleFinishRule);
   const roundNumber = useDrawStore((state) => state.roundNumber);
@@ -318,7 +311,6 @@ function App() {
     setCurrentResult(null);
     setSpinRequest(null);
     setCardRoundKey((key) => key + 1);
-    setPinballRoundKey((key) => key + 1);
     setMarbleRoundKey((key) => key + 1);
     setDuckRoundKey((key) => key + 1);
     setScreen(activeSession?.status === "committed" ? activeSession.game : game);
@@ -409,16 +401,6 @@ function App() {
     }, 170);
   }, [recordSelection]);
 
-  const finishPinballSelection = useCallback((assignment: PinballBallAssignment, label: string) => {
-    const result = recordSelection(assignment.participant.id, assignment.number, `${label} · Pelota ${assignment.number}`);
-    setRoundAnimating(false);
-    setCurrentResult(result);
-    window.setTimeout(() => {
-      fortunaAudio.playResult(result.kind === "winner", result.parity);
-      fortunaAudio.announceResult(result);
-    }, 170);
-  }, [recordSelection]);
-
   const finishMarbleSelection = useCallback((racer: MarbleRacer, label: string, standings?: readonly GameStanding[]) => {
     const result = recordSelection(racer.participant.id, racer.number, label, standings);
     setRoundAnimating(false);
@@ -448,7 +430,6 @@ function App() {
   const closeCurrentResult = () => {
     setCurrentResult(null);
     if (screen === "cards") setCardRoundKey((key) => key + 1);
-    if (screen === "pinball") setPinballRoundKey((key) => key + 1);
     if (screen === "marbles") setMarbleRoundKey((key) => key + 1);
     if (screen === "ducks") setDuckRoundKey((key) => key + 1);
   };
@@ -460,7 +441,6 @@ function App() {
     fortunaAudio.playClick();
     setCurrentResult(null);
     setCardRoundKey((key) => key + 1);
-    setPinballRoundKey((key) => key + 1);
     setMarbleRoundKey((key) => key + 1);
     setDuckRoundKey((key) => key + 1);
   };
@@ -472,7 +452,6 @@ function App() {
     setCurrentResult(null);
     setSpinRequest(null);
     setCardRoundKey((key) => key + 1);
-    setPinballRoundKey((key) => key + 1);
     setMarbleRoundKey((key) => key + 1);
     setDuckRoundKey((key) => key + 1);
   };
@@ -504,22 +483,6 @@ function App() {
     const prepared = prepareCardRound(activeParticipants, seed);
     commitSeededSession(seed, prepared.commitmentId, prepared.selected.participant.id);
   }, [activeParticipants, commitSeededSession]);
-
-  const commitPinballSession = useCallback((seed: string) => {
-    const prepared = preparePinballRound(
-      activeParticipants,
-      mode,
-      pinballControlMode,
-      seed,
-      previousWinnerIds,
-    );
-    commitSeededSession(
-      seed,
-      prepared.commitmentId,
-      prepared.selected.participant.id,
-      prepared.selected.number,
-    );
-  }, [activeParticipants, commitSeededSession, mode, pinballControlMode, previousWinnerIds]);
 
   const commitMarbleSession = useCallback((seed: string) => {
     const prepared = prepareMarbleRace(
@@ -634,7 +597,7 @@ function App() {
           tutorialDisabled={roundAnimating}
           onOpenTutorial={() => {
             setDemoGame(null);
-            setActiveTutorial(screen);
+            if (screen !== "pinball") setActiveTutorial(screen);
           }}
           onBack={returnToSetup}
           roundCommitted={roundLocked}
@@ -646,6 +609,8 @@ function App() {
           neutralMode={neutralMode}
           onToggleAppearance={() => setNeutralMode((value) => !value)}
         />
+
+        {screen === "setup" && <WebAppPanel />}
 
         {screen === "setup" ? (
           <SetupScreen
@@ -699,28 +664,9 @@ function App() {
             onRestart={restartSession}
             restartDisabled={roundLocked}
           />
-        ) : screen === "pinball" ? (!isGamePlayable("pinball") ? <section className="panel game-maintenance"><Gamepad2 size={42} /><h1>Pinball está en mejora</h1><p>Temporalmente deshabilitado. Los resultados anteriores se conservan.</p><button className="start-button" type="button" onClick={returnToSetup}>Volver al inicio</button></section> : (
-          <PinballScreen
-            key={pinballRoundKey}
-            participants={participants}
-            activeParticipants={activeParticipants}
-            blockedWinnerIds={blockedWinnerIds}
-            eliminatedIds={eliminatedIds}
-            history={history}
-            latestResult={latestResult}
-            mode={mode}
-            controlMode={pinballControlMode}
-            prize={prize}
-            roundNumber={roundNumber}
-            sessionWinner={sessionWinner}
-            previousWinnerIds={previousWinnerIds}
-            onCommit={commitPinballSession}
-            initialSeed={activeSession?.game === "pinball" ? activeSession.roundCommitment?.seed : undefined}
-            onFinish={finishPinballSelection}
-            onRestart={restartSession}
-            restartDisabled={roundLocked}
-          />
-        )) : screen === "marbles" ? (
+        ) : screen === "pinball" ? (
+          <section className="panel game-maintenance"><h1>Pinball ha sido retirado</h1><p>Los resultados antiguos se conservan. Cancela la sesión pendiente para elegir otro juego.</p><button className="start-button" type="button" onClick={returnToSetup}>Volver al inicio</button></section>
+        ) : screen === "marbles" ? (
           <MarblesScreen
             key={marbleRoundKey}
             participants={participants}
@@ -772,7 +718,6 @@ function App() {
             restartDisabled={roundLocked}
           />
         )}
-        <AuthorCard />
       </main>
 
       {currentResult && (
@@ -843,6 +788,7 @@ function Topbar({
   const voiceLabel = isTauri() ? "Daniela High · voz integrada sin internet" : "Voz del navegador · Daniela High está en la aplicación instalada";
   return (
     <header className="topbar">
+      <div className="brand-and-credit">
       <div className="brand-lockup" aria-label={neutralMode ? "Zona de Juegos" : "Fortuna Real"}>
         <div className="brand-mark" aria-hidden="true">
           <span className="brand-mark__ring" />
@@ -854,6 +800,9 @@ function Topbar({
         </div>
       </div>
 
+      <AuthorCard />
+      </div>
+
       {screen !== "setup" ? (
         <div className="round-pill" data-game={screen}>
           {screen === "roulette" ? <CircleDot size={19} />
@@ -862,8 +811,8 @@ function Topbar({
                 : screen === "marbles" ? <Gem size={19} />
                   : <Bird size={19} />}
           <div>
-            <strong>Ronda {roundNumber} {(["pinball", "marbles", "ducks"] as ActiveScreen[]).includes(screen) && <em className="round-pill__beta">BETA</em>}</strong>
-            <span>{activeCount} participantes · {screen === "roulette" ? "ruleta" : screen === "cards" ? "cartas" : screen === "pinball" ? "pinball 3D" : screen === "marbles" ? "canicas 3D" : "patos retro"}</span>
+            <strong>Ronda {roundNumber} {(["marbles", "ducks"] as ActiveScreen[]).includes(screen) && <em className="round-pill__beta">BETA</em>}</strong>
+            <span>{activeCount} participantes · {screen === "roulette" ? "ruleta" : screen === "cards" ? "cartas" : screen === "pinball" ? "juego retirado" : screen === "marbles" ? "canicas 3D" : "patos retro"}</span>
           </div>
         </div>
       ) : (
@@ -964,7 +913,7 @@ function SetupScreen({
   onOpenDemo: (game: GameId) => void;
 }) {
   const estimatedDuration = formatEstimatedDuration(game, eligibleCount, marbleDifficulty);
-  const selectedGuide = gameGuides[game];
+  const selectedGuide = gameGuides[isGamePlayable(game) ? game : "roulette"];
   const gameChosen = useDrawStore((state) => state.setupGameChosen) && isGamePlayable(game);
   const modeChosen = useDrawStore((state) => state.setupModeChosen);
   const participantsReady = eligibleCount >= 2;
@@ -1392,160 +1341,6 @@ function CardsScreen({
         <div className="casino-stats-row">
           <StatCard icon={<Users />} tone="cyan" label="Activos" value={activeParticipants.length} />
           <StatCard icon={<Shuffle />} tone="gold" label="Cartas" value={activeParticipants.length} />
-        </div>
-      </aside>
-    </section>
-  );
-}
-
-function PinballScreen({
-  participants,
-  activeParticipants,
-  blockedWinnerIds,
-  eliminatedIds,
-  history,
-  latestResult,
-  mode,
-  controlMode,
-  prize,
-  roundNumber,
-  sessionWinner,
-  previousWinnerIds,
-  onCommit,
-  initialSeed,
-  onFinish,
-  onRestart,
-  restartDisabled,
-}: {
-  participants: Participant[];
-  activeParticipants: Participant[];
-  blockedWinnerIds: string[];
-  eliminatedIds: string[];
-  history: RoundResult[];
-  latestResult: RoundResult | null;
-  mode: DrawMode;
-  controlMode: PinballControlMode;
-  prize: string;
-  roundNumber: number;
-  sessionWinner: RoundResult | null;
-  previousWinnerIds: ReadonlySet<string>;
-  onCommit: (seed: string) => void;
-  initialSeed?: string;
-  onFinish: (assignment: PinballBallAssignment, label: string) => void;
-  onRestart: () => void;
-  restartDisabled: boolean;
-}) {
-  const finalWinner = resolveFinalWinner(sessionWinner, latestResult, activeParticipants.length);
-  const cannotPlay = !!finalWinner || activeParticipants.length < 2;
-
-  return (
-    <section className="pinball-workspace">
-      <aside className="panel casino-roster-panel pinball-roster-panel">
-        <div className="panel-title panel-title--spread">
-          <span><Users size={18} /> Pelotas y participantes</span>
-          <small>{activeParticipants.length}/{participants.length}</small>
-        </div>
-        <p className="roster-help">El número de cada pelota coincide con esta lista durante toda la ronda.</p>
-        <div className="roster-list" aria-label="Participantes del Pinball 3D">
-          {participants.map((person) => {
-            const activeIndex = activeParticipants.findIndex((active) => active.id === person.id);
-            const isEliminated = eliminatedIds.includes(person.id);
-            const isWinner = blockedWinnerIds.includes(person.id);
-            return (
-              <div className={`roster-row ${isEliminated ? "is-eliminated" : ""} ${isWinner ? "is-winner" : ""}`} key={person.id}>
-                <span className="roster-number">{activeIndex >= 0 ? activeIndex + 1 : "—"}</span>
-                <i style={{ background: person.color }} />
-                <strong className="roster-champion-name" title={person.name}>{person.name}{activeIndex >= 0 && previousWinnerIds.has(person.id) && <Crown size={11} fill="currentColor" aria-label="Ganador anterior" />}</strong>
-                <em>{isWinner ? "Ganador" : isEliminated ? "Eliminado" : "En juego"}</em>
-              </div>
-            );
-          })}
-        </div>
-        <button className="text-button cards-restart-button" type="button" onClick={onRestart} disabled={restartDisabled}>
-          <RotateCcw size={15} /> Reiniciar con los habilitados
-        </button>
-      </aside>
-
-      <section className="pinball-stage-column">
-        <div className="stage-heading casino-stage-heading">
-          <div>
-            <span className="eyebrow">BETA · {modeLabels[mode]} · RONDA {roundNumber}</span>
-            <h1>Pinball Real 3D</h1>
-          </div>
-          <div className="live-badge"><span /> {finalWinner ? "RONDA FINALIZADA" : controlMode === "automatic" ? "CONTROL AUTOMÁTICO" : "CONTROL MANUAL"}</div>
-        </div>
-
-        {finalWinner ? (
-          <div className="cards-final-state pinball-final-state">
-            <Crown size={58} />
-            <span>Ganador final</span>
-            <strong>{finalWinner.participantName}</strong>
-            <p>El historial conserva el premio y permite habilitarlo para otro sorteo.</p>
-          </div>
-        ) : (
-          <PinballGame
-            participants={activeParticipants}
-            previousWinnerIds={previousWinnerIds}
-            mode={mode}
-            controlMode={controlMode}
-            disabled={cannotPlay}
-            initialSeed={initialSeed}
-            onCommit={onCommit}
-            onFinish={onFinish}
-          />
-        )}
-      </section>
-
-      <aside className="casino-info-column pinball-info-column">
-        <section className="panel casino-mode-card">
-          <div className="panel-title"><Gamepad2 size={18} /> {modeLabels[mode]}</div>
-          <p className="mode-description">
-            {mode === "direct"
-              ? "La pelota sellada antes de iniciar recibe el premio y queda fuera hasta que la habilites. La mesa representa el compromiso."
-              : "La pelota sellada antes de iniciar queda eliminada. La próxima ronda genera otra distribución verificable."}
-          </p>
-          <div className="pinball-mode-chip"><span>{controlMode === "automatic" ? "AUTO" : "MANUAL"}</span>{controlMode === "automatic" ? "La máquina controla la partida" : "Espacio lanza · A/D mueven flippers"}</div>
-        </section>
-
-        <section className="panel casino-prize-card">
-          <div className="panel-title"><Gift size={18} /> Premio actual</div>
-          <div className="compact-prize"><Trophy size={28} /><strong>{prize || "Premio sorpresa"}</strong></div>
-        </section>
-
-        <section className="panel casino-current-result">
-          <div className="panel-title"><Target size={18} /> Resultado actual</div>
-          {latestResult ? (
-            <div className={`round-result-summary round-result-summary--${latestResult.kind}`}>
-              <span className="landed-number"><Gamepad2 size={16} /></span>
-              <strong>{latestResult.participantName}</strong>
-              <em>{latestResult.kind === "winner" ? "Ganador" : "Eliminado"}</em>
-              {latestResult.selectionLabel && <small>{latestResult.selectionLabel}</small>}
-            </div>
-          ) : (
-            <div className="empty-result"><Gamepad2 size={25} /><strong>Mesa preparada</strong><span>Enciende el pinball para comenzar.</span></div>
-          )}
-        </section>
-
-        <WinnerHistory compact />
-
-        <section className="panel history-panel casino-history-panel pinball-history-panel">
-          <div className="panel-title panel-title--spread"><span><History size={18} /> Historial</span><small>{history.length}</small></div>
-          <div className="history-list">
-            {history.length === 0 ? (
-              <div className="history-empty">Los resultados del pinball aparecerán aquí.</div>
-            ) : history.map((result) => (
-              <div className="history-row casino-history-row" key={result.id}>
-                <span>R{result.round} · pelota {result.landedNumber}</span>
-                <strong>{result.participantName}</strong>
-                <em className={result.kind}>{result.kind === "winner" ? "GANÓ" : "FUERA"}</em>
-              </div>
-            ))}
-          </div>
-        </section>
-
-        <div className="casino-stats-row">
-          <StatCard icon={<Users />} tone="cyan" label="Activos" value={activeParticipants.length} />
-          <StatCard icon={<Gamepad2 />} tone="gold" label="Pelotas" value={activeParticipants.length} />
         </div>
       </aside>
     </section>

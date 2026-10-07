@@ -1,11 +1,12 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
-// @ts-expect-error process is a nodejs global
+import process from "node:process";
 const host = process.env.TAURI_DEV_HOST;
 
 // https://vite.dev/config/
 export default defineConfig(async () => ({
+  base: process.env.VITE_WEB_BASE || "/",
   plugins: [react()],
 
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
@@ -13,6 +14,7 @@ export default defineConfig(async () => ({
   // 1. prevent Vite from obscuring rust errors
   clearScreen: false,
   build: {
+    outDir: process.env.VITE_WEB_BUILD === "true" ? "dist-web" : "dist",
     chunkSizeWarningLimit: 650,
     rollupOptions: {
       output: {

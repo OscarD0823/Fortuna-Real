@@ -1,0 +1,12 @@
+{
+  "id": "./", "name": "Fortuna Real", "short_name": "Fortuna Real",
+  "description": "Ruleta, cartas, canicas y patos para organizar partidas con tu grupo.",
+  "lang": "es", "start_url": "./", "scope": "./", "display": "standalone",
+  "background_color": "#02070c", "theme_color": "#02070c",
+  "categories": ["games", "entertainment"],
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon-256.png", "sizes": "256x256", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ]
+}
