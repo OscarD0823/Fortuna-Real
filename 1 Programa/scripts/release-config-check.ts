@@ -160,6 +160,7 @@ for (const marker of [
   "ProtectedData]::Unprotect",
   "Write-Utf8WithoutBom -LiteralPath $latestPath -Value $latestJson",
   "New-Object Text.UTF8Encoding($false)",
+  "$text.StartsWith([string][char]0xFEFF, [StringComparison]::Ordinal)",
   "manifiesto remoto contiene una marca BOM",
   "Wait-ForRemoteManifest -Uri $remoteManifestUrl -ExpectedVersion $version",
   "MaximumAttempts = 48",

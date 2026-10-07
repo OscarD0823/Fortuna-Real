@@ -46,7 +46,9 @@ function Get-RemoteJson {
     } else {
         [string]$response.Content
     }
-    if ($text.StartsWith([char]0xFEFF)) {
+    # .NET Framework treats BOM as ignorable in culture-sensitive comparisons.
+    # Ordinal comparison works identically in Windows PowerShell 5 and PowerShell 7.
+    if ($text.StartsWith([string][char]0xFEFF, [StringComparison]::Ordinal)) {
         throw "El manifiesto remoto contiene una marca BOM y no es JSON UTF-8 canónico."
     }
     return $text | ConvertFrom-Json

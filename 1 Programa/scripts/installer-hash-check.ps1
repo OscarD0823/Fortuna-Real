@@ -12,6 +12,45 @@ $hashAst = $creatorAst.Find({
 if (-not $hashAst) { throw "Missing installer SHA-256 function." }
 . ([scriptblock]::Create($hashAst.Extent.Text))
 
+# Exercise the production JSON reader without network access or signing.
+$remoteJsonAst = $creatorAst.Find({
+    param($node)
+    $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq "Get-RemoteJson"
+}, $true)
+if (-not $remoteJsonAst) { throw "Missing remote manifest reader." }
+. ([scriptblock]::Create($remoteJsonAst.Extent.Text))
+function Invoke-WebRequest {
+    param([switch]$UseBasicParsing, [string]$Uri, [int]$TimeoutSec)
+    return [pscustomobject]@{ Content = $script:ManifestTestContent }
+}
+try {
+    $manifestText = '{"version":"1.0.13","notes":"a' + [char]0xF1 + 'o"}'
+    foreach ($content in @($manifestText, [Text.Encoding]::UTF8.GetBytes($manifestText))) {
+        $script:ManifestTestContent = $content
+        $parsed = Get-RemoteJson -Uri "https://example.invalid/latest.json"
+        if ($parsed.version -cne "1.0.13" -or $parsed.notes -cne ("a" + [char]0xF1 + "o")) {
+            throw "Valid UTF-8 manifest must preserve its version and Unicode notes."
+        }
+    }
+    $bomText = [string][char]0xFEFF + $manifestText
+    foreach ($content in @($bomText, [Text.Encoding]::UTF8.GetBytes($bomText))) {
+        $script:ManifestTestContent = $content
+        $bomRejected = $false
+        try { $null = Get-RemoteJson -Uri "https://example.invalid/latest.json" }
+        catch { $bomRejected = $_.Exception.Message.Contains("BOM") }
+        if (-not $bomRejected) { throw "A real UTF-8 BOM must be rejected." }
+    }
+    $script:ManifestTestContent = "not json"
+    $invalidRejected = $false
+    try { $null = Get-RemoteJson -Uri "https://example.invalid/latest.json" }
+    catch { $invalidRejected = $true }
+    if (-not $invalidRejected) { throw "Invalid JSON must be rejected." }
+    "Remote manifest: Windows PowerShell, UTF-8 bytes/text, Unicode notes, real BOM and malformed JSON rejection OK."
+}
+finally {
+    Remove-Item -LiteralPath Function:Invoke-WebRequest
+}
+
 $testRoot = [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\')
 $testDirectory = [IO.Path]::GetFullPath((Join-Path $testRoot ("fortuna-hash-test-" + [Guid]::NewGuid().ToString("N"))))
 if (-not $testDirectory.StartsWith("$testRoot\", [StringComparison]::OrdinalIgnoreCase)) {
