@@ -10,11 +10,13 @@ Pinball está retirado definitivamente de los juegos disponibles. Sus resultados
 
 Abre **[Fortuna Real en la web](https://oscard0823.github.io/Fortuna-Real/)**.
 Puedes jugar allí, pulsar **Instalar web** en un navegador compatible o elegir
-**Descargar Windows** para ir al [instalador estable](https://github.com/OscarD0823/Fortuna-Real/releases/latest).
+**Descargar para PC** para ir al [instalador estable](https://github.com/OscarD0823/Fortuna-Real/releases/latest).
 No son la misma instalación: la web no incluye Daniela High y no comparte el historial con Windows.
 
-El código y la web están en **1.0.13**; el instalador firmado publicado sigue en **1.0.12**
-hasta preparar una nueva entrega de escritorio. No se anuncia 1.0.13 al actualizador nativo.
+La versión **1.0.13** se distribuye para Windows y la web. En el programa de PC,
+el autor aparece junto al nombre y el inicio incluye **Usar versión web**, que abre
+la página oficial. En la página, **Descargar para PC** lleva al instalador firmado
+publicado en GitHub Releases.
 
 La web usa GitHub Pages sin dominio de pago. Después de descargar todos los recursos
 puede funcionar sin conexión mientras el navegador conserve su caché. Para aplicar una
@@ -324,11 +326,12 @@ Los cambios se resumen por función; los enlaces llevan al registro original. La
 
 Fecha: 2026-10-07. Versión actual del código.
 
-Versión del código y de la web. El instalador estable de Windows sigue siendo 1.0.12 hasta publicar un nuevo paquete firmado. Las salas por Internet y Microsoft Store son propuestas documentadas, aún no disponibles.
+Actualización para Windows y la web. Conserva la voz Daniela High en PC y los resultados locales. Las salas por Internet y Microsoft Store son propuestas documentadas, aún no disponibles.
 
 #### Web oficial e instalación
 
 - Fortuna Real se publica en GitHub Pages con instalación desde navegadores compatibles y enlace separado a la descarga estable de Windows.
+- El inicio del programa para PC ofrece Usar versión web, que abre la página oficial en el navegador. La página ofrece Descargar para PC para obtener el instalador de Windows.
 - Tras cargar sus recursos en línea, la web puede abrirse sin conexión mientras el navegador conserve su caché. No incluye la voz nativa Daniela High: usa las voces disponibles en el navegador.
 - La web prepara las actualizaciones sin recargar partidas abiertas. La versión nueva se activa después de cerrar todas las ventanas de Fortuna Real.
 - Los historiales de la web y del programa son locales e independientes; no se sincronizan entre equipos.
@@ -344,7 +347,7 @@ Versión del código y de la web. El instalador estable de Windows sigue siendo 
 - Guía para publicar la PWA en Microsoft Store y explicación de las diferencias frente al instalador firmado de escritorio.
 - Propuesta de salas por código, turnos de Ruleta y Cartas, nuevos juegos y mejoras de cámaras, pistas y Patos. No se habilita un servidor ni se cobran servicios.
 
-[Registro original de esta versión](https://github.com/OscarD0823/Fortuna-Real/tree/main).
+[Registro original de esta versión](https://github.com/OscarD0823/Fortuna-Real/compare/v1.0.12...v1.0.13).
 
 ### 1.0.11 → 1.0.12 — Autor visible e historial con clasificación completa
 
